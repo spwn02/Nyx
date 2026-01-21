@@ -1,0 +1,22 @@
+[submodule "extern/glm"]
+	path = extern/glm
+	url = https://github.com/g-truc/glm.git
+[submodule "extern/spdlog"]
+	path = extern/spdlog
+	url = https://github.com/gabime/spdlog.git
+[submodule "extern/imgui"]
+	path = extern/imgui
+	url = https://github.com/ocornut/imgui.git
+	branch = docking
+[submodule "extern/glfw"]
+	path = extern/glfw
+	url = https://github.com/glfw/glfw.git
+[submodule "extern/xxhash"]
+	path = extern/xxhash
+	url = https://github.com/Cyan4973/xxHash.git
+[submodule "extern/assimp"]
+	path = extern/assimp
+	url = https://github.com/assimp/assimp.git
+[submodule "extern/ImGuizmo"]
+	path = extern/ImGuizmo
+	url = https://github.com/CedricGuillemet/ImGuizmo.git

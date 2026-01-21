@@ -1,0 +1,24 @@
+{
+  "version": 6,
+  "cmakeMinimumRequired": { "major": 3, "minor": 28, "patch": 0 },
+  "configurePresets": [
+    {
+      "name": "ninja-clang",
+      "displayName": "Ninja + Clang (modules)",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/out/ninja-clang",
+      "cacheVariables": {
+        "CMAKE_CXX_COMPILER": "clang++",
+        "CMAKE_BUILD_TYPE": "Debug",
+        "CMAKE_EXPORT_COMPILE_COMMANDS": "ON"
+      }
+    }
+  ],
+  "buildPresets": [
+    {
+      "name": "ninja-clang-debug",
+      "configurePreset": "ninja-clang",
+      "configuration": "Debug"
+    }
+  ]
+}

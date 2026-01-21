@@ -1,0 +1,20 @@
+#pragma once
+
+#include "EntityID.h"
+#include "scene/Components.h"
+#include <glm/glm.hpp>
+
+namespace Nyx {
+
+struct Renderable {
+  EntityID entity = InvalidEntity;
+  uint32_t submesh = 0;
+
+  ProcMeshType mesh = ProcMeshType::Cube;
+  glm::mat4 model{1.0f};
+
+  uint32_t pickID = 0; // packed entity + submesh
+  uint32_t materialGpuIndex = 0; // index into material SSBO
+};
+
+} // namespace Nyx
