@@ -29,10 +29,13 @@ public:
 
   // Acquire a texture resource matching the description
   RGHandle acquireTex(const char *debugName, const RGTexDesc &desc);
+  RGHandle allocateTex(const char *debugName, const RGTexDesc &desc);
+  void releaseTex(RGHandle h);
 
   // Resolve handle -> GLTexture2D
   const GLTexture2D &tex(RGHandle h) const;
   GLTexture2D &tex(RGHandle h);
+  const RGTexDesc &desc(RGHandle h) const;
 
   // Void: GC not used recently
   void gc(uint32_t keepFrames = 120);

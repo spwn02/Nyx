@@ -39,6 +39,10 @@ EditorPersist::save(const std::string &path, const EditorPersistState &s) {
     // Gizmo
     put(o, "gizmo.op", (int)s.gizmoOp);
     put(o, "gizmo.mode", (int)s.gizmoMode);
+    put(o, "gizmo.useSnap", s.gizmoUseSnap);
+    put(o, "gizmo.snapTranslate", s.gizmoSnapTranslate);
+    put(o, "gizmo.snapRotateDeg", s.gizmoSnapRotateDeg);
+    put(o, "gizmo.snapScale", s.gizmoSnapScale);
 
     // Panels
     put(o, "panel.viewport", s.panels.viewport);
@@ -97,11 +101,15 @@ std::expected<void, std::string> EditorPersist::load(const std::string &path,
     out.camera.boostMul = toFloat(get("cam.boost"), out.camera.boostMul);
     out.camera.sensitivity = toFloat(get("cam.sens"), out.camera.sensitivity);
 
-    out.camera.markViewDirty();
-    out.camera.markProjDirty();
-
     out.gizmoOp = (GizmoOp)toInt(get("gizmo.op"), (int)out.gizmoOp);
     out.gizmoMode = (GizmoMode)toInt(get("gizmo.mode"), (int)out.gizmoMode);
+    out.gizmoUseSnap = toBool(get("gizmo.useSnap"), out.gizmoUseSnap);
+    out.gizmoSnapTranslate =
+        toFloat(get("gizmo.snapTranslate"), out.gizmoSnapTranslate);
+    out.gizmoSnapRotateDeg =
+        toFloat(get("gizmo.snapRotateDeg"), out.gizmoSnapRotateDeg);
+    out.gizmoSnapScale =
+        toFloat(get("gizmo.snapScale"), out.gizmoSnapScale);
 
     out.panels.viewport = toBool(get("panel.viewport"), out.panels.viewport);
     out.panels.hierarchy = toBool(get("panel.hierarchy"), out.panels.hierarchy);

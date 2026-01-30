@@ -1,8 +1,6 @@
 #pragma once
 
-#include "EditorCamera.h"
 #include "Selection.h"
-#include "glm/fwd.hpp"
 #include "scene/World.h"
 #include <glm/glm.hpp>
 
@@ -10,8 +8,8 @@ namespace Nyx {
 
 class Gizmo final {
 public:
-  void drawAndInteract(World &world, Selection &sel, const EditorCameraState &cam,
-                       const glm::vec2 &viewportMin,
+  void drawAndInteract(World &world, Selection &sel, const glm::mat4 &view,
+                       const glm::mat4 &proj, const glm::vec2 &viewportMin,
                        const glm::vec2 &viewportMax);
 
 private:

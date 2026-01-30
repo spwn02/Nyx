@@ -2,522 +2,578 @@
 
 #include <algorithm>
 #include <glm/gtc/matrix_transform.hpp>
-#include <glm/gtx/quaternion.hpp>
-
-#include "../core/Assert.h"
+#include <glm/gtx/matrix_decompose.hpp>
 
 namespace Nyx {
 
-// ----------------------------
-// EntityID packing contract
-// ----------------------------
-// We pack EntityID as: [generation:12][index:20] (matches your pick layout nicely)
-// index range: 1..1,048,575
-// generation: 0..4095
-//
-// InvalidEntity is assumed to be 0.
-//
-// If your existing EntityID is different, adapt idx/gen/makeID accordingly.
-
-static constexpr std::uint32_t kIndexBits = 20u;
-static constexpr std::uint32_t kIndexMask = (1u << kIndexBits) - 1u;
-static constexpr std::uint32_t kGenBits = 12u;
-static constexpr std::uint32_t kGenMask = (1u << kGenBits) - 1u;
-
-std::uint32_t World::idx(EntityID e) {
-  return static_cast<std::uint32_t>(e) & kIndexMask;
+static bool vecContains(const std::vector<EntityID> &v, EntityID e) {
+  return std::find(v.begin(), v.end(), e) != v.end();
 }
 
-std::uint32_t World::gen(EntityID e) const {
-  return (static_cast<std::uint32_t>(e) >> kIndexBits) & kGenMask;
+EntityID World::createEntity(const std::string &n) {
+  const EntityID e = {m_next.index++, 1};
+  m_alive.push_back(e);
+
+  m_hier[e] = CHierarchy{};
+  m_name[e] = CName{n};
+  m_tr[e] = CTransform{};
+  m_wtr[e] = CWorldTransform{};
+
+  EntityUUID id = m_uuidGen.next();
+  while (m_entityByUUID.find(id.value) != m_entityByUUID.end()) {
+    id = m_uuidGen.next();
+  }
+  m_uuid[e] = id;
+  m_entityByUUID[id.value] = e;
+
+  m_events.push({WorldEventType::EntityCreated, e});
+  return e;
 }
 
-EntityID World::makeID(std::uint32_t index, std::uint32_t generation) const {
-  const std::uint32_t packed =
-      (index & kIndexMask) | ((generation & kGenMask) << kIndexBits);
-  return static_cast<EntityID>(packed);
-}
-
-// ----------------------------
-
-World::World() {
-  // Reserve slot 0 as "invalid"
-  m_slots.resize(1);
-  m_name.resize(1);
-  m_transform.resize(1);
-  m_world.resize(1);
-  m_hierarchy.resize(1);
-
-  m_hasWorld.resize(1, false);
-  m_hasHierarchy.resize(1, false);
-
-  m_mesh.resize(1);
-  m_hasMesh.resize(1, false);
-}
-
-World::~World() = default;
-
-void World::ensureCapacity(std::uint32_t index) {
-  if (index < m_slots.size()) return;
-
-  const std::uint32_t newSize = index + 1u;
-
-  m_slots.resize(newSize);
-  m_name.resize(newSize);
-  m_transform.resize(newSize);
-  m_world.resize(newSize);
-  m_hierarchy.resize(newSize);
-
-  m_hasWorld.resize(newSize, false);
-  m_hasHierarchy.resize(newSize, false);
-
-  m_mesh.resize(newSize);
-  m_hasMesh.resize(newSize, false);
-
-}
-
-EntityID World::createEntity(std::string nm) {
-  std::uint32_t index = 0;
-
-  if (m_freeHead != 0) {
-    index = m_freeHead;
-    NYX_ASSERT(index < m_slots.size(), "free list corrupted");
-    m_freeHead = m_slots[index].nextFree;
-  } else {
-    index = static_cast<std::uint32_t>(m_slots.size());
-    ensureCapacity(index);
+EntityID World::createEntityWithUUID(EntityUUID uuid, const std::string &name) {
+  if (!uuid) {
+    return createEntity(name);
+  }
+  if (m_entityByUUID.find(uuid.value) != m_entityByUUID.end()) {
+    return InvalidEntity;
   }
 
-  auto& s = m_slots[index];
-  s.alive = true;
-  // generation stays as-is, only increments on destroy
+  EntityID e = createEntity(name);
 
-  m_name[index].name = std::move(nm);
-  m_transform[index] = CTransform{};
-  m_hasWorld[index] = true;
-  m_world[index] = CWorldTransform{};
-  m_hasHierarchy[index] = true;
-  m_hierarchy[index] = CHierarchy{};
+  const EntityUUID old = m_uuid[e];
+  m_entityByUUID.erase(old.value);
 
-  m_hasMesh[index] = false;
-  m_mesh[index] = CMesh{};
-
-  const EntityID id = makeID(index, s.generation);
-  m_aliveList.push_back(id);
-  return id;
+  m_uuid[e] = uuid;
+  m_entityByUUID[uuid.value] = e;
+  return e;
 }
 
 bool World::isAlive(EntityID e) const {
-  const std::uint32_t index = idx(e);
-  if (index == 0 || index >= m_slots.size()) return false;
-  const auto& s = m_slots[index];
-  return s.alive && s.generation == gen(e);
+  return e != InvalidEntity && m_hier.find(e) != m_hier.end();
 }
 
-EntityID World::entityFromSlotIndex(EntityID slotIndex) const {
-  const std::uint32_t index = idx(slotIndex);
-  if (index == 0 || index >= m_slots.size())
-    return InvalidEntity;
-  const auto& s = m_slots[index];
-  if (!s.alive)
-    return InvalidEntity;
-  return makeID(index, s.generation);
-}
+void World::destroySubtree(EntityID root) {
+  if (!isAlive(root))
+    return;
 
-void World::removeFromAliveList(EntityID e) {
-  auto it = std::find(m_aliveList.begin(), m_aliveList.end(), e);
-  if (it != m_aliveList.end()) {
-    m_aliveList.erase(it);
-  }
-}
-
-void World::destroyEntity(EntityID e) {
-  if (!isAlive(e)) return;
-
-  // Destroy children first (safe, consistent)
-  EntityID child = hierarchy(e).firstChild;
-  while (child != InvalidEntity) {
-    EntityID next = hierarchy(child).nextSibling;
-    destroyEntity(child);
-    child = next;
+  // Destroy children first
+  EntityID ch = m_hier[root].firstChild;
+  while (ch != InvalidEntity) {
+    EntityID next = m_hier[ch].nextSibling;
+    destroySubtree(ch);
+    ch = next;
   }
 
-  // Detach from parent list
-  detachFromParentList(e);
-
-  const std::uint32_t index = idx(e);
-  auto& s = m_slots[index];
-  s.alive = false;
-  s.generation = (s.generation + 1u) & kGenMask;
-  if (s.generation == 0u) s.generation = 1u;
-
-  // Clear hierarchy links
-  m_hierarchy[index] = CHierarchy{};
-  m_hasHierarchy[index] = true;
-
-  // Reset mesh state so reused slots don't keep old data.
-  m_mesh[index] = CMesh{};
-  m_hasMesh[index] = false;
-
-  // Return to free list
-  s.nextFree = m_freeHead;
-  m_freeHead = index;
-
-  removeFromAliveList(e);
-}
-
-// ----------------------------
-// Component accessors
-// ----------------------------
-
-CName& World::name(EntityID e) {
-  NYX_ASSERT(isAlive(e), "name(): entity not alive");
-  return m_name[idx(e)];
-}
-
-const CName& World::name(EntityID e) const {
-  NYX_ASSERT(isAlive(e), "name() const: entity not alive");
-  return m_name[idx(e)];
-}
-
-void World::setName(EntityID e, std::string n) {
-  name(e).name = std::move(n);
-}
-
-CTransform& World::transform(EntityID e) {
-  NYX_ASSERT(isAlive(e), "transform(): entity not alive");
-  return m_transform[idx(e)];
-}
-
-const CTransform& World::transform(EntityID e) const {
-  NYX_ASSERT(isAlive(e), "transform() const: entity not alive");
-  return m_transform[idx(e)];
-}
-
-bool World::hasWorldTransform(EntityID e) const {
-  if (!isAlive(e)) return false;
-  return m_hasWorld[idx(e)];
-}
-
-CWorldTransform& World::worldTransform(EntityID e) {
-  NYX_ASSERT(isAlive(e), "worldTransform(): entity not alive");
-  NYX_ASSERT(m_hasWorld[idx(e)], "worldTransform(): missing component");
-  return m_world[idx(e)];
-}
-
-const CWorldTransform& World::worldTransform(EntityID e) const {
-  NYX_ASSERT(isAlive(e), "worldTransform() const: entity not alive");
-  NYX_ASSERT(m_hasWorld[idx(e)], "worldTransform() const: missing component");
-  return m_world[idx(e)];
-}
-
-bool World::hasHierarchy(EntityID e) const {
-  if (!isAlive(e)) return false;
-  return m_hasHierarchy[idx(e)];
-}
-
-CHierarchy& World::hierarchy(EntityID e) {
-  NYX_ASSERT(isAlive(e), "hierarchy(): entity not alive");
-  NYX_ASSERT(m_hasHierarchy[idx(e)], "hierarchy(): missing component");
-  return m_hierarchy[idx(e)];
-}
-
-const CHierarchy& World::hierarchy(EntityID e) const {
-  NYX_ASSERT(isAlive(e), "hierarchy() const: entity not alive");
-  NYX_ASSERT(m_hasHierarchy[idx(e)], "hierarchy() const: missing component");
-  return m_hierarchy[idx(e)];
-}
-
-// ----------------------------
-// Mesh / Materials
-// ----------------------------
-
-bool World::hasMesh(EntityID e) const {
-  if (!isAlive(e)) return false;
-  const std::uint32_t i = idx(e);
-  return m_hasMesh[i] || !m_mesh[i].submeshes.empty();
-}
-
-CMesh& World::mesh(EntityID e) {
-  NYX_ASSERT(isAlive(e), "mesh(): entity not alive");
-  const std::uint32_t i = idx(e);
-  if (!m_hasMesh[i] && !m_mesh[i].submeshes.empty())
-    m_hasMesh[i] = true;
-  NYX_ASSERT(m_hasMesh[i], "mesh(): missing component");
-  return m_mesh[idx(e)];
-}
-
-const CMesh& World::mesh(EntityID e) const {
-  NYX_ASSERT(isAlive(e), "mesh() const: entity not alive");
-  const std::uint32_t i = idx(e);
-  NYX_ASSERT(m_hasMesh[i] || !m_mesh[i].submeshes.empty(),
-             "mesh() const: missing component");
-  return m_mesh[idx(e)];
-}
-
-CMesh& World::ensureMesh(EntityID e, ProcMeshType t, std::uint32_t submeshCount_) {
-  NYX_ASSERT(isAlive(e), "ensureMesh(): entity not alive");
-
-  const std::uint32_t i = idx(e);
-  m_hasMesh[i] = true;
-  m_mesh[i].submeshes.resize(std::max(1u, submeshCount_));
-  m_mesh[i].submeshes[submeshCount_ - 1].type = t;
-
-  // Ensure material slots exist
-
-  return m_mesh[i];
-}
-
-std::uint32_t World::submeshCount(EntityID e) const {
-  if (!isAlive(e)) return 0;
-  const std::uint32_t i = idx(e);
-  if (!m_hasMesh[i] && m_mesh[i].submeshes.empty())
-    return 0;
-  return (uint32_t)m_mesh[i].submeshes.size();
-}
-
-MaterialHandle World::materialHandle(EntityID e, std::uint32_t submeshIndex) {
-  NYX_ASSERT(isAlive(e), "materialHandle(): entity not alive");
-
-  const std::uint32_t i = idx(e);
-
-  // If no mesh, still allow "material storage" later — but for now,
-  // we assume materials are tied to mesh existence.
-  if (!m_hasMesh[i]) {
-    // Create a default procedural mesh contract: 1 submesh
-    ensureMesh(e, ProcMeshType::Cube, 1);
+  // Camera events
+  if (hasCamera(root)) {
+    m_events.push({WorldEventType::CameraDestroyed, root});
+    if (m_activeCamera == root) {
+      EntityID old = m_activeCamera;
+      m_activeCamera = InvalidEntity;
+      m_events.push({WorldEventType::ActiveCameraChanged, InvalidEntity, old});
+    }
   }
 
-  const std::uint32_t n = m_mesh[i].submeshes.size();
-  NYX_ASSERT(submeshIndex < n, "materialHandle(): submesh index out of range");
+  // Detach from parent
+  detachFromParent(root);
 
-  auto &mesh = m_mesh[i];
-  return mesh.submeshes[submeshIndex].material;
-}
+  // Erase optional comps
+  m_mesh.erase(root);
+  m_cam.erase(root);
+  m_camMat.erase(root);
+  m_light.erase(root);
 
-void World::setMaterialHandle(EntityID e, std::uint32_t submeshIndex, MaterialHandle h) {
-  NYX_ASSERT(isAlive(e), "setMaterialHandle(): entity not alive");
-
-  const std::uint32_t i = idx(e);
-  if (!m_hasMesh[i]) {
-    ensureMesh(e, ProcMeshType::Cube, 1);
+  // Erase core comps
+  m_hier.erase(root);
+  m_name.erase(root);
+  m_tr.erase(root);
+  m_wtr.erase(root);
+  auto uuidIt = m_uuid.find(root);
+  if (uuidIt != m_uuid.end()) {
+    m_entityByUUID.erase(uuidIt->second.value);
+    m_uuid.erase(uuidIt);
   }
 
-  const std::uint32_t n = m_mesh[i].submeshes.size();
-  NYX_ASSERT(submeshIndex < n, "setMaterialHandle(): submesh index out of range");
+  // Remove from alive vector (linear ok for now)
+  auto it = std::find(m_alive.begin(), m_alive.end(), root);
+  if (it != m_alive.end())
+    m_alive.erase(it);
 
-  auto &mesh = m_mesh[i];
-  mesh.submeshes[submeshIndex].material = h;
+  m_events.push({WorldEventType::EntityDestroyed, root});
 }
 
-// ----------------------------
-// Hierarchy internals
-// ----------------------------
+void World::destroyEntity(EntityID e) { destroySubtree(e); }
+
+void World::clear() {
+  m_next = {1, 0};
+  m_alive.clear();
+
+  m_hier.clear();
+  m_name.clear();
+  m_tr.clear();
+  m_wtr.clear();
+
+  m_mesh.clear();
+  m_cam.clear();
+  m_camMat.clear();
+  m_light.clear();
+
+  m_uuid.clear();
+  m_entityByUUID.clear();
+
+  m_activeCamera = InvalidEntity;
+  m_events.clear();
+}
+
+std::vector<EntityID> World::roots() const {
+  std::vector<EntityID> r;
+  r.reserve(m_alive.size());
+  for (EntityID e : m_alive) {
+    auto it = m_hier.find(e);
+    if (it != m_hier.end() && it->second.parent == InvalidEntity)
+      r.push_back(e);
+  }
+  return r;
+}
+
+// ---------------- Hierarchy ----------------
+
+CHierarchy &World::hierarchy(EntityID e) { return m_hier.at(e); }
+const CHierarchy &World::hierarchy(EntityID e) const { return m_hier.at(e); }
 
 EntityID World::parentOf(EntityID e) const {
-  if (!isAlive(e)) return InvalidEntity;
-  return hierarchy(e).parent;
+  auto it = m_hier.find(e);
+  if (it == m_hier.end())
+    return InvalidEntity;
+  return it->second.parent;
 }
 
-void World::detachFromParentList(EntityID child) {
-  if (!isAlive(child)) return;
+static bool isDescendant(const World &w, EntityID node,
+                         EntityID potentialAncestor);
 
-  auto& hc = hierarchy(child);
-  const EntityID parent = hc.parent;
-
-  if (parent == InvalidEntity) {
-    hc.parent = InvalidEntity;
+void World::setParent(EntityID child, EntityID newParent) {
+  if (!isAlive(child))
     return;
+
+  if (newParent != InvalidEntity) {
+    if (!isAlive(newParent))
+      return;
+    if (child == newParent)
+      return;
+    if (isDescendant(*this, newParent, child))
+      return;
   }
 
-  // Remove from parent's child list
-  auto& hp = hierarchy(parent);
+  const EntityID oldParent = parentOf(child);
+  if (oldParent == newParent)
+    return;
 
+  detachFromParent(child);
+  attachToParent(child, newParent);
+
+  markWorldDirtyRecursive(child);
+
+  m_events.push({WorldEventType::ParentChanged, child, newParent, oldParent});
+  m_events.push({WorldEventType::TransformChanged, child});
+}
+
+void World::detachFromParent(EntityID child) {
+  auto &hc = m_hier.at(child);
+  EntityID p = hc.parent;
+  if (p == InvalidEntity)
+    return;
+
+  // Remove child from parent's singly-linked child list
+  EntityID cur = m_hier.at(p).firstChild;
   EntityID prev = InvalidEntity;
-  EntityID cur = hp.firstChild;
-  while (cur != InvalidEntity) {
-    EntityID next = hierarchy(cur).nextSibling;
-    if (cur == child) {
-      if (prev == InvalidEntity) hp.firstChild = next;
-      else hierarchy(prev).nextSibling = next;
 
-      hc.parent = InvalidEntity;
-      hc.nextSibling = InvalidEntity;
-      return;
+  while (cur != InvalidEntity) {
+    if (cur == child) {
+      EntityID next = m_hier.at(cur).nextSibling;
+      if (prev == InvalidEntity)
+        m_hier.at(p).firstChild = next;
+      else
+        m_hier.at(prev).nextSibling = next;
+      break;
     }
     prev = cur;
-    cur = next;
+    cur = m_hier.at(cur).nextSibling;
   }
 
-  // If we didn't find it, still clear pointers safely
   hc.parent = InvalidEntity;
   hc.nextSibling = InvalidEntity;
 }
 
-void World::attachToParentFront(EntityID child, EntityID parent) {
-  NYX_ASSERT(isAlive(child), "attachToParentFront(): child not alive");
+void World::attachToParent(EntityID child, EntityID newParent) {
+  auto &hc = m_hier.at(child);
 
-  auto& hc = hierarchy(child);
+  hc.parent = newParent;
+  hc.nextSibling = InvalidEntity;
 
-  if (parent == InvalidEntity) {
-    hc.parent = InvalidEntity;
-    hc.nextSibling = InvalidEntity;
+  if (newParent == InvalidEntity)
+    return;
+
+  auto &hp = m_hier.at(newParent);
+  if (hp.firstChild == InvalidEntity) {
+    hp.firstChild = child;
     return;
   }
 
-  NYX_ASSERT(isAlive(parent), "attachToParentFront(): parent not alive");
-  auto& hp = hierarchy(parent);
-
-  hc.parent = parent;
-  hc.nextSibling = hp.firstChild;
-  hp.firstChild = child;
+  // append at end (deterministic)
+  EntityID cur = hp.firstChild;
+  while (m_hier.at(cur).nextSibling != InvalidEntity)
+    cur = m_hier.at(cur).nextSibling;
+  m_hier.at(cur).nextSibling = child;
 }
 
-// Prevent cycles (basic)
-static bool isAncestor(const World& w, EntityID maybeAncestor, EntityID node) {
+static bool isDescendant(const World &w, EntityID node,
+                         EntityID potentialAncestor) {
   EntityID p = w.parentOf(node);
   while (p != InvalidEntity) {
-    if (p == maybeAncestor) return true;
+    if (p == potentialAncestor)
+      return true;
     p = w.parentOf(p);
   }
   return false;
 }
 
-void World::setParent(EntityID child, EntityID newParent) {
-  if (!isAlive(child)) return;
-  if (newParent == child) return;
-  if (newParent != InvalidEntity && !isAlive(newParent)) return;
-  if (newParent != InvalidEntity && isAncestor(*this, child, newParent)) return;
-
-  detachFromParentList(child);
-  attachToParentFront(child, newParent);
-
-  // Mark dirty for world recompute
-  if (hasWorldTransform(child)) worldTransform(child).dirty = true;
-  transform(child).dirty = true;
+glm::mat4 World::localMatrix(EntityID e) const {
+  const auto &tr = m_tr.at(e);
+  glm::mat4 M(1.0f);
+  M = glm::translate(M, tr.translation);
+  M *= glm::toMat4(tr.rotation);
+  M = glm::scale(M, tr.scale);
+  return M;
 }
 
-glm::mat4 World::computeWorldMatrix(EntityID e) const {
-  if (!isAlive(e)) return glm::mat4(1.0f);
-  if (hasWorldTransform(e)) return worldTransform(e).world;
-  return glm::mat4(1.0f);
-}
+void World::markWorldDirtyRecursive(EntityID e) {
+  if (!isAlive(e))
+    return;
 
-void World::setLocalFromMatrix(EntityID e, const glm::mat4& local) {
-  auto& t = transform(e);
+  m_wtr.at(e).dirty = true;
 
-  // Translation
-  t.translation = glm::vec3(local[3]);
-
-  // Extract scale from basis
-  glm::vec3 bx = glm::vec3(local[0]);
-  glm::vec3 by = glm::vec3(local[1]);
-  glm::vec3 bz = glm::vec3(local[2]);
-
-  t.scale = glm::vec3(glm::length(bx), glm::length(by), glm::length(bz));
-  const float sx = (t.scale.x == 0.0f) ? 1.0f : t.scale.x;
-  const float sy = (t.scale.y == 0.0f) ? 1.0f : t.scale.y;
-  const float sz = (t.scale.z == 0.0f) ? 1.0f : t.scale.z;
-
-  glm::mat3 R;
-  R[0] = bx / sx;
-  R[1] = by / sy;
-  R[2] = bz / sz;
-
-  t.rotation = glm::quat_cast(R);
-
-  t.dirty = true;
-  if (hasWorldTransform(e)) worldTransform(e).dirty = true;
+  EntityID ch = m_hier.at(e).firstChild;
+  while (ch != InvalidEntity) {
+    EntityID next = m_hier.at(ch).nextSibling;
+    markWorldDirtyRecursive(ch);
+    ch = next;
+  }
 }
 
 void World::setParentKeepWorld(EntityID child, EntityID newParent) {
-  if (!isAlive(child)) return;
-  if (newParent == child) return;
-  if (newParent != InvalidEntity && !isAlive(newParent)) return;
-  if (newParent != InvalidEntity && isAncestor(*this, child, newParent)) return;
+  if (!isAlive(child))
+    return;
 
-  // Compute old world (cached if available)
-  const glm::mat4 oldWorld = computeWorldMatrix(child);
+  // Don’t allow cycles
+  if (newParent != InvalidEntity) {
+    if (!isAlive(newParent))
+      return;
+    if (child == newParent)
+      return;
+    if (isDescendant(*this, newParent, child))
+      return;
+  }
 
-  // Detach and attach in hierarchy
-  detachFromParentList(child);
-  attachToParentFront(child, newParent);
+  // Ensure transforms are up to date before we preserve world
+  updateTransforms();
 
-  // New parent world
+  const EntityID oldParent = parentOf(child);
+  const glm::mat4 oldWorld = m_wtr.at(child).world;
+
+  // Reparent
+  detachFromParent(child);
+  attachToParent(child, newParent);
+
+  // Recompute local so that world remains the same
   glm::mat4 parentWorld(1.0f);
   if (newParent != InvalidEntity) {
-    parentWorld = computeWorldMatrix(newParent);
+    parentWorld = m_wtr.at(newParent).world;
   }
 
-  // local = inv(parentWorld) * oldWorld
   const glm::mat4 newLocal = glm::inverse(parentWorld) * oldWorld;
-  setLocalFromMatrix(child, newLocal);
+
+  // Decompose newLocal into T/R/S (simple approach)
+  glm::vec3 skew;
+  glm::vec4 persp;
+  glm::vec3 scale;
+  glm::quat rot;
+  glm::vec3 trans;
+  glm::decompose(newLocal, scale, rot, trans, skew, persp);
+
+  auto &tr = m_tr.at(child);
+  tr.translation = trans;
+  tr.rotation = rot;
+  tr.scale = scale;
+  tr.dirty = true;
+
+  markWorldDirtyRecursive(child);
+
+  m_events.push({WorldEventType::ParentChanged, child, newParent, oldParent});
+  m_events.push({WorldEventType::TransformChanged, child});
 }
 
-// ----------------------------
-// Roots
-// ----------------------------
+EntityID World::cloneSubtree(EntityID root, EntityID newParent) {
+  if (!isAlive(root))
+    return InvalidEntity;
 
-std::vector<EntityID> World::roots() const {
-  std::vector<EntityID> out;
-  out.reserve(m_aliveList.size());
+  updateTransforms();
 
-  for (EntityID e : m_aliveList) {
-    if (!isAlive(e)) continue;
-    if (hierarchy(e).parent == InvalidEntity) out.push_back(e);
+  const glm::mat4 srcWorld = m_wtr.at(root).world;
+  glm::mat4 parentWorld(1.0f);
+  if (newParent != InvalidEntity && isAlive(newParent))
+    parentWorld = m_wtr.at(newParent).world;
+
+  const glm::mat4 newLocal = glm::inverse(parentWorld) * srcWorld;
+
+  glm::vec3 skew;
+  glm::vec4 persp;
+  glm::vec3 scale;
+  glm::quat rot;
+  glm::vec3 trans;
+  glm::decompose(newLocal, scale, rot, trans, skew, persp);
+
+  EntityID dup = createEntity(m_name.at(root).name);
+
+  auto &tr = m_tr.at(dup);
+  tr.translation = trans;
+  tr.rotation = rot;
+  tr.scale = scale;
+  tr.dirty = true;
+
+  if (newParent != InvalidEntity && isAlive(newParent)) {
+    attachToParent(dup, newParent);
+    m_events.push({WorldEventType::ParentChanged, dup, newParent, InvalidEntity});
   }
-  return out;
+
+  // Copy optional components.
+  if (hasMesh(root)) {
+    m_mesh[dup] = m_mesh.at(root);
+  }
+
+  if (hasCamera(root)) {
+    auto &cam = ensureCamera(dup);
+    cam = m_cam.at(root);
+    cam.dirty = true;
+
+    auto &mats = m_camMat.at(dup);
+    mats = m_camMat.at(root);
+    mats.dirty = true;
+  }
+
+  markWorldDirtyRecursive(dup);
+
+  // Clone children (preserve hierarchy order).
+  EntityID ch = m_hier.at(root).firstChild;
+  while (ch != InvalidEntity) {
+    EntityID next = m_hier.at(ch).nextSibling;
+    cloneSubtree(ch, dup);
+    ch = next;
+  }
+
+  return dup;
 }
 
-// ----------------------------
-// Cloning
-// ----------------------------
+// ---------------- Name ----------------
 
-EntityID World::cloneEntityShallow(EntityID src) {
-  NYX_ASSERT(isAlive(src), "cloneEntityShallow(): src dead");
+CName &World::name(EntityID e) { return m_name.at(e); }
+const CName &World::name(EntityID e) const { return m_name.at(e); }
 
-  EntityID e = createEntity(name(src).name + " Copy");
+void World::setName(EntityID e, const std::string &n) {
+  m_name.at(e).name = n;
+  m_events.push({WorldEventType::NameChanged, e});
+}
 
-  // Copy transform
-  transform(e) = transform(src);
-  transform(e).dirty = true;
+// ---------------- Transform ----------------
 
-  // Preserve world so setParentKeepWorld can compute the right local
-  if (hasWorldTransform(e) && hasWorldTransform(src)) {
-    worldTransform(e).world = worldTransform(src).world;
-    worldTransform(e).dirty = true;
-  }
+CTransform &World::transform(EntityID e) { return m_tr.at(e); }
+const CTransform &World::transform(EntityID e) const { return m_tr.at(e); }
 
-  // Copy mesh
-  if (hasMesh(src)) {
-    const auto& sm = mesh(src);
-    auto& dstMesh =
-        ensureMesh(e, sm.submeshes.front().type, sm.submeshes.size());
+CWorldTransform &World::worldTransform(EntityID e) { return m_wtr.at(e); }
+const CWorldTransform &World::worldTransform(EntityID e) const {
+  return m_wtr.at(e);
+}
 
-    const std::uint32_t n = sm.submeshes.size();
-    for (std::uint32_t i = 0; i < n; ++i) {
-      dstMesh.submeshes[i].material = sm.submeshes[i].material;
+void World::updateTransforms() {
+  // Roots first; DFS propagate
+  // For now we recompute if dirty flags indicate changes; still fast enough.
+
+  auto updateNode = [&](auto &&self, EntityID e,
+                        const glm::mat4 &parentW) -> void {
+    auto &tr = m_tr.at(e);
+    auto &wt = m_wtr.at(e);
+
+    if (tr.dirty) {
+      wt.dirty = true;
+      tr.dirty = false;
+      m_events.push({WorldEventType::TransformChanged, e});
     }
-  }
 
-  return e;
+    if (wt.dirty) {
+      wt.world = parentW * localMatrix(e);
+      wt.dirty = false;
+    }
+
+    // Children inherit
+    EntityID ch = m_hier.at(e).firstChild;
+    while (ch != InvalidEntity) {
+      EntityID next = m_hier.at(ch).nextSibling;
+      // if parent world updated, child must recompute
+      if (wt.dirty == false) {
+        // If parent changed this frame we already marked recursively in
+        // setParentKeepWorld, but keep it safe: if parent got recomputed, child
+        // needs recompute. (in practice parent recompute already happened
+        // above)
+      }
+      self(self, ch, wt.world);
+      ch = next;
+    }
+  };
+
+  for (EntityID r : roots()) {
+    updateNode(updateNode, r, glm::mat4(1.0f));
+  }
 }
 
-EntityID World::cloneSubtree(EntityID src, EntityID newParent) {
-  if (!isAlive(src)) return InvalidEntity;
+// ---------------- Mesh ----------------
 
-  EntityID rootCopy = cloneEntityShallow(src);
-  setParentKeepWorld(rootCopy, newParent);
+bool World::hasMesh(EntityID e) const { return m_mesh.find(e) != m_mesh.end(); }
 
-  // Recursively clone children
-  EntityID c = hierarchy(src).firstChild;
-  while (c != InvalidEntity) {
-    EntityID next = hierarchy(c).nextSibling;
-    cloneSubtree(c, rootCopy);
-    c = next;
+CMesh &World::ensureMesh(EntityID e) {
+  auto it = m_mesh.find(e);
+  if (it != m_mesh.end())
+    return it->second;
+
+  CMesh mc{};
+  mc.submeshes.push_back(MeshSubmesh{});
+  m_mesh.emplace(e, mc);
+
+  m_events.push({WorldEventType::MeshChanged, e});
+  return m_mesh.at(e);
+}
+
+CMesh &World::mesh(EntityID e) { return m_mesh.at(e); }
+const CMesh &World::mesh(EntityID e) const { return m_mesh.at(e); }
+
+uint32_t World::submeshCount(EntityID e) const {
+  auto it = m_mesh.find(e);
+  if (it == m_mesh.end())
+    return 0;
+  return (uint32_t)it->second.submeshes.size();
+}
+
+MeshSubmesh &World::submesh(EntityID e, uint32_t si) {
+  auto &mc = ensureMesh(e);
+  if (mc.submeshes.empty())
+    mc.submeshes.push_back(MeshSubmesh{});
+  if (si >= (uint32_t)mc.submeshes.size())
+    mc.submeshes.resize((size_t)si + 1, MeshSubmesh{});
+  return mc.submeshes[(size_t)si];
+}
+
+// ---------------- Camera ----------------
+
+bool World::hasCamera(EntityID e) const { return m_cam.find(e) != m_cam.end(); }
+
+CCamera &World::ensureCamera(EntityID e) {
+  auto it = m_cam.find(e);
+  if (it != m_cam.end())
+    return it->second;
+
+  m_cam[e] = CCamera{};
+  m_camMat[e] = CCameraMatrices{};
+  m_events.push({WorldEventType::CameraCreated, e});
+
+  // If no active camera yet, make it active automatically
+  if (m_activeCamera == InvalidEntity) {
+    setActiveCamera(e);
+  }
+  return m_cam.at(e);
+}
+
+CCamera &World::camera(EntityID e) { return m_cam.at(e); }
+const CCamera &World::camera(EntityID e) const { return m_cam.at(e); }
+
+CCameraMatrices &World::cameraMatrices(EntityID e) { return m_camMat.at(e); }
+const CCameraMatrices &World::cameraMatrices(EntityID e) const {
+  return m_camMat.at(e);
+}
+
+// ---------------- Light ----------------
+
+bool World::hasLight(EntityID e) const {
+  return m_light.find(e) != m_light.end();
+}
+
+CLight &World::ensureLight(EntityID e) {
+  auto it = m_light.find(e);
+  if (it != m_light.end())
+    return it->second;
+
+  m_light[e] = CLight{};
+  if (!hasMesh(e)) {
+    auto &mc = ensureMesh(e);
+    if (mc.submeshes.empty())
+      mc.submeshes.push_back(MeshSubmesh{});
+    mc.submeshes[0].name = "Light";
+    mc.submeshes[0].type = ProcMeshType::Sphere;
+  }
+  return m_light.at(e);
+}
+
+CLight &World::light(EntityID e) { return m_light.at(e); }
+const CLight &World::light(EntityID e) const { return m_light.at(e); }
+
+void World::setActiveCamera(EntityID cam) {
+  if (cam != InvalidEntity && !isAlive(cam))
+    return;
+  if (cam != InvalidEntity && !hasCamera(cam))
+    return;
+
+  if (m_activeCamera == cam)
+    return;
+
+  const EntityID old = m_activeCamera;
+  m_activeCamera = cam;
+
+  if (m_activeCamera != InvalidEntity) {
+    auto it = m_cam.find(m_activeCamera);
+    if (it != m_cam.end())
+      it->second.dirty = true;
+    auto mit = m_camMat.find(m_activeCamera);
+    if (mit != m_camMat.end())
+      mit->second.dirty = true;
   }
 
-  return rootCopy;
+  m_events.push({WorldEventType::ActiveCameraChanged, cam, old});
 }
+
+void World::setActiveCameraUUID(EntityUUID id) {
+  if (!id) {
+    setActiveCamera(InvalidEntity);
+    return;
+  }
+  EntityID e = findByUUID(id);
+  if (e == InvalidEntity)
+    return;
+  setActiveCamera(e);
+}
+
+EntityUUID World::uuid(EntityID e) const {
+  auto it = m_uuid.find(e);
+  if (it == m_uuid.end())
+    return EntityUUID{0};
+  return it->second;
+}
+
+EntityID World::findByUUID(EntityUUID uuid) const {
+  if (!uuid)
+    return InvalidEntity;
+  auto it = m_entityByUUID.find(uuid.value);
+  if (it == m_entityByUUID.end())
+    return InvalidEntity;
+  return it->second;
+}
+
+void World::setUUIDSeed(uint64_t seed) { m_uuidGen.setSeed(seed); }
 
 } // namespace Nyx

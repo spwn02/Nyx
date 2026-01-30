@@ -1,5 +1,6 @@
 add_subdirectory(glm)
 add_subdirectory(spdlog)
+add_subdirectory(json)
 
 target_compile_definitions(glm PUBLIC GLM_ENABLE_EXPERIMENTAL)
 
@@ -64,6 +65,10 @@ target_include_directories(imguizmo PUBLIC
 
 target_link_libraries(imguizmo PUBLIC imgui)
 
+# ---- stb
+add_library(stb INTERFACE)
+target_include_directories(stb INTERFACE stb)
+
 # Aggregate interface
 target_link_libraries(nyx_thirdparty INTERFACE
   glm::glm
@@ -74,4 +79,6 @@ target_link_libraries(nyx_thirdparty INTERFACE
   xxhash
   imgui
   imguizmo
+  stb
+  nlohmann_json
 )

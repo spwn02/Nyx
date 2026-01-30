@@ -1,8 +1,9 @@
 #pragma once
 
+#include "editor/Selection.h"
+#include "editor/EditorState.h"
 #include "scene/EntityID.h"
 #include <memory>
-#include "editor/Selection.h"
 
 namespace Nyx {
 
@@ -30,6 +31,7 @@ private:
   EntityID m_cycleRoot = InvalidEntity;
   uint32_t m_cycleIndex = 0;
   Selection m_cycleLastSel{};
+  EditorState m_editorState{};
 };
 
 } // namespace Nyx

@@ -20,3 +20,9 @@
 [submodule "extern/ImGuizmo"]
 	path = extern/ImGuizmo
 	url = https://github.com/CedricGuillemet/ImGuizmo.git
+[submodule "extern/stb"]
+	path = extern/stb
+	url = https://github.com/nothings/stb
+[submodule "extern/json"]
+	path = extern/json
+	url = https://github.com/nlohmann/json

@@ -17,8 +17,7 @@ static glm::mat4 trs(const CTransform &t) {
 static void markSubtreeDirty(World &w, EntityID e) {
   if (!w.isAlive(e))
     return;
-  if (w.hasWorldTransform(e))
-    w.worldTransform(e).dirty = true;
+  w.worldTransform(e).dirty = true;
 
   EntityID c = w.hierarchy(e).firstChild;
   while (c != InvalidEntity) {

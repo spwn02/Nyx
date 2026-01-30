@@ -1,11 +1,14 @@
 #include "HierarchyPanel.h"
 
 #include "editor/Selection.h"
+#include "core/Paths.h"
 #include "scene/Pick.h"
+#include "scene/SelectionCycler.h"
 
 #include <algorithm>
 #include <cstdint>
 #include <cstdio>
+#include <filesystem>
 #include <imgui.h>
 #include <vector>
 
@@ -26,6 +29,22 @@ static const char *meshTypeName(ProcMeshType t) {
   default:
     return "Unknown";
   }
+}
+
+static uintptr_t treeId(EntityID e) {
+  return (uintptr_t(e.generation) << 32) | uintptr_t(e.index);
+}
+
+static void DrawAtlasIconAt(const Nyx::IconAtlas &atlas,
+                            const Nyx::AtlasRegion &r, ImVec2 p, ImVec2 size,
+                            ImU32 tint = IM_COL32(220, 220, 220, 255)) {
+  p.x = std::floor(p.x + 0.5f);
+  p.y = std::floor(p.y + 0.5f);
+  size.x = std::floor(size.x + 0.5f);
+  size.y = std::floor(size.y + 0.5f);
+  ImDrawList *dl = ImGui::GetWindowDrawList();
+  dl->AddImage(atlas.imguiTexId(), p, ImVec2(p.x + size.x, p.y + size.y), r.uv0,
+               r.uv1, tint);
 }
 
 static void gatherEntityPicks(World &world, EntityID e,
@@ -62,6 +81,9 @@ static void setSingleEntity(World &world, Selection &sel, EntityID e) {
   sel.picks = tmp;
   sel.activePick = tmp.front();
   sel.activeEntity = e;
+  sel.pickEntity.clear();
+  for (uint32_t p : tmp)
+    sel.pickEntity.emplace(p, e);
 }
 
 static void addEntity(World &world, Selection &sel, EntityID e) {
@@ -73,6 +95,7 @@ static void addEntity(World &world, Selection &sel, EntityID e) {
   if (sel.kind != SelectionKind::Picks) {
     sel.kind = SelectionKind::Picks;
     sel.picks.clear();
+    sel.pickEntity.clear();
   }
 
   for (uint32_t p : tmp) {
@@ -81,6 +104,8 @@ static void addEntity(World &world, Selection &sel, EntityID e) {
   }
   sel.activePick = tmp.front();
   sel.activeEntity = e;
+  for (uint32_t p : tmp)
+    sel.pickEntity.emplace(p, e);
 }
 
 static void toggleEntity(World &world, Selection &sel, EntityID e) {
@@ -115,13 +140,14 @@ static void toggleEntity(World &world, Selection &sel, EntityID e) {
                              return false;
                            }),
             v.end());
+    for (uint32_t p : tmp)
+      sel.pickEntity.erase(p);
 
     if (v.empty()) {
       sel.clear();
     } else {
       sel.activePick = v.back();
-      sel.activeEntity =
-          world.entityFromSlotIndex(pickEntity(sel.activePick));
+      sel.activeEntity = sel.entityForPick(sel.activePick);
     }
   } else {
     for (uint32_t p : tmp) {
@@ -130,6 +156,8 @@ static void toggleEntity(World &world, Selection &sel, EntityID e) {
     }
     sel.activePick = tmp.front();
     sel.activeEntity = e;
+    for (uint32_t p : tmp)
+      sel.pickEntity.emplace(p, e);
   }
 }
 
@@ -152,13 +180,21 @@ static void rangeSelectEntities(World &world, Selection &sel,
 
   sel.kind = SelectionKind::Picks;
   sel.picks.clear();
+  sel.pickEntity.clear();
 
-  for (auto it = ia; it != std::next(ib); ++it)
-    gatherEntityPicks(world, *it, sel.picks);
+  for (auto it = ia; it != std::next(ib); ++it) {
+    std::vector<uint32_t> tmp;
+    gatherEntityPicks(world, *it, tmp);
+    for (uint32_t p : tmp) {
+      sel.picks.push_back(p);
+      sel.pickEntity.emplace(p, *it);
+    }
+  }
 
   if (!sel.picks.empty()) {
     sel.activePick = packPick(b, 0);
     sel.activeEntity = b;
+    sel.pickEntity.emplace(sel.activePick, b);
   } else {
     sel.clear();
   }
@@ -177,7 +213,71 @@ static bool isEntityHighlightedByPicks(const Selection &sel, EntityID e,
   return false;
 }
 
+void HierarchyPanel::setWorld(World *world) {
+  m_roots.clear();
+  m_visibleOrder.clear();
+  if (world)
+    rebuildRoots(*world);
+}
+
+void HierarchyPanel::rebuildRoots(World &world) {
+  m_roots = world.roots();
+}
+
+void HierarchyPanel::addRoot(EntityID e) {
+  if (e == InvalidEntity)
+    return;
+  if (std::find(m_roots.begin(), m_roots.end(), e) != m_roots.end())
+    return;
+  auto it = std::lower_bound(
+      m_roots.begin(), m_roots.end(), e,
+      [](EntityID a, EntityID b) {
+        if (a.index != b.index)
+          return a.index < b.index;
+        return a.generation < b.generation;
+      });
+  m_roots.insert(it, e);
+}
+
+void HierarchyPanel::removeRoot(EntityID e) {
+  m_roots.erase(std::remove(m_roots.begin(), m_roots.end(), e), m_roots.end());
+}
+
+void HierarchyPanel::onWorldEvent(World &world, const WorldEvent &e) {
+  switch (e.type) {
+  case WorldEventType::EntityCreated:
+    if (world.isAlive(e.a) && world.parentOf(e.a) == InvalidEntity)
+      addRoot(e.a);
+    break;
+  case WorldEventType::EntityDestroyed:
+    removeRoot(e.a);
+    break;
+  case WorldEventType::ParentChanged:
+    if (e.b == InvalidEntity)
+      addRoot(e.a);
+    else
+      removeRoot(e.a);
+    break;
+  default:
+    break;
+  }
+}
+
 void HierarchyPanel::draw(World &world, Selection &sel) {
+  if (!m_iconInit) {
+    m_iconInit = true;
+    const std::filesystem::path iconDir = Paths::engineRes() / "icons";
+    const std::filesystem::path jsonPath = Paths::engineRes() / "icon_atlas.json";
+    const std::filesystem::path pngPath = Paths::engineRes() / "icon_atlas.png";
+
+    if (std::filesystem::exists(jsonPath) && std::filesystem::exists(pngPath)) {
+      m_iconReady = m_iconAtlas.loadFromJson(jsonPath.string());
+    } else {
+      m_iconReady = m_iconAtlas.buildFromFolder(
+          iconDir.string(), jsonPath.string(), pngPath.string(), 64, 0);
+    }
+  }
+
   ImGui::Begin("Hierarchy");
 
   m_visibleOrder.clear();
@@ -198,8 +298,7 @@ void HierarchyPanel::draw(World &world, Selection &sel) {
     ImGui::EndDragDropTarget();
   }
 
-  const auto roots = world.roots();
-  for (EntityID e : roots)
+  for (EntityID e : m_roots)
     drawEntityNode(world, e, sel);
 
   ImGui::Dummy(ImVec2(0.0f, 200.0f));
@@ -219,6 +318,16 @@ void HierarchyPanel::drawEntityNode(World &world, EntityID e, Selection &sel) {
   uint32_t storedSubmeshes = 0;
   if (hasMesh)
     storedSubmeshes = (uint32_t)world.mesh(e).submeshes.size();
+
+  const AtlasRegion *iconReg = nullptr;
+  ImU32 iconTint = IM_COL32(188, 128, 78, 255);
+  if (m_iconReady) {
+    if (world.hasCamera(e)) {
+      iconReg = m_iconAtlas.find("camera");
+    } else if (world.hasMesh(e)) {
+      iconReg = m_iconAtlas.find("object");
+    }
+  }
 
   const bool hasChildren = (world.hierarchy(e).firstChild != InvalidEntity);
   const bool hasTreeContent = hasChildren || hasSubmeshes;
@@ -246,7 +355,29 @@ void HierarchyPanel::drawEntityNode(World &world, EntityID e, Selection &sel) {
     std::snprintf(label, sizeof(label), "%s", nm.c_str());
   }
 
-  const bool open = ImGui::TreeNodeEx((void *)(uintptr_t)e, flags, "%s", label);
+  const float frameH = ImGui::GetFrameHeight();
+  const float iconSize = std::min(16.0f, std::max(8.0f, frameH - 2.0f));
+  const float iconGap = 4.0f;
+  std::string paddedLabel;
+  if (iconReg) {
+    const float spaceW = ImGui::CalcTextSize(" ").x;
+    const float padWidth = iconSize + iconGap;
+    const int padSpaces = (int)std::ceil(padWidth / spaceW);
+    paddedLabel.assign((size_t)padSpaces, ' ');
+    paddedLabel += label;
+  }
+
+  const char *drawLabel = iconReg ? paddedLabel.c_str() : label;
+  const bool open =
+      ImGui::TreeNodeEx((void *)treeId(e), flags, "%s", drawLabel);
+
+  if (iconReg) {
+    const ImVec2 itemMin = ImGui::GetItemRectMin();
+    const float labelStartX = itemMin.x + ImGui::GetTreeNodeToLabelSpacing();
+    const float iconY = itemMin.y + (frameH - iconSize) * 0.5f - 2.0f;
+    DrawAtlasIconAt(m_iconAtlas, *iconReg, ImVec2(labelStartX, iconY),
+                    ImVec2(iconSize, iconSize), iconTint);
+  }
 
   // ENTITY click selection
   if (ImGui::IsItemClicked(ImGuiMouseButton_Left)) {
@@ -262,7 +393,19 @@ void HierarchyPanel::drawEntityNode(World &world, EntityID e, Selection &sel) {
     } else if (ctrl) {
       toggleEntity(world, sel, e);
     } else {
-      setSingleEntity(world, sel, e);
+      std::vector<CycleTarget> targets;
+      buildCycleTargets(world, e, targets, true);
+      if (!targets.empty()) {
+        uint32_t &idx = sel.cycleIndexByEntity[e];
+        if (idx >= (uint32_t)targets.size())
+          idx = 0;
+        const CycleTarget t = targets[idx];
+        idx = (idx + 1u) % (uint32_t)targets.size();
+        const uint32_t pid = packPick(t.entity, t.submesh);
+        sel.setSinglePick(pid, t.entity);
+      } else {
+        setSingleEntity(world, sel, e);
+      }
     }
   }
 
@@ -302,7 +445,7 @@ void HierarchyPanel::drawEntityNode(World &world, EntityID e, Selection &sel) {
       if (subSel)
         sflags |= ImGuiTreeNodeFlags_Selected;
 
-      const uintptr_t subId = (uintptr_t)e ^ (uintptr_t(0xA1B20000u) + si);
+      const uintptr_t subId = treeId(e) ^ (uintptr_t(0xA1B20000u) + si);
       const bool subOpen =
           ImGui::TreeNodeEx((void *)subId, sflags, "%s", sm.name.c_str());
 
@@ -313,11 +456,11 @@ void HierarchyPanel::drawEntityNode(World &world, EntityID e, Selection &sel) {
         const bool shift = io.KeyShift;
 
         if (ctrl) {
-          sel.togglePick(pid);
+          sel.togglePick(pid, e);
         } else if (shift) {
-          sel.addPick(pid);
+          sel.addPick(pid, e);
         } else {
-          sel.setSinglePick(pid);
+          sel.setSinglePick(pid, e);
         }
         sel.activeEntity = e;
       }
@@ -335,21 +478,18 @@ void HierarchyPanel::drawEntityNode(World &world, EntityID e, Selection &sel) {
         if (sel.kind == SelectionKind::Picks && sel.activePick == pid)
           mflags |= ImGuiTreeNodeFlags_Selected;
 
-        const uintptr_t matId = (uintptr_t)e ^ (uintptr_t(0x9E370000u) + si);
+        const uintptr_t matId = treeId(e) ^ (uintptr_t(0x9E370000u) + si);
         ImGui::TreeNodeEx((void *)matId, mflags, "Material");
 
         if (ImGui::IsItemClicked(ImGuiMouseButton_Left)) {
-          // ensure material exists
-          (void)world.materialHandle(e, si);
-
           // set active pick to this submesh; keep multi-selection if ctrl/shift
           ImGuiIO &io = ImGui::GetIO();
           if (io.KeyCtrl) {
-            sel.togglePick(pid);
+            sel.togglePick(pid, e);
           } else if (io.KeyShift) {
-            sel.addPick(pid);
+            sel.addPick(pid, e);
           } else {
-            sel.setSinglePick(pid);
+            sel.setSinglePick(pid, e);
           }
           sel.activeEntity = e;
         }

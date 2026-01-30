@@ -1,12 +1,26 @@
 #pragma once
 
-#include "EditorCamera.h"
 #include "editor/GizmoState.h"
 #include <expected>
+#include <glm/glm.hpp>
 #include <string>
 #include <unordered_map>
 
 namespace Nyx {
+
+struct EditorCameraPersist final {
+  glm::vec3 position{0.0f, 1.5f, 3.0f};
+  float yawDeg = -90.0f;
+  float pitchDeg = 0.0f;
+
+  float fovYDeg = 60.0f;
+  float nearZ = 0.01f;
+  float farZ = 2000.0f;
+
+  float speed = 6.0f;
+  float boostMul = 2.0f;
+  float sensitivity = 0.12f; // deg per pixel (tweakable)
+};
 
 struct EditorPanels final {
   bool viewport = true;
@@ -19,10 +33,14 @@ struct EditorPanels final {
 };
 
 struct EditorPersistState final {
-  EditorCamera camera{};
+  EditorCameraPersist camera{};
 
   GizmoOp gizmoOp = GizmoOp::Translate;
   GizmoMode gizmoMode = GizmoMode::Local;
+  bool gizmoUseSnap = false;
+  float gizmoSnapTranslate = 0.5f;
+  float gizmoSnapRotateDeg = 15.0f;
+  float gizmoSnapScale = 0.1f;
 
   EditorPanels panels{};
 

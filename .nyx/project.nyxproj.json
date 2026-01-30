@@ -1,0 +1,32 @@
+{
+  "DockFallbackApplied": true,
+  "Viewport": {
+    "Exposure": 0,
+    "MSAA": 1,
+    "ViewMode": 0,
+    "ShowSelectionOutline": true,
+    "ShowGizmos": true,
+    "ShowGrid": true
+  },
+  "Panels": {
+    "Graph": false,
+    "Console": false,
+    "Stats": true,
+    "Viewport": true,
+    "Inspector": true,
+    "Assets": false,
+    "Hierarchy": true
+  },
+  "GizmoOp": 1,
+  "ActiveCamera": 8.11256e+18,
+  "RecentScenes": [
+    "/home/spawn/dev/cpp/projects/Nyx/scene.json",
+    "scene.json"
+  ],
+  "AutoSave": true,
+  "GizmoMode": 1,
+  "UUIDSeed": 8.45975e+18,
+  "LastScene": "/home/spawn/dev/cpp/projects/Nyx/scene.json",
+  "version": 1,
+  "type": "NyxProject"
+}

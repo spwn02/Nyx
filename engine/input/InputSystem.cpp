@@ -40,6 +40,8 @@ Key InputSystem::mapGLFWKey(int key) {
     return Key::E;
   case GLFW_KEY_X:
     return Key::X;
+  case GLFW_KEY_R:
+    return Key::R;
   case GLFW_KEY_DELETE:
     return Key::Delete;
   case GLFW_KEY_SPACE:

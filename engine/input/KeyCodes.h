@@ -15,6 +15,7 @@ enum class Key : uint16_t {
   Q,
   E,
   X,
+  R,
   Space,
   Delete,
   LeftShift,

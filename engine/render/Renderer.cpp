@@ -7,10 +7,11 @@
 #include "app/EngineContext.h"
 #include "npgms/MeshCPU.h"
 #include "npgms/PrimitiveGenerator.h"
-#include "render/rg/RenderContext.h"
+#include "render/rg/RenderPassContext.h"
 #include "scene/RenderableRegistry.h"
 
 #include <array>
+#include <cstdlib>
 #include <filesystem>
 #include <fstream>
 #include <glad/glad.h>
@@ -35,11 +36,17 @@ static std::string readTextFile(const std::string &path) {
   return buffer.str();
 }
 
-static constexpr uint32_t kSelectedIDsBinding = 15;
-
 Renderer::Renderer() : m_rgRes(m_res) {
   m_fsTri.init();
-  m_tonemap.init();
+  m_passTonemap.init();
+
+  const char *rgDump = std::getenv("NYX_RG_DUMP");
+  if (rgDump && rgDump[0] != '\0' && rgDump[0] != '0') {
+    std::filesystem::path path =
+        std::filesystem::current_path() / ".nyx" / "rendergraph.dot";
+    std::filesystem::create_directories(path.parent_path());
+    m_graph.enableDebug(path.string(), /*dumpLifetimes=*/true);
+  }
 
   std::string kPresentVS = readTextFile(Paths::shader("present.vert"));
   std::string kPresentFS = readTextFile(Paths::shader("present.frag"));
@@ -80,10 +87,21 @@ Renderer::Renderer() : m_rgRes(m_res) {
   glNamedBufferData(m_selectedSSBO,
                     (GLsizeiptr)(init.size() * sizeof(uint32_t)), init.data(),
                     GL_DYNAMIC_DRAW);
+
+  m_passDepthPre.configure(
+      m_hdrFbo, m_forwardProg,
+      [this](ProcMeshType t) { drawPrimitive(t); });
+  m_passForward.configure(
+      m_hdrFbo, m_forwardProg,
+      [this](ProcMeshType t) { drawPrimitive(t); });
+  m_passPost.configure(m_hdrFbo, m_presentProg, &m_fsTri);
+  m_passSelection.configure(m_outlineFbo, m_outlineProg, &m_fsTri,
+                            m_selectedSSBO);
+  m_passPresent.configure(m_presentProg, &m_fsTri);
 }
 
 Renderer::~Renderer() {
-  m_tonemap.shutdown();
+  m_passTonemap.shutdown();
   m_fsTri.shutdown();
 
   if (m_presentProg)
@@ -140,168 +158,71 @@ void Renderer::drawPrimitive(ProcMeshType t) {
   m_primMeshes[i].draw();
 }
 
-uint32_t Renderer::renderFrame(const RenderContext &ctx, bool editorVisible,
+uint32_t Renderer::renderFrame(const RenderPassContext &ctx, bool editorVisible,
                                const RenderableRegistry &registry,
                                const std::vector<uint32_t> &selectedPickIDs,
                                EngineContext &engine) {
   // Selection SSBO for outline
   setSelectedPickIDs(selectedPickIDs);
-  const bool wantOutline = (m_selectedCount > 0);
 
   // Begin RG frame
   m_graph.reset();
   m_rgRes.beginFrame(ctx.frameIndex, ctx.fbWidth, ctx.fbHeight);
 
-  const RGTexDesc hdrDesc{ctx.fbWidth, ctx.fbHeight, RGFormat::RGBA16F};
-  const RGTexDesc depDesc{ctx.fbWidth, ctx.fbHeight, RGFormat::Depth32F};
-  const RGTexDesc idDesc{ctx.fbWidth, ctx.fbHeight, RGFormat::R32UI};
-  const RGTexDesc ldrDesc{ctx.fbWidth, ctx.fbHeight, RGFormat::RGBA8};
+  const RenderTextureDesc depthDesc{
+      .format = RGFormat::Depth32F,
+      .usage = RGTexUsage::DepthAttach | RGTexUsage::Sampled,
+      .extent = {RenderExtentKind::Framebuffer, 0, 0},
+  };
+  const RenderTextureDesc hdrDesc{
+      .format = RGFormat::RGBA16F,
+      .usage = RGTexUsage::ColorAttach | RGTexUsage::Sampled,
+      .extent = {RenderExtentKind::Framebuffer, 0, 0},
+  };
+  const RenderTextureDesc idDesc{
+      .format = RGFormat::R32UI,
+      .usage = RGTexUsage::ColorAttach | RGTexUsage::Sampled,
+      .extent = {RenderExtentKind::Framebuffer, 0, 0},
+  };
+  const RenderTextureDesc postInDesc{
+      .format = RGFormat::RGBA8,
+      .usage = RGTexUsage::Sampled | RGTexUsage::Image,
+      .extent = {RenderExtentKind::Framebuffer, 0, 0},
+  };
+  const RenderTextureDesc ldrDesc{
+      .format = RGFormat::RGBA8,
+      .usage = RGTexUsage::ColorAttach | RGTexUsage::Sampled,
+      .extent = {RenderExtentKind::Framebuffer, 0, 0},
+  };
+  const RenderTextureDesc outDesc{
+      .format = RGFormat::RGBA8,
+      .usage = RGTexUsage::ColorAttach | RGTexUsage::Sampled,
+      .extent = {RenderExtentKind::Framebuffer, 0, 0},
+  };
 
-  m_out.hdr = m_rgRes.acquireTex("HDRColor", hdrDesc);
-  m_out.depth = m_rgRes.acquireTex("Depth", depDesc);
-  m_out.id = m_rgRes.acquireTex("ID", idDesc);
-  m_out.ldr = m_rgRes.acquireTex("LDR", ldrDesc);
-  m_out.outlined =
-      wantOutline ? m_rgRes.acquireTex("Outlined", ldrDesc) : InvalidRG;
+  m_graph.declareTexture("Depth.Pre", depthDesc);
+  m_graph.declareTexture("HDR.Color", hdrDesc);
+  m_graph.declareTexture("ID.Submesh", idDesc);
+  m_graph.declareTexture("Post.In", postInDesc);
+  m_graph.declareTexture("LDR.Color", ldrDesc);
+  m_graph.declareTexture("OUT.Color", outDesc);
+  m_passDepthPre.setup(m_graph, ctx, registry, engine, editorVisible);
+  m_passForward.setup(m_graph, ctx, registry, engine, editorVisible);
+  m_passTonemap.setup(m_graph, ctx, registry, engine, editorVisible);
+  m_passPost.setup(m_graph, ctx, registry, engine, editorVisible);
+  m_passSelection.setup(m_graph, ctx, registry, engine, editorVisible);
+  m_passPresent.setup(m_graph, ctx, registry, engine, editorVisible);
 
-  // ------------------------------------------------------------
-  // Pass: ForwardPlusHDR (PBR stub)
-  // Writes: HDRColor + ID + Depth
-  // ------------------------------------------------------------
-  m_graph.addPass("ForwardPlusHDR", [&](RGResources &rg) {
-    const auto &hdrT = rg.tex(m_out.hdr);
-    const auto &depT = rg.tex(m_out.depth);
-    const auto &idT = rg.tex(m_out.id);
+  m_graph.execute(ctx, m_rgRes);
 
-    glBindFramebuffer(GL_FRAMEBUFFER, m_hdrFbo);
+  auto &bb = m_graph.blackboard();
+  m_out.hdr = bb.textureHandle(bb.getTexture("HDR.Color"));
+  m_out.id = bb.textureHandle(bb.getTexture("ID.Submesh"));
+  m_out.depth = bb.textureHandle(bb.getTexture("Depth.Pre"));
+  m_out.ldr = bb.textureHandle(bb.getTexture("LDR.Color"));
+  m_out.outlined = bb.textureHandle(bb.getTexture("OUT.Color"));
 
-    glNamedFramebufferTexture(m_hdrFbo, GL_COLOR_ATTACHMENT0, hdrT.tex, 0);
-    glNamedFramebufferTexture(m_hdrFbo, GL_COLOR_ATTACHMENT1, idT.tex, 0);
-    glNamedFramebufferTexture(m_hdrFbo, GL_DEPTH_ATTACHMENT, depT.tex, 0);
-
-    const std::array<GLenum, 2> bufs{GL_COLOR_ATTACHMENT0,
-                                     GL_COLOR_ATTACHMENT1};
-    glNamedFramebufferDrawBuffers(m_hdrFbo, (GLsizei)bufs.size(), bufs.data());
-
-    NYX_ASSERT(glCheckNamedFramebufferStatus(m_hdrFbo, GL_FRAMEBUFFER) ==
-                   GL_FRAMEBUFFER_COMPLETE,
-               "HDR framebuffer incomplete");
-
-    glViewport(0, 0, (int)ctx.fbWidth, (int)ctx.fbHeight);
-    glEnable(GL_DEPTH_TEST);
-    glDepthFunc(GL_LESS);
-
-    // Clears
-    const float clearC[4] = {0.1f, 0.1f, 0.2f, 0.0f};
-    glClearBufferfv(GL_COLOR, 0, clearC);
-
-    const uint32_t clearID[1] = {0u};
-    glClearBufferuiv(GL_COLOR, 1, clearID);
-
-    const float clearZ[1] = {1.0f};
-    glClearBufferfv(GL_DEPTH, 0, clearZ);
-
-    // Materials
-    engine.materials().uploadIfDirty();
-    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 14, engine.materials().ssbo());
-
-    glUseProgram(m_forwardProg);
-
-    const int locVP = glGetUniformLocation(m_forwardProg, "u_ViewProj");
-    const int locM = glGetUniformLocation(m_forwardProg, "u_Model");
-    const int locPick = glGetUniformLocation(m_forwardProg, "u_PickID");
-    const int locVM = glGetUniformLocation(m_forwardProg, "u_ViewMode");
-    const int locMat = glGetUniformLocation(m_forwardProg, "u_MaterialIndex");
-    glUniform1ui(locVM, static_cast<uint32_t>(engine.viewMode()));
-
-    glUniformMatrix4fv(locVP, 1, GL_FALSE, &ctx.viewProj[0][0]);
-
-    for (const auto &r : registry.all()) {
-      glUniformMatrix4fv(locM, 1, GL_FALSE, &r.model[0][0]);
-      glUniform1ui(locPick, r.pickID);
-      glUniform1ui(locMat, r.materialGpuIndex);
-      drawPrimitive(r.mesh);
-    }
-  });
-
-  // ------------------------------------------------------------
-  // Pass: Tonemap (HDR -> LDR)
-  // ------------------------------------------------------------
-  m_graph.addPass("Tonemap", [&](RGResources &rg) {
-    const auto &hdrT = rg.tex(m_out.hdr);
-    const auto &ldrT = rg.tex(m_out.ldr);
-    m_tonemap.dispatch(hdrT.tex, ldrT.tex, ctx.fbWidth, ctx.fbHeight,
-                       /*exposure=*/1.0f,
-                       /*applyGamma=*/true);
-  });
-
-  // ------------------------------------------------------------
-  // Pass: Outline (optional) preserves original shading
-  // Reads: LDR + Depth + ID
-  // Writes: Outlined
-  // ------------------------------------------------------------
-  m_graph.addPass("Outline", [&](RGResources &rg) {
-    if (!wantOutline)
-      return;
-
-    const auto &ldrT = rg.tex(m_out.ldr);
-    const auto &depT = rg.tex(m_out.depth);
-    const auto &idT = rg.tex(m_out.id);
-    const auto &outT = rg.tex(m_out.outlined);
-
-    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, kSelectedIDsBinding,
-                     m_selectedSSBO);
-
-    glBindFramebuffer(GL_FRAMEBUFFER, m_outlineFbo);
-    glNamedFramebufferTexture(m_outlineFbo, GL_COLOR_ATTACHMENT0, outT.tex, 0);
-
-    const GLenum drawBuf = GL_COLOR_ATTACHMENT0;
-    glNamedFramebufferDrawBuffers(m_outlineFbo, 1, &drawBuf);
-
-    NYX_ASSERT(glCheckNamedFramebufferStatus(m_outlineFbo, GL_FRAMEBUFFER) ==
-                   GL_FRAMEBUFFER_COMPLETE,
-               "Outline framebuffer incomplete");
-
-    glViewport(0, 0, (int)ctx.fbWidth, (int)ctx.fbHeight);
-    glDisable(GL_DEPTH_TEST);
-
-    glUseProgram(m_outlineProg);
-    glBindVertexArray(m_fsTri.vao);
-
-    glBindTextureUnit(0, ldrT.tex); // uSceneColor
-    glBindTextureUnit(1, depT.tex); // uDepth
-    glBindTextureUnit(2, idT.tex);  // uID
-
-    glDrawArrays(GL_TRIANGLES, 0, 3);
-  });
-
-  // ------------------------------------------------------------
-  // Pass: Present (fullscreen only)
-  // ------------------------------------------------------------
-  m_graph.addPass("Present", [&](RGResources &rg) {
-    if (editorVisible)
-      return;
-
-    glBindFramebuffer(GL_FRAMEBUFFER, 0);
-    glViewport(0, 0, (int)ctx.fbWidth, (int)ctx.fbHeight);
-    glDisable(GL_DEPTH_TEST);
-
-    glUseProgram(m_presentProg);
-    glBindVertexArray(m_fsTri.vao);
-
-    const auto &finalT =
-        wantOutline ? rg.tex(m_out.outlined) : rg.tex(m_out.ldr);
-    glBindTextureUnit(0, finalT.tex);
-
-    glDrawArrays(GL_TRIANGLES, 0, 3);
-  });
-
-  // Execute graph
-  m_graph.execute(m_rgRes);
-
-  // Editor wants the final texture id
-  const auto &finalT =
-      wantOutline ? m_rgRes.tex(m_out.outlined) : m_rgRes.tex(m_out.ldr);
+  const auto &finalT = m_rgRes.tex(m_out.outlined);
   return finalT.tex;
 }
 

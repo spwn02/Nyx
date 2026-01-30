@@ -23,20 +23,20 @@ struct PickKey {
 };
 
 inline uint32_t packPick(EntityID e, uint32_t submesh) {
-  const uint32_t ee = static_cast<uint32_t>(e) & Pick_EntityMask;
+  const uint32_t ee = static_cast<uint32_t>(e.index) & Pick_EntityMask;
   const uint32_t ss = (submesh & Pick_SubmeshMask) << Pick_EntityBits;
   return ss | ee;
 }
 
 inline PickKey unpackPick(uint32_t pick) {
   PickKey k;
-  k.entity = static_cast<EntityID>(pick & Pick_EntityMask);
+  k.entity.index = pick & Pick_EntityMask;
   k.submesh = (pick >> Pick_EntityBits) & Pick_SubmeshMask;
   return k;
 }
 
-inline EntityID pickEntity(uint32_t pick) {
-  return static_cast<EntityID>(pick & Pick_EntityMask);
+inline uint32_t pickEntity(uint32_t pick) {
+  return pick & Pick_EntityMask;
 }
 
 inline uint32_t pickSubmesh(uint32_t pick) {

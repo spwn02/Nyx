@@ -44,20 +44,97 @@ void AddMenu::tick(World &world, Selection &sel, bool allowOpen) {
 
     ImGui::Separator();
 
-    struct Item { const char *label; ProcMeshType type; };
+    struct Item {
+      const char *label;
+      int kind;
+      ProcMeshType type;
+    };
+    enum : int {
+      ItemMesh = 0,
+      ItemCameraPersp = 100,
+      ItemCameraOrtho = 101,
+      ItemLightPoint = 200,
+      ItemLightSpot = 201,
+      ItemLightDirectional = 202,
+    };
     const Item items[] = {
-        {"Mesh / Cube", ProcMeshType::Cube},
-        {"Mesh / Plane", ProcMeshType::Plane},
-        {"Mesh / Circle", ProcMeshType::Circle},
-        {"Mesh / Sphere", ProcMeshType::Sphere},
-        {"Mesh / Monkey (Suzanne)", ProcMeshType::Monkey},
+        {"Mesh / Cube", ItemMesh, ProcMeshType::Cube},
+        {"Mesh / Plane", ItemMesh, ProcMeshType::Plane},
+        {"Mesh / Circle", ItemMesh, ProcMeshType::Circle},
+        {"Mesh / Sphere", ItemMesh, ProcMeshType::Sphere},
+        {"Mesh / Monkey (Suzanne)", ItemMesh, ProcMeshType::Monkey},
+        {"Camera / Perspective", ItemCameraPersp, ProcMeshType::Cube},
+        {"Camera / Orthographic", ItemCameraOrtho, ProcMeshType::Cube},
+        {"Light / Point", ItemLightPoint, ProcMeshType::Sphere},
+        {"Light / Spot", ItemLightSpot, ProcMeshType::Sphere},
+        {"Light / Directional", ItemLightDirectional, ProcMeshType::Sphere},
     };
 
     for (const auto &it : items) {
-      if (!passFilter(m_filter, it.label)) continue;
+      if (!passFilter(m_filter, it.label))
+        continue;
 
       if (ImGui::Selectable(it.label)) {
-        spawn(world, sel, it.type);
+        if (it.kind == ItemMesh) {
+          spawn(world, sel, it.type);
+        } else if (it.kind == ItemCameraPersp ||
+                   it.kind == ItemCameraOrtho) {
+          EntityID e = world.createEntity(
+              it.kind == ItemCameraPersp ? "Camera" : "Ortho Camera");
+          auto &cam = world.ensureCamera(e);
+          cam.projection = (it.kind == ItemCameraPersp)
+                               ? CameraProjection::Perspective
+                               : CameraProjection::Orthographic;
+          cam.dirty = true;
+
+          auto &mc = world.ensureMesh(e);
+          if (mc.submeshes.empty())
+            mc.submeshes.push_back(MeshSubmesh{});
+          mc.submeshes[0].name = "Camera Body";
+          mc.submeshes[0].type = ProcMeshType::Cube;
+
+          auto &tr = world.transform(e);
+          tr.translation = {0.0f, 2.0f, 6.0f};
+          tr.scale = {1.0f, 1.0f, 1.0f};
+          tr.dirty = true;
+
+          world.setActiveCamera(e);
+          sel.setSinglePick(packPick(e, 0), e);
+          sel.activeEntity = e;
+        } else if (it.kind == ItemLightPoint || it.kind == ItemLightSpot ||
+                   it.kind == ItemLightDirectional) {
+          const char *name = "Point Light";
+          LightType lt = LightType::Point;
+          if (it.kind == ItemLightSpot) {
+            name = "Spot Light";
+            lt = LightType::Spot;
+          } else if (it.kind == ItemLightDirectional) {
+            name = "Directional Light";
+            lt = LightType::Directional;
+          }
+
+          EntityID e = world.createEntity(name);
+          auto &L = world.ensureLight(e);
+          L.type = lt;
+          L.intensity = (lt == LightType::Directional) ? 5.0f : 80.0f;
+          L.radius = (lt == LightType::Directional) ? 0.0f : 8.0f;
+          L.color = {1.0f, 1.0f, 1.0f};
+          L.enabled = true;
+
+          auto &mc = world.ensureMesh(e);
+          if (mc.submeshes.empty())
+            mc.submeshes.push_back(MeshSubmesh{});
+          mc.submeshes[0].name = "Light";
+          mc.submeshes[0].type = ProcMeshType::Sphere;
+
+          auto &tr = world.transform(e);
+          tr.translation = {0.0f, 2.0f, 0.0f};
+          tr.scale = {0.1f, 0.1f, 0.1f};
+          tr.dirty = true;
+
+          sel.setSinglePick(packPick(e, 0), e);
+          sel.activeEntity = e;
+        }
         ImGui::CloseCurrentPopup();
       }
     }
@@ -80,21 +157,19 @@ void AddMenu::spawn(World &world, Selection &sel, ProcMeshType t) {
   EntityID e = world.createEntity(baseName);
 
   // ensure mesh + submesh 0 exists
-  auto &mc = world.ensureMesh(e, t, 1);
+  auto &mc = world.ensureMesh(e);
   if (mc.submeshes.empty())
     mc.submeshes.push_back(MeshSubmesh{});
 
   mc.submeshes[0].name = "Submesh 0";
-  // mc.submeshes[0].type = t;
+  mc.submeshes[0].type = t;
 
-  // ensure material exists for submesh0
-  (void)world.materialHandle(e, 0);
 
   auto &tr = world.transform(e);
   tr.translation = {0.0f, 0.0f, 0.0f};
   tr.scale = {1.0f, 1.0f, 1.0f};
 
-  sel.setSinglePick(packPick(e, 0));
+  sel.setSinglePick(packPick(e, 0), e);
   sel.activeEntity = e;
 }
 

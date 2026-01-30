@@ -15,6 +15,12 @@ struct Renderable {
 
   uint32_t pickID = 0; // packed entity + submesh
   uint32_t materialGpuIndex = 0; // index into material SSBO
+
+  bool isLight = false;
+  bool isCamera = false;
+  glm::vec3 lightColor{1.0f};
+  float lightIntensity = 1.0f;
+  float lightExposure = 0.0f;
 };
 
 } // namespace Nyx

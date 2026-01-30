@@ -1,8 +1,7 @@
 #pragma once
 
-#include "EntityID.h"
-#include "material/MaterialHandle.h"
-
+#include "../material/MaterialHandle.h"
+#include "scene/EntityID.h"
 #include <glm/glm.hpp>
 #include <glm/gtx/quaternion.hpp>
 #include <string>
@@ -11,10 +10,13 @@
 namespace Nyx {
 
 // Hierarchy storage: sibling-linked tree
-// - parent points to parent entity (or InvalidEntity if root)
-// - firstChild points to first child
-// - nextSibling creates a forward linked list under the same parent
 struct CHierarchy final {
+  // Tree links
+  // - parent: InvalidEntity if root
+  // - firstChild: first child entity
+  // - nextSibling: next child under same parent
+  // - prevSibling: optional but makes detach O(1)
+  // - lastChild: optional, enables appendChild O(1)
   EntityID parent = InvalidEntity;
   EntityID firstChild = InvalidEntity;
   EntityID nextSibling = InvalidEntity;
@@ -26,15 +28,15 @@ struct CName final {
 
 struct CTransform final {
   glm::vec3 translation{0.0f};
-  glm::quat rotation{1.0f, 0.0f, 0.0f, 0.0f}; // w, x, y, z
+  glm::quat rotation{1.0f, 0.0f, 0.0f, 0.0f}; // w,x,y,z
   glm::vec3 scale{1.0f};
 
-  bool dirty = true; // local changed
+  bool dirty = true;
 };
 
 struct CWorldTransform final {
   glm::mat4 world{1.0f};
-  bool dirty = true; // needs recompute
+  bool dirty = true;
 };
 
 enum class ProcMeshType : uint8_t {
@@ -53,6 +55,32 @@ struct MeshSubmesh final {
 
 struct CMesh final {
   std::vector<MeshSubmesh> submeshes;
+};
+
+// Phase 2: unified light component (you said you already generalized it)
+enum class LightType : uint8_t {
+  Directional = 0,
+  Point,
+  Spot,
+};
+
+struct CLight final {
+  LightType type = LightType::Point;
+
+  glm::vec3 color{1.0f};
+  float intensity = 10.0f; // “watts-ish” / artistic
+
+  // Point/Spot: radius controls attenuation range
+  float radius = 5.0f;
+
+  // Spot: inner/outer cone (radians)
+  float innerAngle = glm::radians(15.0f);
+  float outerAngle = glm::radians(25.0f);
+
+  // “exposure-ish” multiplier for artistic control
+  float exposure = 0.0f;
+
+  bool enabled = true;
 };
 
 } // namespace Nyx

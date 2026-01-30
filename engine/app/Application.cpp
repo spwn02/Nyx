@@ -8,6 +8,10 @@
 
 #include "../editor/EditorLayer.h"
 #include "../editor/Selection.h"
+#include "editor/DockspaceLayout.h"
+#include "editor/EditorStateIO.h"
+#include "editor/ProjectSerializer.h"
+#include "editor/ViewportPick.h"
 
 #include "../input/KeyCodes.h"
 #include "../platform/GLFWWindow.h"
@@ -17,10 +21,13 @@
 #include "scene/EntityID.h"
 #include "scene/Pick.h"
 #include "scene/World.h"
+#include "scene/WorldSerializer.h"
 
 #include <GLFW/glfw3.h>
+#include <cmath>
 #include <filesystem>
 #include <imgui.h>
+#include <glm/gtx/quaternion.hpp>
 
 #include <algorithm>
 #include <vector>
@@ -47,25 +54,70 @@ static bool isCtrlDown(const InputSystem &in) {
   return in.isDown(Key::LeftCtrl) || in.isDown(Key::RightCtrl);
 }
 
-static void releaseMouseCapture(GLFWwindow *w, EditorCamera &cam) {
+static glm::vec3 cameraFront(float yawDeg, float pitchDeg) {
+  const float yaw = glm::radians(yawDeg);
+  const float pit = glm::radians(pitchDeg);
+  glm::vec3 f{cos(yaw) * cos(pit), sin(pit), sin(yaw) * cos(pit)};
+  return glm::normalize(f);
+}
+
+static glm::quat cameraRotation(const glm::vec3 &front) {
+  const glm::vec3 up(0.0f, 1.0f, 0.0f);
+  const glm::vec3 f = glm::normalize(front);
+  const glm::vec3 r = glm::normalize(glm::cross(f, up));
+  const glm::vec3 u = glm::cross(r, f);
+  glm::mat3 m(1.0f);
+  m[0] = r;
+  m[1] = u;
+  m[2] = -f;
+  return glm::quat_cast(m);
+}
+
+static void applyEditorCameraController(World &world, EntityID camEnt,
+                                        const EditorCameraController &ctrl) {
+  if (camEnt == InvalidEntity || !world.isAlive(camEnt) ||
+      !world.hasCamera(camEnt))
+    return;
+
+  auto &tr = world.transform(camEnt);
+  tr.translation = ctrl.position;
+  tr.rotation = cameraRotation(cameraFront(ctrl.yawDeg, ctrl.pitchDeg));
+  tr.dirty = true;
+
+  auto &cam = world.ensureCamera(camEnt);
+  cam.fovYDeg = ctrl.fovYDeg;
+  cam.nearZ = ctrl.nearZ;
+  cam.farZ = ctrl.farZ;
+  cam.dirty = true;
+}
+
+static void releaseMouseCapture(GLFWwindow *w, EditorCameraController &cam) {
   if (!cam.mouseCaptured)
     return;
   glfwSetInputMode(w, GLFW_CURSOR, GLFW_CURSOR_NORMAL);
   cam.mouseCaptured = false;
 }
 
-static void captureMouse(GLFWwindow *w, EditorCamera &cam) {
+static void captureMouse(GLFWwindow *w, EditorCameraController &cam) {
   if (cam.mouseCaptured)
     return;
   glfwSetInputMode(w, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
   cam.mouseCaptured = true;
 }
 
-static void applyViewportPickToSelection(const World &world, uint32_t pid,
+static EntityID resolvePickEntity(EngineContext &engine, const Selection &sel,
+                                  uint32_t pid) {
+  EntityID e = sel.entityForPick(pid);
+  if (e != InvalidEntity)
+    return e;
+  const uint32_t slotIndex = pickEntity(pid);
+  return engine.resolveEntityIndex(slotIndex);
+}
+
+static void applyViewportPickToSelection(EngineContext &engine, uint32_t pid,
                                          bool ctrl, bool shift,
                                          Selection &sel) {
-  const uint32_t slotIndex = pickEntity(pid);
-  const EntityID e = world.entityFromSlotIndex(slotIndex);
+  const EntityID e = resolvePickEntity(engine, sel, pid);
   if (pid == 0u || e == InvalidEntity) {
     if (!ctrl)
       sel.clear();
@@ -73,11 +125,11 @@ static void applyViewportPickToSelection(const World &world, uint32_t pid,
   }
 
   if (ctrl) {
-    sel.togglePick(pid);
+    sel.togglePick(pid, e);
   } else if (shift) {
-    sel.addPick(pid);
+    sel.addPick(pid, e);
   } else {
-    sel.setSinglePick(pid);
+    sel.setSinglePick(pid, e);
   }
 
   sel.activeEntity = e;
@@ -99,15 +151,25 @@ static void deleteSelection(World &world, Selection &sel) {
   std::vector<EntityID> ents;
   ents.reserve(sel.picks.size());
   for (uint32_t p : sel.picks) {
-    EntityID e = world.entityFromSlotIndex(pickEntity(p));
+    EntityID e = sel.entityForPick(p);
     if (e != InvalidEntity)
       ents.push_back(e);
   }
-  std::sort(ents.begin(), ents.end());
+  std::sort(ents.begin(), ents.end(),
+            [](EntityID a, EntityID b) {
+              if (a.index != b.index)
+                return a.index < b.index;
+              return a.generation < b.generation;
+            });
   ents.erase(std::unique(ents.begin(), ents.end()), ents.end());
 
   // Optional: delete children safely by descending ID
-  std::sort(ents.begin(), ents.end(), std::greater<EntityID>());
+  std::sort(ents.begin(), ents.end(),
+            [](EntityID a, EntityID b) {
+              if (a.index != b.index)
+                return a.index > b.index;
+              return a.generation > b.generation;
+            });
 
   for (EntityID e : ents) {
     if (world.isAlive(e))
@@ -134,7 +196,7 @@ static void duplicateMaterialsForSubtree(World &world,
     return;
 
   if (world.hasMesh(root)) {
-    auto &mc = world.mesh(root);
+    auto &mc = world.ensureMesh(root);
     for (auto &sm : mc.submeshes) {
       if (sm.material != InvalidMaterial && materials.isAlive(sm.material)) {
         MaterialData copy = materials.get(sm.material);
@@ -160,11 +222,16 @@ static void duplicateSelection(EngineContext &engine, Selection &sel) {
   std::vector<EntityID> ents;
   ents.reserve(sel.picks.size());
   for (uint32_t p : sel.picks) {
-    EntityID e = world.entityFromSlotIndex(pickEntity(p));
+    EntityID e = sel.entityForPick(p);
     if (e != InvalidEntity)
       ents.push_back(e);
   }
-  std::sort(ents.begin(), ents.end());
+  std::sort(ents.begin(), ents.end(),
+            [](EntityID a, EntityID b) {
+              if (a.index != b.index)
+                return a.index < b.index;
+              return a.generation < b.generation;
+            });
   ents.erase(std::unique(ents.begin(), ents.end()), ents.end());
 
   // Filter out entities whose ancestor is also selected
@@ -176,6 +243,7 @@ static void duplicateSelection(EngineContext &engine, Selection &sel) {
   }
 
   std::vector<uint32_t> newPicks;
+  std::vector<EntityID> newEntities;
   for (EntityID e : top) {
     EntityID dup = world.cloneSubtree(e, InvalidEntity);
     if (dup == InvalidEntity)
@@ -186,13 +254,17 @@ static void duplicateSelection(EngineContext &engine, Selection &sel) {
     // pick submesh0 of cloned entity if it exists, else packPick(dup,0)
     const uint32_t pid = packPick(dup, 0);
     newPicks.push_back(pid);
+    newEntities.push_back(dup);
   }
 
   if (!newPicks.empty()) {
     sel.kind = SelectionKind::Picks;
     sel.picks = newPicks;
+    sel.pickEntity.clear();
+    for (size_t i = 0; i < newPicks.size(); ++i)
+      sel.pickEntity.emplace(newPicks[i], newEntities[i]);
     sel.activePick = newPicks.back();
-    sel.activeEntity = world.entityFromSlotIndex(pickEntity(sel.activePick));
+    sel.activeEntity = sel.entityForPick(sel.activePick);
   }
 }
 
@@ -203,35 +275,147 @@ static bool imguiIniMissing() {
   return !std::filesystem::exists(std::filesystem::absolute(io.IniFilename));
 }
 
-static bool dockNeedsBootstrap(ImGuiID dockspaceId) {
-  ImGuiDockNode *node = ImGui::DockBuilderGetNode(dockspaceId);
-  if (!node)
-    return true;
+static std::string projectStatePath() {
+  return (std::filesystem::current_path() / ".nyx" / "project.nyxproj.json")
+      .string();
+}
 
-  // If there are no splits and no docked windows, it’s basically empty.
-  const bool hasChildren =
-      (node->ChildNodes[0] != nullptr) || (node->ChildNodes[1] != nullptr);
-  const bool hasDockedWindows = (node->Windows.Size > 0);
-  return (!hasChildren && !hasDockedWindows);
+static std::string resolveScenePath(const std::string &scenePath,
+                                    const std::string &projectPath) {
+  if (scenePath.empty())
+    return scenePath;
+  std::filesystem::path p(scenePath);
+  if (p.is_relative()) {
+    std::filesystem::path cwd = std::filesystem::current_path();
+    std::filesystem::path cand = (cwd / p).lexically_normal();
+    if (std::filesystem::exists(cand))
+      return cand.string();
+
+    std::filesystem::path base =
+        std::filesystem::path(projectPath).parent_path();
+    if (!base.empty()) {
+      std::filesystem::path candProj = (base / p).lexically_normal();
+      if (std::filesystem::exists(candProj))
+        return candProj.string();
+    }
+
+    return cand.string();
+  }
+  return p.lexically_normal().string();
+}
+
+static void applyEditorState(EditorState &st, EditorLayer &ed,
+                             EngineContext &engine) {
+  auto &ps = ed.persist();
+  ps.panels.viewport = st.panels.showViewport;
+  ps.panels.hierarchy = st.panels.showHierarchy;
+  ps.panels.inspector = st.panels.showInspector;
+  ps.panels.assetBrowser = st.panels.showAssets;
+  ps.panels.stats = st.panels.showStats;
+
+  ed.gizmo().op = st.gizmoOp;
+  ed.gizmo().mode = st.gizmoMode;
+  ed.setAutoSave(st.autoSave);
+  ed.setScenePath(st.lastScenePath);
+
+  engine.setViewMode(st.viewport.viewMode);
+}
+
+static void captureEditorState(EditorState &st, EditorLayer &ed,
+                               EngineContext &engine) {
+  const auto &ps = ed.persist();
+  st.panels.showViewport = ps.panels.viewport;
+  st.panels.showHierarchy = ps.panels.hierarchy;
+  st.panels.showInspector = ps.panels.inspector;
+  st.panels.showAssets = ps.panels.assetBrowser;
+  st.panels.showStats = ps.panels.stats;
+
+  st.gizmoOp = ed.gizmo().op;
+  st.gizmoMode = ed.gizmo().mode;
+  st.autoSave = ed.autoSave();
+  st.lastScenePath = ed.scenePath();
+
+  st.viewport.viewMode = engine.viewMode();
+
+  const EntityID active = engine.world().activeCamera();
+  st.activeCamera = engine.world().uuid(active);
+  st.uuidSeed = engine.world().uuidSeed();
 }
 
 int Application::run() {
   float lastT = getTimeSeconds();
 
+  const std::string projPath = projectStatePath();
+  m_editorState.lastProjectPath = projPath;
+  ProjectSerializer::loadFromFile(m_editorState, projPath);
+
+  m_engine->world().setUUIDSeed(m_editorState.uuidSeed);
+
   if (m_app->editorLayer()) {
     m_app->editorLayer()->setWorld(&m_engine->world());
+    applyEditorState(m_editorState, *m_app->editorLayer(), *m_engine);
+  }
+
+  bool loadedScene = false;
+  if (!m_editorState.lastScenePath.empty() &&
+      std::filesystem::exists(
+          resolveScenePath(m_editorState.lastScenePath, projPath))) {
+    const std::string scenePath =
+        resolveScenePath(m_editorState.lastScenePath, projPath);
+    loadedScene =
+        WorldSerializer::loadFromFile(m_engine->world(), scenePath);
+    if (loadedScene) {
+      EditorStateIO::onSceneOpened(m_editorState, scenePath);
+      if (m_app->editorLayer()) {
+        m_app->editorLayer()->setScenePath(scenePath);
+        m_app->editorLayer()->setWorld(&m_engine->world());
+      }
+    }
+  }
+
+  if (loadedScene) {
+    m_engine->rebuildEntityIndexMap();
+    m_engine->rebuildRenderables();
+    if (m_app->editorLayer())
+      m_app->editorLayer()->setSceneLoaded(true);
+  } else if (m_app->editorLayer()) {
+    m_app->editorLayer()->setSceneLoaded(false);
+  }
+
+  // Editor camera entity (ECS-driven)
+  EntityID editorCam = m_engine->world().createEntity("Editor Camera");
+  if (editorCam != InvalidEntity) {
+    m_engine->world().ensureCamera(editorCam);
+    if (m_engine->world().activeCamera() == InvalidEntity)
+      m_engine->world().setActiveCamera(editorCam);
+    if (m_app->editorLayer()) {
+      auto &ctrl = m_app->editorLayer()->cameraController();
+      m_app->editorLayer()->setCameraEntity(editorCam);
+      applyEditorCameraController(m_engine->world(), editorCam, ctrl);
+    } else {
+      EditorCameraController ctrl{};
+      applyEditorCameraController(m_engine->world(), editorCam, ctrl);
+    }
+  }
+
+  if (m_editorState.activeCamera) {
+    EntityID cam = m_engine->world().findByUUID(m_editorState.activeCamera);
+    if (cam != InvalidEntity && m_engine->world().hasCamera(cam)) {
+      m_engine->world().setActiveCamera(cam);
+      if (m_app->editorLayer())
+        m_app->editorLayer()->setCameraEntity(cam);
+    }
   }
 
   // Demo spawn (optional)
-  {
+  if (!loadedScene) {
     EntityID e = m_engine->world().createEntity("Cube");
-    auto &mc = m_engine->world().ensureMesh(e, ProcMeshType::Cube, 1);
+    auto &mc = m_engine->world().ensureMesh(e);
     if (mc.submeshes.empty())
       mc.submeshes.push_back(MeshSubmesh{.name = "Submesh 0",
                                          .type = ProcMeshType::Cube,
                                          .material = InvalidMaterial});
     mc.submeshes[0].type = ProcMeshType::Cube;
-    (void)m_engine->world().materialHandle(e, 0);
 
     auto &tr = m_engine->world().transform(e);
     tr.translation = {0.0f, 0.0f, 0.0f};
@@ -239,9 +423,20 @@ int Application::run() {
 
     if (m_app->editorLayer()) {
       auto &sel = m_app->editorLayer()->selection();
-      sel.setSinglePick(packPick(e, 0));
+      sel.setSinglePick(packPick(e, 0), e);
       sel.activeEntity = e;
     }
+
+    if (m_app->editorLayer()) {
+      auto &ctrl = m_app->editorLayer()->cameraController();
+      ctrl.position = tr.translation + glm::vec3(0.0f, 1.5f, 3.0f);
+      const glm::vec3 dir = glm::normalize(tr.translation - ctrl.position);
+      ctrl.pitchDeg = glm::degrees(std::asin(dir.y));
+      ctrl.yawDeg = glm::degrees(std::atan2(dir.z, dir.x));
+      applyEditorCameraController(m_engine->world(), editorCam, ctrl);
+    }
+
+    // Light components are no longer part of the ECS surface API.
   }
 
   while (!m_app->window().shouldClose()) {
@@ -268,13 +463,15 @@ int Application::run() {
 
       // When hiding editor, release capture so it doesn't "go insane"
       if (wasVisible && !m_app->isEditorVisible()) {
-        releaseMouseCapture(win.handle(), m_app->editorLayer()->camera());
+        releaseMouseCapture(win.handle(),
+                            m_app->editorLayer()->cameraController());
       }
 
       // When showing editor again, also ensure capture is released
       // (user should RMB-capture explicitly inside viewport).
       if (!wasVisible && m_app->isEditorVisible()) {
-        releaseMouseCapture(win.handle(), m_app->editorLayer()->camera());
+        releaseMouseCapture(win.handle(),
+                            m_app->editorLayer()->cameraController());
 
         if (m_app->editorLayer())
           m_app->editorLayer()->setWorld(&m_engine->world());
@@ -283,7 +480,8 @@ int Application::run() {
 
     if (input.isPressed(Key::Escape)) {
       // ESC always releases mouse capture
-      releaseMouseCapture(win.handle(), m_app->editorLayer()->camera());
+      releaseMouseCapture(win.handle(),
+                          m_app->editorLayer()->cameraController());
     }
 
     // ------------------------------------------------------------
@@ -315,19 +513,28 @@ int Application::run() {
                        ImGuiDockNodeFlags_PassthruCentralNode);
 
       if (auto *ed = m_app->editorLayer()) {
-        auto &ps = ed->persist();
-
-        const bool needs = imguiIniMissing() || dockNeedsBootstrap(dockspaceId);
-
-        if (needs && !ps.dockLayoutApplied) {
-          const ImGuiViewport *vp = ImGui::GetMainViewport();
-          BuildDefaultDockLayout(dockspaceId, vp->WorkSize);
-          ps.dockLayoutApplied = true;
-        }
+        if (imguiIniMissing())
+          m_editorState.dockFallbackApplied = false;
+        DockspaceLayout::applyDefaultLayoutIfNeeded(m_editorState,
+                                                    dockspaceId);
       }
 
       for (auto &layer : m_app->layers()) {
         layer->onImGui(*m_engine);
+      }
+
+      if (auto *ed = m_app->editorLayer()) {
+        const std::string &scenePath = ed->scenePath();
+        if (!scenePath.empty() && scenePath != m_editorState.lastScenePath) {
+          m_editorState.lastScenePath = scenePath;
+          m_editorState.pushRecentScene(scenePath);
+          ProjectSerializer::saveToFile(m_editorState,
+                                        m_editorState.lastProjectPath);
+        }
+        m_editorState.autoSave = ed->autoSave();
+        if (!ed->sceneLoaded()) {
+          m_editorState.lastScenePath.clear();
+        }
       }
 
       ImGui::End(); // Dockspace host
@@ -361,49 +568,67 @@ int Application::run() {
         !gizmoWantsMouse;
 
     if (allowRmbCapture && input.isPressed(Key::MouseRight)) {
-      captureMouse(win.handle(), m_app->editorLayer()->camera());
+      captureMouse(win.handle(), m_app->editorLayer()->cameraController());
     }
     if (input.isReleased(Key::MouseRight)) {
-      releaseMouseCapture(win.handle(), m_app->editorLayer()->camera());
+      releaseMouseCapture(win.handle(), m_app->editorLayer()->cameraController());
     }
 
     // ------------------------------------------------------------
     // Camera movement
     // ------------------------------------------------------------
-    if (m_app->editorLayer()->camera().mouseCaptured) {
-      auto yaw = m_app->editorLayer()->camera().yawDeg;
-      yaw += float(input.state().mouseDeltaX) *
-             m_app->editorLayer()->camera().sensitivity;
-      auto pitch = m_app->editorLayer()->camera().pitchDeg;
-      pitch -= std::clamp(float(input.state().mouseDeltaY) *
-                              m_app->editorLayer()->camera().sensitivity,
-                          -120.0f, 120.0f);
-      m_app->editorLayer()->camera().setYawPitch(yaw, pitch);
+    {
+      auto *ed = m_app->editorLayer();
+      auto &ctrl = ed->cameraController();
+      if (ctrl.mouseCaptured) {
+        ctrl.yawDeg += float(input.state().mouseDeltaX) * ctrl.sensitivity;
+        ctrl.pitchDeg -= float(input.state().mouseDeltaY) * ctrl.sensitivity;
+        ctrl.pitchDeg = std::clamp(ctrl.pitchDeg, -120.0f, 120.0f);
 
-      glm::vec3 front = m_app->editorLayer()->camera().front();
-      glm::vec3 right = m_app->editorLayer()->camera().right();
+        const glm::vec3 front = cameraFront(ctrl.yawDeg, ctrl.pitchDeg);
+        const glm::vec3 right =
+            glm::normalize(glm::cross(front, glm::vec3(0.0f, 1.0f, 0.0f)));
 
-      float speed = m_app->editorLayer()->camera().speed * dt;
-      if (isShiftDown(input))
-        speed *= 2.0f;
+        float speed = ctrl.speed * dt;
+        if (isShiftDown(input))
+          speed *= ctrl.boostMul;
 
-      glm::vec3 moveDelta(0.0f);
-      if (input.isDown(Key::W))
-        moveDelta += front * speed;
-      if (input.isDown(Key::S))
-        moveDelta -= front * speed;
-      if (input.isDown(Key::A))
-        moveDelta -= right * speed;
-      if (input.isDown(Key::D))
-        moveDelta += right * speed;
-      if (input.isDown(Key::Q))
-        moveDelta.y -= speed;
-      if (input.isDown(Key::E))
-        moveDelta.y += speed;
+        glm::vec3 moveDelta(0.0f);
+        if (input.isDown(Key::W))
+          moveDelta += front * speed;
+        if (input.isDown(Key::S))
+          moveDelta -= front * speed;
+        if (input.isDown(Key::A))
+          moveDelta -= right * speed;
+        if (input.isDown(Key::D))
+          moveDelta += right * speed;
+        if (input.isDown(Key::Q))
+          moveDelta.y -= speed;
+        if (input.isDown(Key::E))
+          moveDelta.y += speed;
 
-      if (moveDelta != glm::vec3(0.0f)) {
-        m_app->editorLayer()->camera().position += moveDelta;
-        m_app->editorLayer()->camera().markViewDirty();
+        if (moveDelta != glm::vec3(0.0f)) {
+          ctrl.position += moveDelta;
+        }
+
+        const bool viewThrough = ed->viewThroughCamera();
+        const bool lockToView = ed->lockCameraToView().enabled;
+
+        if (!viewThrough || !lockToView) {
+          applyEditorCameraController(m_engine->world(), ed->cameraEntity(),
+                                      ctrl);
+        }
+
+        if (viewThrough && lockToView) {
+          const EntityID active = m_engine->world().activeCamera();
+          if (active != InvalidEntity && active != ed->cameraEntity()) {
+            EditorCameraState camState{};
+            camState.position = ctrl.position;
+            camState.yawDeg = ctrl.yawDeg;
+            camState.pitchDeg = ctrl.pitchDeg;
+            ed->lockCameraToView().tick(m_engine->world(), active, camState);
+          }
+        }
       }
     }
 
@@ -414,6 +639,9 @@ int Application::run() {
       ImGuiIO &io = ImGui::GetIO();
       if (!io.WantTextInput) {
         auto &sel = m_app->editorLayer()->selection();
+        auto &gizmo = m_app->editorLayer()->gizmo();
+        const bool rmbCaptured =
+            m_app->editorLayer()->cameraController().mouseCaptured;
 
         // Clear selection
         if (input.isPressed(Key::Space)) {
@@ -430,6 +658,18 @@ int Application::run() {
         if (input.isPressed(Key::X) || input.isPressed(Key::Delete)) {
           deleteSelection(m_engine->world(), sel);
         }
+
+        if (!rmbCaptured) {
+          if (input.isPressed(Key::W))
+            gizmo.op = GizmoOp::Translate;
+          if (input.isPressed(Key::E))
+            gizmo.op = GizmoOp::Rotate;
+          if (input.isPressed(Key::R))
+            gizmo.op = GizmoOp::Scale;
+          if (input.isPressed(Key::Q))
+            gizmo.mode = (gizmo.mode == GizmoMode::Local) ? GizmoMode::World
+                                                         : GizmoMode::Local;
+        }
       }
     }
 
@@ -438,7 +678,8 @@ int Application::run() {
     // ------------------------------------------------------------
     if (m_app->isEditorVisible() && m_app->editorLayer()) {
       auto &vp = m_app->editorLayer()->viewport();
-      const bool rmbCaptured = m_app->editorLayer()->camera().mouseCaptured;
+      const bool rmbCaptured =
+          m_app->editorLayer()->cameraController().mouseCaptured;
 
       ImGuiIO &io = ImGui::GetIO();
       const bool canPick = vp.hovered && vp.hasImageRect() && !rmbCaptured &&
@@ -449,18 +690,19 @@ int Application::run() {
         const double mx = input.state().mouseX;
         const double my = input.state().mouseY;
 
-        const float u =
-            float((mx - vp.imageMin.x) / (vp.imageMax.x - vp.imageMin.x));
-        const float v =
-            float((my - vp.imageMin.y) / (vp.imageMax.y - vp.imageMin.y));
+        ViewportImageRect r{};
+        r.imageMin = {vp.imageMin.x, vp.imageMin.y};
+        r.imageMax = {vp.imageMax.x, vp.imageMax.y};
+        if (vp.lastRenderedSize.x > 0 && vp.lastRenderedSize.y > 0) {
+          r.renderedSize = {vp.lastRenderedSize.x, vp.lastRenderedSize.y};
+        } else {
+          r.renderedSize = {vp.desiredSize.x, vp.desiredSize.y};
+        }
 
-        if (u >= 0.0f && u <= 1.0f && v >= 0.0f && v <= 1.0f) {
-          const uint32_t fbW = std::max(1u, vp.desiredSize.x);
-          const uint32_t fbH = std::max(1u, vp.desiredSize.y);
-
-          const uint32_t px = static_cast<uint32_t>(u * float(fbW));
-          const uint32_t py = static_cast<uint32_t>(v * float(fbH));
-
+        const auto pick = mapMouseToFramebufferPixel(mx, my, r);
+        if (pick.inside) {
+          const uint32_t px = pick.px;
+          const uint32_t py = pick.py;
           m_engine->requestPick(px, py);
           m_pendingViewportPick = true;
           m_pendingPickCtrl = isCtrlDown(input);
@@ -469,11 +711,44 @@ int Application::run() {
       }
     }
 
+    if (m_app->isEditorVisible() && m_app->editorLayer()) {
+      m_app->editorLayer()->syncWorldEvents();
+    }
+
     // ------------------------------------------------------------
     // Engine tick
     // ------------------------------------------------------------
     m_engine->tick(dt);
     ;
+    // ------------------------------------------------------------
+    // Render camera override (editor viewport)
+    // ------------------------------------------------------------
+    if (m_app->isEditorVisible() && m_app->editorLayer()) {
+      auto *ed = m_app->editorLayer();
+      EntityID renderCam = InvalidEntity;
+      if (ed->viewThroughCamera()) {
+        const EntityID active = m_engine->world().activeCamera();
+        if (active != InvalidEntity && m_engine->world().hasCamera(active))
+          renderCam = active;
+      }
+      if (renderCam == InvalidEntity) {
+        const EntityID editorCam = ed->cameraEntity();
+        if (editorCam != InvalidEntity && m_engine->world().hasCamera(editorCam))
+          renderCam = editorCam;
+      }
+      m_engine->setRenderCameraOverride(renderCam);
+      if (ed->viewThroughCamera() && renderCam != InvalidEntity)
+        m_engine->setHiddenEntity(renderCam);
+      else
+        m_engine->setHiddenEntity(InvalidEntity);
+    } else {
+      m_engine->setRenderCameraOverride(InvalidEntity);
+      const EntityID active = m_engine->world().activeCamera();
+      if (active != InvalidEntity && m_engine->world().hasCamera(active))
+        m_engine->setHiddenEntity(active);
+      else
+        m_engine->setHiddenEntity(InvalidEntity);
+    }
     // ------------------------------------------------------------
     // Determine render target size
     // ------------------------------------------------------------
@@ -498,7 +773,16 @@ int Application::run() {
       }
 
       m_engine->setSelectionPickIDs(selPick);
-      return m_engine->render(w, h, m_app->editorLayer()->camera(),
+      const uint32_t windowW = win.width();
+      const uint32_t windowH = win.height();
+      uint32_t viewportW = w;
+      uint32_t viewportH = h;
+      if (m_app->isEditorVisible() && m_app->editorLayer()) {
+        const auto &vp = m_app->editorLayer()->viewport();
+        viewportW = std::max(1u, vp.desiredSize.x);
+        viewportH = std::max(1u, vp.desiredSize.y);
+      }
+      return m_engine->render(windowW, windowH, viewportW, viewportH, w, h,
                               m_app->isEditorVisible());
     };
 
@@ -514,7 +798,7 @@ int Application::run() {
         m_pendingViewportPick = false;
 
         const uint32_t pid = m_engine->lastPickedID(); // packed entity+submesh
-        applyViewportPickToSelection(m_engine->world(), pid, m_pendingPickCtrl,
+        applyViewportPickToSelection(*m_engine, pid, m_pendingPickCtrl,
                                      m_pendingPickShift, sel);
 
         // Re-render immediately so outline matches selection this frame
@@ -543,6 +827,11 @@ int Application::run() {
     input.endFrame();
     m_app->endFrame();
   }
+
+  if (m_app->editorLayer())
+    captureEditorState(m_editorState, *m_app->editorLayer(), *m_engine);
+  EditorStateIO::sanitizeBeforeSave(m_editorState);
+  ProjectSerializer::saveToFile(m_editorState, m_editorState.lastProjectPath);
 
   return 0;
 }

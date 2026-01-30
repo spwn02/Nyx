@@ -91,19 +91,15 @@ void AppContext::imguiEnd() {
 }
 
 void AppContext::toggleEditorOverlay() {
-  if (m_editorVisible) {
-    if (m_editorLayer) {
-      m_layers.popLayer(m_editorLayer);
-      m_editorLayer = nullptr;
-    }
-    m_editorVisible = false;
+  if (!m_editorLayer) {
+    auto layer = std::make_unique<EditorLayer>();
+    m_editorLayer = layer.get();
+    m_layers.pushLayer(std::move(layer));
+    m_editorVisible = true;
     return;
   }
 
-  auto layer = std::make_unique<EditorLayer>();
-  m_editorLayer = layer.get();
-  m_layers.pushLayer(std::move(layer));
-  m_editorVisible = true;
+  m_editorVisible = !m_editorVisible;
 }
 
 } // namespace Nyx
