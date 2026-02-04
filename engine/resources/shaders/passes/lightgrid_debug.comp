@@ -1,0 +1,51 @@
+#version 460 core
+
+layout(local_size_x = 16, local_size_y = 16) in;
+
+layout(rgba16f, binding = 1) uniform writeonly image2D oHDR;
+
+struct TileHeader {
+  uint offset;
+  uint count;
+};
+
+layout(std430, binding = 24) readonly buffer TileHeaders { TileHeader gHead[]; };
+
+layout(std140, binding = 22) uniform GridMetaUBO {
+  uint uTileCountX;
+  uint uTileCountY;
+  uint uTileSize;
+  uint uZSlices;
+  uint uMaxPerCluster;
+  float uNearZ;
+  float uFarZ;
+  uint uHiZMip;
+} gGrid;
+
+uniform uvec2 uOutSize;
+
+void main() {
+  uvec2 p = gl_GlobalInvocationID.xy;
+  if (p.x >= uOutSize.x || p.y >= uOutSize.y)
+    return;
+
+  uvec2 tile = p / gGrid.uTileSize;
+  if (tile.x >= gGrid.uTileCountX || tile.y >= gGrid.uTileCountY) {
+    imageStore(oHDR, ivec2(p), vec4(0, 0, 0, 1));
+    return;
+  }
+
+  uint tileIndex = tile.x + tile.y * gGrid.uTileCountX;
+  uint clusterIndex = tileIndex;
+  uint c = gHead[clusterIndex].count;
+
+  float t = clamp(float(c) / float(gGrid.uMaxPerCluster), 0.0, 1.0);
+  vec3 col = mix(vec3(0.05, 0.1, 0.2), vec3(1.0, 0.2, 0.05), t);
+
+  uvec2 inTile = p % gGrid.uTileSize;
+  bool line = (inTile.x == 0u) || (inTile.y == 0u);
+  if (line)
+    col *= 0.25;
+
+  imageStore(oHDR, ivec2(p), vec4(col, 1.0));
+}

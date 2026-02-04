@@ -34,11 +34,17 @@ static bool isSSBOAccess(RenderAccess a) {
          hasAccess(a, RenderAccess::SSBOWrite);
 }
 
+static bool isBufferAccess(RenderAccess a) {
+  return isSSBOAccess(a) || hasAccess(a, RenderAccess::UBORead);
+}
+
 static GLbitfield barrierForTransition(RenderAccess prev, RenderAccess next) {
   GLbitfield bits = 0;
   if (isSSBOAccess(prev) && hasAccess(prev, RenderAccess::SSBOWrite) &&
-      isSSBOAccess(next)) {
+      isBufferAccess(next)) {
     bits |= GL_SHADER_STORAGE_BARRIER_BIT;
+    if (hasAccess(next, RenderAccess::UBORead))
+      bits |= GL_UNIFORM_BARRIER_BIT;
   }
 
   if (isTextureAccess(prev)) {
@@ -77,6 +83,8 @@ static RGTexDesc resolveTextureDesc(const RenderPassContext &ctx,
   RGTexDesc out{};
   out.fmt = desc.format;
   out.usage = desc.usage;
+  out.mips = std::max(1u, desc.mipCount);
+  out.layers = std::max(1u, desc.layers);
 
   switch (desc.extent.kind) {
   case RenderExtentKind::Window:
@@ -102,6 +110,8 @@ static RGTexDesc resolveTextureDesc(const RenderPassContext &ctx,
     out.w = 1;
   if (out.h == 0)
     out.h = 1;
+  if (out.layers == 0)
+    out.layers = 1;
 
   return out;
 }
@@ -109,6 +119,8 @@ static RGTexDesc resolveTextureDesc(const RenderPassContext &ctx,
 void RenderResourceBlackboard::reset() {
   m_textures.clear();
   m_texByName.clear();
+  m_buffers.clear();
+  m_bufByName.clear();
 }
 
 RGTextureRef RenderResourceBlackboard::declareTexture(
@@ -122,6 +134,8 @@ RGTextureRef RenderResourceBlackboard::declareTexture(
                "RenderGraph texture usage mismatch");
     NYX_ASSERT(m_textures[idx].desc.extent.kind == desc.extent.kind,
                "RenderGraph texture extent mismatch");
+    NYX_ASSERT(m_textures[idx].desc.mipCount == desc.mipCount,
+               "RenderGraph texture mip count mismatch");
     if (desc.extent.kind == RenderExtentKind::Explicit) {
       NYX_ASSERT(m_textures[idx].desc.extent.w == desc.extent.w,
                  "RenderGraph texture extent width mismatch");
@@ -174,18 +188,97 @@ const std::string &RenderResourceBlackboard::textureName(RGTextureRef ref) const
   return m_textures[idx].name;
 }
 
+RGBufferRef RenderResourceBlackboard::declareBuffer(
+    const std::string &name, const RGBufferDesc &desc) {
+  auto it = m_bufByName.find(name);
+  if (it != m_bufByName.end()) {
+    const uint32_t idx = it->second;
+    NYX_ASSERT(m_buffers[idx].desc == desc,
+               "RenderGraph buffer desc mismatch");
+    return RGBufferRef{idx + 1};
+  }
+
+  const uint32_t idx = (uint32_t)m_buffers.size();
+  m_buffers.push_back(BufferEntry{.name = name, .desc = desc});
+  m_bufByName.emplace(name, idx);
+  return RGBufferRef{idx + 1};
+}
+
+RGBufferRef RenderResourceBlackboard::getBuffer(const std::string &name) const {
+  auto it = m_bufByName.find(name);
+  if (it == m_bufByName.end())
+    return InvalidRGBuffer;
+  return RGBufferRef{it->second + 1};
+}
+
+const RGBufferDesc &
+RenderResourceBlackboard::bufferDesc(RGBufferRef ref) const {
+  NYX_ASSERT(ref != InvalidRGBuffer, "Invalid RGBufferRef");
+  const uint32_t idx = ref.id - 1;
+  NYX_ASSERT(idx < m_buffers.size(), "Invalid RGBufferRef");
+  return m_buffers[idx].desc;
+}
+
+RGBufHandle RenderResourceBlackboard::bufferHandle(RGBufferRef ref) const {
+  NYX_ASSERT(ref != InvalidRGBuffer, "Invalid RGBufferRef");
+  const uint32_t idx = ref.id - 1;
+  NYX_ASSERT(idx < m_buffers.size(), "Invalid RGBufferRef");
+  return m_buffers[idx].handle;
+}
+
+void RenderResourceBlackboard::setBufferHandle(RGBufferRef ref,
+                                               RGBufHandle handle) {
+  NYX_ASSERT(ref != InvalidRGBuffer, "Invalid RGBufferRef");
+  const uint32_t idx = ref.id - 1;
+  NYX_ASSERT(idx < m_buffers.size(), "Invalid RGBufferRef");
+  m_buffers[idx].handle = handle;
+}
+
+const std::string &RenderResourceBlackboard::bufferName(RGBufferRef ref) const {
+  NYX_ASSERT(ref != InvalidRGBuffer, "Invalid RGBufferRef");
+  const uint32_t idx = ref.id - 1;
+  NYX_ASSERT(idx < m_buffers.size(), "Invalid RGBufferRef");
+  return m_buffers[idx].name;
+}
+
+void RenderResourceBlackboard::bindExternalBuffer(RGBufferRef ref,
+                                                  const GLBuffer &buf) {
+  NYX_ASSERT(ref != InvalidRGBuffer, "Invalid RGBufferRef");
+  const uint32_t idx = ref.id - 1;
+  NYX_ASSERT(idx < m_buffers.size(), "Invalid RGBufferRef");
+  m_buffers[idx].external = buf;
+  m_buffers[idx].externalBound = true;
+}
+
+const GLBuffer &
+RenderResourceBlackboard::externalBuffer(RGBufferRef ref) const {
+  static GLBuffer dummy{};
+  NYX_ASSERT(ref != InvalidRGBuffer, "Invalid RGBufferRef");
+  const uint32_t idx = ref.id - 1;
+  NYX_ASSERT(idx < m_buffers.size(), "Invalid RGBufferRef");
+  const auto &b = m_buffers[idx];
+  return b.externalBound ? b.external : dummy;
+}
+
+bool RenderResourceBlackboard::isExternalBuffer(RGBufferRef ref) const {
+  NYX_ASSERT(ref != InvalidRGBuffer, "Invalid RGBufferRef");
+  const uint32_t idx = ref.id - 1;
+  NYX_ASSERT(idx < m_buffers.size(), "Invalid RGBufferRef");
+  return m_buffers[idx].externalBound;
+}
+
 RGTextureRef RenderPassBuilder::readTexture(const std::string &name,
                                             RenderAccess access) {
   RGTextureRef ref = m_bb.getTexture(name);
   NYX_ASSERT(ref != InvalidRGTexture, "RenderGraph missing texture");
   const uint32_t res = ref.id - 1;
-  for (auto &u : m_uses) {
+  for (auto &u : m_texUses) {
     if (u.first == res) {
       u.second |= access;
       return ref;
     }
   }
-  m_uses.emplace_back(res, access);
+  m_texUses.emplace_back(res, access);
   return ref;
 }
 
@@ -194,13 +287,13 @@ RGTextureRef RenderPassBuilder::writeTexture(const std::string &name,
   RGTextureRef ref = m_bb.getTexture(name);
   NYX_ASSERT(ref != InvalidRGTexture, "RenderGraph missing texture");
   const uint32_t res = ref.id - 1;
-  for (auto &u : m_uses) {
+  for (auto &u : m_texUses) {
     if (u.first == res) {
       u.second |= access;
       return ref;
     }
   }
-  m_uses.emplace_back(res, access);
+  m_texUses.emplace_back(res, access);
   return ref;
 }
 
@@ -209,13 +302,43 @@ RGTextureRef RenderPassBuilder::createTexture(const std::string &name,
                                               RenderAccess access) {
   RGTextureRef ref = m_bb.declareTexture(name, desc);
   const uint32_t res = ref.id - 1;
-  for (auto &u : m_uses) {
+  for (auto &u : m_texUses) {
     if (u.first == res) {
       u.second |= access;
       return ref;
     }
   }
-  m_uses.emplace_back(res, access);
+  m_texUses.emplace_back(res, access);
+  return ref;
+}
+
+RGBufferRef RenderPassBuilder::readBuffer(const std::string &name,
+                                          RenderAccess access) {
+  RGBufferRef ref = m_bb.getBuffer(name);
+  NYX_ASSERT(ref != InvalidRGBuffer, "RenderGraph missing buffer");
+  const uint32_t res = ref.id - 1;
+  for (auto &u : m_bufUses) {
+    if (u.first == res) {
+      u.second |= access;
+      return ref;
+    }
+  }
+  m_bufUses.emplace_back(res, access);
+  return ref;
+}
+
+RGBufferRef RenderPassBuilder::writeBuffer(const std::string &name,
+                                           RenderAccess access) {
+  RGBufferRef ref = m_bb.getBuffer(name);
+  NYX_ASSERT(ref != InvalidRGBuffer, "RenderGraph missing buffer");
+  const uint32_t res = ref.id - 1;
+  for (auto &u : m_bufUses) {
+    if (u.first == res) {
+      u.second |= access;
+      return ref;
+    }
+  }
+  m_bufUses.emplace_back(res, access);
   return ref;
 }
 
@@ -236,7 +359,7 @@ void RenderGraph::addPass(std::string name, SetupFn setup, ExecuteFn exec) {
   node.exec = std::move(exec);
   node.order = (uint32_t)m_passes.size();
 
-  RenderPassBuilder builder(m_blackboard, node.uses);
+  RenderPassBuilder builder(m_blackboard, node.texUses, node.bufUses);
   if (node.setup)
     node.setup(builder);
 
@@ -252,10 +375,14 @@ void RenderGraph::execute(const RenderPassContext &ctx, RGResources &rg) {
   std::vector<uint32_t> indegree(passCount, 0);
 
   auto resourceCount = m_blackboard.textureCount();
+  auto bufferCount = m_blackboard.bufferCount();
   std::vector<int32_t> lastWriter(resourceCount, -1);
   std::vector<int32_t> lastAccess(resourceCount, -1);
   lastWriter.assign(resourceCount, -1);
   lastAccess.assign(resourceCount, -1);
+
+  std::vector<int32_t> lastBufWriter(bufferCount, -1);
+  std::vector<int32_t> lastBufAccess(bufferCount, -1);
 
   if (m_validate) {
     if (resourceCount > 0) {
@@ -267,7 +394,7 @@ void RenderGraph::execute(const RenderPassContext &ctx, RGResources &rg) {
       std::vector<Usage> usage(resourceCount);
 
       for (const auto &p : m_passes) {
-        for (const auto &u : p.uses) {
+        for (const auto &u : p.texUses) {
           const uint32_t res = u.first;
           if (res >= resourceCount)
             continue;
@@ -322,7 +449,7 @@ void RenderGraph::execute(const RenderPassContext &ctx, RGResources &rg) {
   }
 
   for (uint32_t i = 0; i < passCount; ++i) {
-    for (const auto &use : m_passes[i].uses) {
+    for (const auto &use : m_passes[i].texUses) {
       const uint32_t res = use.first;
       const RenderAccess access = use.second;
       if (res >= resourceCount)
@@ -340,6 +467,26 @@ void RenderGraph::execute(const RenderPassContext &ctx, RGResources &rg) {
           edges[(uint32_t)lastWriter[res]].push_back(i);
         }
         lastAccess[res] = (int32_t)i;
+      }
+    }
+    for (const auto &use : m_passes[i].bufUses) {
+      const uint32_t res = use.first;
+      const RenderAccess access = use.second;
+      if (res >= bufferCount)
+        continue;
+
+      const bool write = isWriteAccess(access);
+      if (write) {
+        if (lastBufAccess[res] >= 0) {
+          edges[(uint32_t)lastBufAccess[res]].push_back(i);
+        }
+        lastBufWriter[res] = (int32_t)i;
+        lastBufAccess[res] = (int32_t)i;
+      } else {
+        if (lastBufWriter[res] >= 0) {
+          edges[(uint32_t)lastBufWriter[res]].push_back(i);
+        }
+        lastBufAccess[res] = (int32_t)i;
       }
     }
   }
@@ -391,7 +538,7 @@ void RenderGraph::execute(const RenderPassContext &ctx, RGResources &rg) {
   std::vector<Lifetime> lifetimes(resourceCount);
   for (uint32_t i = 0; i < order.size(); ++i) {
     const auto &p = m_passes[order[i]];
-    for (const auto &use : p.uses) {
+    for (const auto &use : p.texUses) {
       const uint32_t res = use.first;
       auto &lt = lifetimes[res];
       if (i < lt.first)
@@ -433,7 +580,7 @@ void RenderGraph::execute(const RenderPassContext &ctx, RGResources &rg) {
                  active.end());
 
     const auto &p = m_passes[order[i]];
-    for (const auto &use : p.uses) {
+    for (const auto &use : p.texUses) {
       const uint32_t res = use.first;
       if (assigned.find(res) != assigned.end())
         continue;
@@ -464,14 +611,39 @@ void RenderGraph::execute(const RenderPassContext &ctx, RGResources &rg) {
 
   std::unordered_map<uint32_t, RenderAccess> lastAccessByRes;
   lastAccessByRes.reserve(resourceCount);
+  std::unordered_map<uint32_t, RenderAccess> lastAccessByBuf;
+  lastAccessByBuf.reserve(bufferCount);
+
+  std::vector<RGBufHandle> bufHandles;
+  bufHandles.reserve(bufferCount);
+  for (uint32_t i = 0; i < bufferCount; ++i) {
+    const RGBufferDesc &desc =
+        m_blackboard.bufferDesc(RGBufferRef{i + 1});
+    RGBufHandle handle = InvalidRG;
+    if (!m_blackboard.isExternalBuffer(RGBufferRef{i + 1})) {
+      handle =
+          rg.acquireBuf(m_blackboard.bufferName(RGBufferRef{i + 1}).c_str(),
+                        desc);
+      m_blackboard.setBufferHandle(RGBufferRef{i + 1}, handle);
+    }
+    bufHandles.push_back(handle);
+  }
 
   for (uint32_t idx : order) {
     GLbitfield barrierBits = 0;
-    for (const auto &use : m_passes[idx].uses) {
+    for (const auto &use : m_passes[idx].texUses) {
       const uint32_t res = use.first;
       const RenderAccess access = use.second;
       auto it = lastAccessByRes.find(res);
       if (it != lastAccessByRes.end()) {
+        barrierBits |= barrierForTransition(it->second, access);
+      }
+    }
+    for (const auto &use : m_passes[idx].bufUses) {
+      const uint32_t res = use.first;
+      const RenderAccess access = use.second;
+      auto it = lastAccessByBuf.find(res);
+      if (it != lastAccessByBuf.end()) {
         barrierBits |= barrierForTransition(it->second, access);
       }
     }
@@ -482,8 +654,11 @@ void RenderGraph::execute(const RenderPassContext &ctx, RGResources &rg) {
     if (m_passes[idx].exec)
       m_passes[idx].exec(ctx, m_blackboard, rg);
 
-    for (const auto &use : m_passes[idx].uses) {
+    for (const auto &use : m_passes[idx].texUses) {
       lastAccessByRes[use.first] = use.second;
+    }
+    for (const auto &use : m_passes[idx].bufUses) {
+      lastAccessByBuf[use.first] = use.second;
     }
   }
 
@@ -491,6 +666,14 @@ void RenderGraph::execute(const RenderPassContext &ctx, RGResources &rg) {
     RGHandle h = assigned[a.res];
     const RGTexDesc desc = rg.desc(h);
     m_aliasPool.push_back(AliasEntry{h, desc});
+  }
+
+  for (uint32_t i = 0; i < bufferCount; ++i) {
+    if (m_blackboard.isExternalBuffer(RGBufferRef{i + 1}))
+      continue;
+    const RGBufHandle h = bufHandles[i];
+    if (h != InvalidRG)
+      rg.releaseBuf(h);
   }
 
   if (m_debugEnabled) {
@@ -540,6 +723,8 @@ static const char *fmtName(RGFormat fmt) {
     return "Depth32F";
   case RGFormat::R32UI:
     return "R32UI";
+  case RGFormat::R32F:
+    return "R32F";
   default:
     return "Unknown";
   }

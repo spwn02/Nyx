@@ -69,6 +69,14 @@ target_link_libraries(imguizmo PUBLIC imgui)
 add_library(stb INTERFACE)
 target_include_directories(stb INTERFACE stb)
 
+# ---- tinyfiledialogs
+add_library(tinyfiledialogs STATIC
+  ${CMAKE_CURRENT_LIST_DIR}/tinyfiledialogs/tinyfiledialogs.c
+)
+target_include_directories(tinyfiledialogs PUBLIC
+  ${CMAKE_CURRENT_LIST_DIR}/tinyfiledialogs
+)
+
 # Aggregate interface
 target_link_libraries(nyx_thirdparty INTERFACE
   glm::glm
@@ -80,5 +88,6 @@ target_link_libraries(nyx_thirdparty INTERFACE
   imgui
   imguizmo
   stb
+  tinyfiledialogs
   nlohmann_json
 )

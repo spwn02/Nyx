@@ -17,4 +17,7 @@ inline bool operator!=(RGHandle a, RGHandle b) { return !(a == b); }
 
 static constexpr RGHandle InvalidRG{0u, 0u};
 
+using RGTexHandle = RGHandle;
+using RGBufHandle = RGHandle;
+
 } // namespace Nyx

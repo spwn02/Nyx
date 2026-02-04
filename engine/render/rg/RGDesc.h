@@ -31,12 +31,33 @@ inline bool hasUsage(RGTexUsage v, RGTexUsage mask) {
 struct RGTexDesc {
   uint32_t w = 1;
   uint32_t h = 1;
+  uint32_t layers = 1;
+  uint32_t mips = 1;
   RGFormat fmt = RGFormat::RGBA8;
   RGTexUsage usage = RGTexUsage::None;
 
   bool operator==(const RGTexDesc &other) const {
-    return w == other.w && h == other.h && fmt == other.fmt &&
+    return w == other.w && h == other.h && layers == other.layers &&
+           mips == other.mips &&
+           fmt == other.fmt &&
            usage == other.usage;
+  }
+};
+
+enum class RGBufferUsage : uint8_t {
+  None = 0,
+  SSBO = 1,
+  UBO = 2,
+};
+
+struct RGBufferDesc final {
+  uint32_t byteSize = 0;
+  RGBufferUsage usage = RGBufferUsage::SSBO;
+  bool dynamic = true;
+
+  bool operator==(const RGBufferDesc &other) const {
+    return byteSize == other.byteSize && usage == other.usage &&
+           dynamic == other.dynamic;
   }
 };
 

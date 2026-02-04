@@ -1,25 +1,41 @@
 #include "EngineContext.h"
 
-#include "glm/ext/matrix_clip_space.hpp"
-#include "glm/ext/matrix_transform.hpp"
-
-#include "../core/Log.h"
-#include "scene/MaterialData.h"
+#include "render/passes/PassShadowCSM.h"
 #include "render/rg/RenderPassContext.h"
+#include "scene/material/MaterialData.h"
 
 #include <glad/glad.h>
+#include <glm/gtc/matrix_inverse.hpp>
 
 namespace Nyx {
 
 EngineContext::EngineContext() {
-  m_materials.initGL();
+  m_materials.initGL(m_renderer.resources());
   m_lights.initGL();
-  m_shadows.initGL();
+  m_envIBL.init(m_renderer.shaders());
+
+  // Create Sky UBO
+  glCreateBuffers(1, &m_skyUBO);
+  glNamedBufferData(m_skyUBO, sizeof(SkyConstants), nullptr, GL_DYNAMIC_DRAW);
+
+  // Create Shadow CSM UBO
+  glCreateBuffers(1, &m_shadowCSMUBO);
+  glNamedBufferData(m_shadowCSMUBO, sizeof(ShadowCSMUBO), nullptr,
+                    GL_DYNAMIC_DRAW);
 }
+
 EngineContext::~EngineContext() {
-  m_shadows.shutdownGL();
+  if (m_skyUBO) {
+    glDeleteBuffers(1, &m_skyUBO);
+    m_skyUBO = 0;
+  }
+  if (m_shadowCSMUBO) {
+    glDeleteBuffers(1, &m_shadowCSMUBO);
+    m_shadowCSMUBO = 0;
+  }
   m_lights.shutdownGL();
   m_materials.shutdownGL();
+  m_envIBL.shutdown();
 }
 
 void EngineContext::tick(float dt) {
@@ -53,6 +69,10 @@ void EngineContext::rebuildRenderables() {
   m_renderables.rebuildAll(m_world);
 }
 
+void EngineContext::resetMaterials() {
+  m_materials.reset();
+}
+
 void EngineContext::rebuildEntityIndexMap() {
   m_entityByIndex.clear();
   for (EntityID e : m_world.alive()) {
@@ -72,6 +92,7 @@ uint32_t EngineContext::render(uint32_t windowWidth, uint32_t windowHeight,
   }
 
   buildRenderables();
+  m_envIBL.ensureResources();
 
   for (const auto &r : m_renderables.all()) {
     (void)materialIndex(r);
@@ -117,10 +138,14 @@ uint32_t EngineContext::render(uint32_t windowWidth, uint32_t windowHeight,
     }
   }
 
-  m_shadows.render(*this, m_renderables, ctx,
-                   [this](ProcMeshType t) { m_renderer.drawPrimitive(t); });
+  // Old shadow system disabled - now using new atlas-based system via Renderer
+  // m_shadows.render(*this, m_renderables, ctx,
+  //                  [this](ProcMeshType t) { m_renderer.drawPrimitive(t); });
 
-  m_lights.updateFromWorld(m_world, &m_shadows);
+  m_lights.updateFromWorld(m_world);
+
+  // Update Sky UBO before rendering
+  updateSkyUBO(ctx);
 
   // Outline: selected pickIDs come straight from editor selection
   m_renderer.setSelectedPickIDs(m_selectedPickIDs);
@@ -138,6 +163,14 @@ uint32_t EngineContext::render(uint32_t windowWidth, uint32_t windowHeight,
   return outTex;
 }
 
+ShadowCSMConfig &EngineContext::shadowCSMConfig() {
+  return m_renderer.shadowCSMConfig();
+}
+
+const ShadowCSMConfig &EngineContext::shadowCSMConfig() const {
+  return m_renderer.shadowCSMConfig();
+}
+
 EntityID EngineContext::resolveEntityIndex(uint32_t index) const {
   auto it = m_entityByIndex.find(index);
   return (it == m_entityByIndex.end()) ? InvalidEntity : it->second;
@@ -151,9 +184,38 @@ void EngineContext::handleWorldEvent(const WorldEvent &e) {
   case WorldEventType::EntityDestroyed:
     m_entityByIndex.erase(e.a.index);
     break;
+  case WorldEventType::SkyChanged: {
+    // Rebuild IBL when sky HDRI path changes
+    const auto &sky = m_world.skySettings();
+    if (!sky.hdriPath.empty()) {
+      m_envIBL.loadFromHDR(sky.hdriPath);
+    }
+    break;
+  }
   default:
     break;
   }
+}
+
+void EngineContext::updateSkyUBO(const RenderPassContext &ctx) {
+  // Fill Sky UBO
+  m_sky.invViewProj = glm::inverse(ctx.viewProj);
+  m_sky.camPos = glm::vec4(ctx.cameraPos, 0.0f);
+
+  const auto &sky = m_world.skySettings();
+  float intensity = sky.enabled ? sky.intensity : 0.0f;
+  float exposureStops = sky.exposure;
+  float yawDeg = sky.rotationYawDeg;
+  float drawBg = (sky.enabled && sky.drawBackground) ? 1.0f : 0.0f;
+
+  float yawRad = glm::radians(yawDeg);
+  m_sky.skyParams = glm::vec4(intensity, exposureStops, yawRad, drawBg);
+
+  // Upload to GPU
+  glNamedBufferSubData(m_skyUBO, 0, sizeof(SkyConstants), &m_sky);
+
+  // Bind to binding point 2
+  glBindBufferBase(GL_UNIFORM_BUFFER, 2, m_skyUBO);
 }
 
 } // namespace Nyx

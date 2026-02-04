@@ -1,25 +1,66 @@
 #include "PrimitiveGenerator.h"
-#include "CubeGenerator.h"
 #include "glm/gtc/constants.hpp"
 
 #include <cmath>
 #include <glm/glm.hpp>
 
+#include "MeshTangentGen.h"
+
 namespace Nyx {
 
-static MeshCPU makePlanePN(float halfExtent = 0.5f) {
+static MeshCPU makePlanePNUt(float halfExtent) {
   MeshCPU m{};
+  // UVs 0..1
   m.vertices = {
-      {{-halfExtent, 0.0f, -halfExtent}, {0, 1, 0}},
-      {{halfExtent, 0.0f, -halfExtent}, {0, 1, 0}},
-      {{halfExtent, 0.0f, halfExtent}, {0, 1, 0}},
-      {{-halfExtent, 0.0f, halfExtent}, {0, 1, 0}},
+      {{-halfExtent, 0.0f, -halfExtent}, {0, 1, 0}, {0, 0}, {0, 0, 0, 0}},
+      {{halfExtent, 0.0f, -halfExtent}, {0, 1, 0}, {1, 0}, {0, 0, 0, 0}},
+      {{halfExtent, 0.0f, halfExtent}, {0, 1, 0}, {1, 1}, {0, 0, 0, 0}},
+      {{-halfExtent, 0.0f, halfExtent}, {0, 1, 0}, {0, 1}, {0, 0, 0, 0}},
   };
   m.indices = {0, 1, 2, 0, 2, 3};
+
+  generateTangents(m);
   return m;
 }
 
-static MeshCPU makeCirclePN(uint32_t seg, float radius = 0.5f) {
+// Cube with per-face UVs (no shared verts) so tangents are correct per face.
+static MeshCPU makeCubePNUt(float halfExtent) {
+  MeshCPU m{};
+  m.vertices.reserve(24);
+  m.indices.reserve(36);
+
+  auto pushFace = [&](glm::vec3 n, glm::vec3 a, glm::vec3 b, glm::vec3 c,
+                      glm::vec3 d) {
+    // UVs: a(0,0) b(1,0) c(1,1) d(0,1)
+    const uint32_t base = (uint32_t)m.vertices.size();
+    m.vertices.push_back({a, n, {0, 0}, {0, 0, 0, 0}});
+    m.vertices.push_back({b, n, {1, 0}, {0, 0, 0, 0}});
+    m.vertices.push_back({c, n, {1, 1}, {0, 0, 0, 0}});
+    m.vertices.push_back({d, n, {0, 1}, {0, 0, 0, 0}});
+    m.indices.insert(m.indices.end(), {base + 0, base + 1, base + 2, base + 0,
+                                       base + 2, base + 3});
+  };
+
+  const float h = halfExtent;
+
+  // +Z
+  pushFace({0, 0, 1}, {-h, -h, h}, {h, -h, h}, {h, h, h}, {-h, h, h});
+  // -Z
+  pushFace({0, 0, -1}, {h, -h, -h}, {-h, -h, -h}, {-h, h, -h}, {h, h, -h});
+  // +X
+  pushFace({1, 0, 0}, {h, -h, h}, {h, -h, -h}, {h, h, -h}, {h, h, h});
+  // -X
+  pushFace({-1, 0, 0}, {-h, -h, -h}, {-h, -h, h}, {-h, h, h}, {-h, h, -h});
+  // +Y
+  pushFace({0, 1, 0}, {-h, h, h}, {h, h, h}, {h, h, -h}, {-h, h, -h});
+  // -Y
+  pushFace({0, -1, 0}, {-h, -h, -h}, {h, -h, -h}, {h, -h, h}, {-h, -h, h});
+
+  generateTangents(m);
+  return m;
+}
+
+static MeshCPU makeCirclePNUt(uint32_t seg, float radius = 0.5f) {
   if (seg < 3)
     seg = 3;
 
@@ -28,14 +69,16 @@ static MeshCPU makeCirclePN(uint32_t seg, float radius = 0.5f) {
   m.indices.reserve(seg * 3);
 
   // center
-  m.vertices.push_back({{0, 0, 0}, {0, 1, 0}});
+  m.vertices.push_back({{0, 0, 0}, {0, 1, 0}, {0.5f, 0.5f}, {0, 0, 0, 0}});
 
   const float step = glm::two_pi<float>() / float(seg);
   for (uint32_t i = 0; i < seg; ++i) {
     float a = step * float(i);
     float x = std::cos(a) * radius;
     float z = std::sin(a) * radius;
-    m.vertices.push_back({{x, 0, z}, {0, 1, 0}});
+    float u = (x / radius) * 0.5f + 0.5f;
+    float v = (z / radius) * 0.5f + 0.5f;
+    m.vertices.push_back({{x, 0, z}, {0, 1, 0}, {u, v}, {0, 0, 0, 0}});
   }
 
   for (uint32_t i = 0; i < seg; ++i) {
@@ -47,10 +90,12 @@ static MeshCPU makeCirclePN(uint32_t seg, float radius = 0.5f) {
     m.indices.push_back(c);
   }
 
+  generateTangents(m);
   return m;
 }
 
-static MeshCPU makeSpherePN(uint32_t segU, uint32_t segV, float radius = 0.5f) {
+static MeshCPU makeSpherePNUt(uint32_t segU, uint32_t segV,
+                              float radius = 0.5f) {
   segU = (segU < 8) ? 8 : segU;
   segV = (segV < 6) ? 6 : segV;
 
@@ -70,7 +115,8 @@ static MeshCPU makeSpherePN(uint32_t segU, uint32_t segV, float radius = 0.5f) {
                   std::sin(theta) * std::sin(phi)};
       glm::vec3 p = n * radius;
 
-      m.vertices.push_back({p, glm::normalize(n)});
+      m.vertices.push_back({p, glm::normalize(n), {u, 1.0f - v},
+                             {0, 0, 0, 0}});
     }
   }
 
@@ -92,24 +138,25 @@ static MeshCPU makeSpherePN(uint32_t segU, uint32_t segV, float radius = 0.5f) {
     }
   }
 
+  generateTangents(m);
   return m;
 }
 
 MeshCPU makePrimitivePN(ProcMeshType type, uint32_t detail) {
   switch (type) {
   case ProcMeshType::Cube:
-    return makeCubePN({.halfExtent = 0.5f});
+    return makeCubePNUt(0.5f);
   case ProcMeshType::Plane:
-    return makePlanePN(0.5f);
+    return makePlanePNUt(0.5f);
   case ProcMeshType::Circle:
-    return makeCirclePN(detail, 0.5f);
+    return makeCirclePNUt(detail, 0.5f);
   case ProcMeshType::Sphere:
-    return makeSpherePN(detail, detail / 2u, 0.5f);
+    return makeSpherePNUt(detail, detail / 2u, 0.5f);
   case ProcMeshType::Monkey:
     // Placeholder: keep pipeline working; real Suzanne comes soon.
-    return makeCubePN({.halfExtent = 0.5f});
+    return makeCubePNUt(0.5f);
   default:
-    return makeCubePN({.halfExtent = 0.5f});
+    return makeCubePNUt(0.5f);
   }
 }
 

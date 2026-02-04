@@ -1,0 +1,202 @@
+#version 460 core
+
+layout(local_size_x = 16, local_size_y = 16) in;
+
+layout(binding = 0) uniform sampler2D uHDR;
+layout(binding = 1) uniform sampler2D uDepth;
+
+layout(binding = 6) uniform sampler2D uShadow0;  // CSM Atlas
+layout(binding = 7) uniform sampler2D uShadow1;  // Spot Atlas
+layout(binding = 8) uniform sampler2D uShadow2;  // Dir Atlas
+layout(binding = 9) uniform sampler2DArray uShadow3;  // Point Array
+
+layout(rgba16f, binding = 2) writeonly uniform image2D uOut;
+
+layout(std140, binding = 5) uniform ShadowCSMData {
+  mat4 uLightVP[4];
+  vec4 uSplitDepths;
+  vec4 uShadowMapSize;
+  vec4 uBiasParams;
+  vec4 uMisc;
+};
+
+uniform mat4 u_InvViewProj;
+uniform mat4 u_View;
+uniform vec3 u_CamPos;
+
+uniform uint u_Mode;
+uniform float u_Alpha;
+
+vec3 cascadeColor(int c) {
+  if (c == 0)
+    return vec3(1.0, 0.25, 0.25);
+  if (c == 1)
+    return vec3(0.25, 1.0, 0.25);
+  if (c == 2)
+    return vec3(0.25, 0.5, 1.0);
+  return vec3(1.0, 1.0, 0.25);
+}
+
+float sampleDepthRaw(int idx, vec2 uv) {
+  if (idx == 0)
+    return texture(uShadow0, uv).r;  // CSM Atlas
+  if (idx == 1)
+    return texture(uShadow1, uv).r;  // Spot Atlas
+  if (idx == 2)
+    return texture(uShadow2, uv).r;  // Dir Atlas
+  // Point array requires layer index - return first layer for now
+  return texture(uShadow3, vec3(uv, 0.0)).r;
+}
+
+float splitLine(float viewDepth) {
+  float s1 = uSplitDepths.x;
+  float s2 = uSplitDepths.y;
+  float s3 = uSplitDepths.z;
+  float t = 0.15;
+
+  float l1 = 1.0 - clamp(abs(viewDepth - s1) / t, 0.0, 1.0);
+  float l2 = 1.0 - clamp(abs(viewDepth - s2) / t, 0.0, 1.0);
+  float l3 = 1.0 - clamp(abs(viewDepth - s3) / t, 0.0, 1.0);
+
+  return max(l1, max(l2, l3));
+}
+
+void main() {
+  ivec2 px = ivec2(gl_GlobalInvocationID.xy);
+  ivec2 sz = imageSize(uOut);
+  if (px.x >= sz.x || px.y >= sz.y)
+    return;
+
+  vec2 uv = (vec2(px) + 0.5) / vec2(sz);
+
+  vec3 base = texture(uHDR, uv).rgb;
+  vec3 outC = base;
+
+  if (u_Mode == 0u) {
+    imageStore(uOut, px, vec4(base, 1.0));
+    return;
+  }
+
+  float depth01 = texelFetch(uDepth, px, 0).r;
+  if (depth01 >= 0.999999) {
+    imageStore(uOut, px, vec4(base, 1.0));
+    return;
+  }
+
+  float z = depth01 * 2.0 - 1.0;
+  vec4 ndc = vec4(uv * 2.0 - 1.0, z, 1.0);
+  vec4 w = u_InvViewProj * ndc;
+  vec3 worldPos = w.xyz / max(w.w, 1e-6);
+
+  vec4 viewPos = u_View * vec4(worldPos, 1.0);
+  float viewDepth = -viewPos.z;
+
+  int cc = int(max(uMisc.x, 1.0));
+  int c = 0;
+  if (cc > 1) {
+    if (viewDepth < uSplitDepths.x) {
+      c = 0;
+    } else if (cc == 2) {
+      c = 1;
+    } else if (viewDepth < uSplitDepths.y) {
+      c = 1;
+    } else if (cc == 3) {
+      c = 2;
+    } else if (viewDepth < uSplitDepths.z) {
+      c = 2;
+    } else {
+      c = min(3, cc - 1);
+    }
+  }
+
+  if (u_Mode >= 3u && u_Mode <= 6u) {
+    int idx = int(u_Mode - 3u);
+    float d = sampleDepthRaw(idx, uv);
+    vec3 dbg = vec3(pow(clamp(d, 0.0, 1.0), 32.0));
+    outC = mix(base, dbg, u_Alpha);
+    imageStore(uOut, px, vec4(outC, 1.0));
+    return;
+  }
+  
+  // Mode 8: Spot Atlas visualization
+  if (u_Mode == 8u) {
+    float d = texture(uShadow1, uv).r;
+    vec3 dbg = vec3(pow(clamp(d, 0.0, 1.0), 16.0));
+    outC = mix(base, dbg, u_Alpha);
+    imageStore(uOut, px, vec4(outC, 1.0));
+    return;
+  }
+  
+  // Mode 9: Dir Atlas visualization
+  if (u_Mode == 9u) {
+    float d = texture(uShadow2, uv).r;
+    vec3 dbg = vec3(pow(clamp(d, 0.0, 1.0), 16.0));
+    outC = mix(base, dbg, u_Alpha);
+    imageStore(uOut, px, vec4(outC, 1.0));
+    return;
+  }
+  
+  // Mode 10: Point Array visualization (first layer)
+  if (u_Mode == 10u) {
+    float d = texture(uShadow3, vec3(uv, 0.0)).r;
+    vec3 dbg = vec3(pow(clamp(d, 0.0, 1.0), 16.0));
+    outC = mix(base, dbg, u_Alpha);
+    imageStore(uOut, px, vec4(outC, 1.0));
+    return;
+  }
+
+  if (u_Mode == 1u) {
+    vec3 dbg = cascadeColor(c);
+    float line = splitLine(viewDepth);
+    dbg = mix(dbg, vec3(1.0), line);
+    outC = mix(base, dbg, u_Alpha * 0.7);
+    imageStore(uOut, px, vec4(outC, 1.0));
+    return;
+  }
+
+  if (u_Mode == 2u || u_Mode == 7u) {
+    vec4 lp = uLightVP[c] * vec4(worldPos, 1.0);
+    if (abs(lp.w) < 1e-6) {
+      imageStore(uOut, px, vec4(base, 1.0));
+      return;
+    }
+    vec3 lndc = lp.xyz / lp.w;
+    vec2 luv = lndc.xy * 0.5 + 0.5;
+    float ldepth01 = lndc.z * 0.5 + 0.5;
+    if (luv.x < 0.0 || luv.x > 1.0 || luv.y < 0.0 || luv.y > 1.0) {
+      imageStore(uOut, px, vec4(base, 1.0));
+      return;
+    }
+
+    float invW = uShadowMapSize.z;
+    float invH = uShadowMapSize.w;
+    float bias = max(uBiasParams.y, 0.0);
+    float dcmp = ldepth01 - bias;
+
+    int R = 1;
+    float sum = 0.0;
+    float wsum = 0.0;
+    for (int y = -R; y <= R; ++y) {
+      for (int x = -R; x <= R; ++x) {
+        vec2 off = vec2(float(x) * invW, float(y) * invH);
+        float smp = sampleDepthRaw(c, luv + off);
+        float lit = (dcmp <= smp) ? 1.0 : 0.0;
+        sum += lit;
+        wsum += 1.0;
+      }
+    }
+    float shadow = (wsum > 0.0) ? (sum / wsum) : 1.0;
+    vec3 dbg = vec3(shadow);
+    if (u_Mode == 7u) {
+      vec3 tint = cascadeColor(c) * shadow;
+      float line = splitLine(viewDepth);
+      tint = mix(tint, vec3(1.0), line);
+      dbg = tint;
+    }
+    outC = mix(base, dbg, u_Alpha);
+    imageStore(uOut, px, vec4(outC, 1.0));
+    return;
+  }
+
+  imageStore(uOut, px, vec4(outC, 1.0));
+}

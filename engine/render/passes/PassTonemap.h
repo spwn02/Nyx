@@ -1,19 +1,19 @@
 #pragma once
 
-#include <cstdint>
+#include "render/gl/GLShaderUtil.h"
+#include "render/passes/RenderPass.h"
 
 namespace Nyx {
 
-class PassTonemap final {
+class PassTonemap final : public RenderPass {
 public:
-  void init();
-  void shutdown();
+  ~PassTonemap() override;
 
-  void dispatch(uint32_t hdrTex, uint32_t ldrTex, uint32_t width,
-                uint32_t height, float exposure, bool applyGamma);
+  void configure(GLShaderUtil &shaders);
 
-private:
-  uint32_t m_prog = 0;
+  void setup(RenderGraph &graph, const RenderPassContext &ctx,
+             const RenderableRegistry &registry, EngineContext &engine,
+             bool editorVisible) override;
 };
 
 } // namespace Nyx

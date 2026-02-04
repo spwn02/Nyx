@@ -18,15 +18,21 @@
     "Hierarchy": true
   },
   "GizmoOp": 1,
-  "ActiveCamera": 8.11256e+18,
+  "ActiveCamera": 5.76328e+18,
   "RecentScenes": [
+    "/home/spawn/dev/cpp/projects/Nyx/test.json",
+    "/home/spawn/dev/cpp/projects/Nyx/test_shadows.json",
+    "test.json",
+    "test_shadows.json",
+    "/home/spawn/dev/cpp/projects/Nyx/scene2.json",
+    "scene2.json",
     "/home/spawn/dev/cpp/projects/Nyx/scene.json",
     "scene.json"
   ],
   "AutoSave": true,
   "GizmoMode": 1,
-  "UUIDSeed": 8.45975e+18,
-  "LastScene": "/home/spawn/dev/cpp/projects/Nyx/scene.json",
+  "UUIDSeed": 1.12309e+19,
+  "LastScene": "/home/spawn/dev/cpp/projects/Nyx/test.json",
   "version": 1,
   "type": "NyxProject"
 }

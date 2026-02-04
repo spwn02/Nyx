@@ -1,44 +1,21 @@
 #include "Renderer.h"
 
-#include "core/Assert.h"
-#include "core/Log.h"
-#include "core/Paths.h"
-
 #include "app/EngineContext.h"
 #include "npgms/MeshCPU.h"
 #include "npgms/PrimitiveGenerator.h"
-#include "render/rg/RenderPassContext.h"
+#include "render/gl/GLShaderUtil.h"
 #include "scene/RenderableRegistry.h"
 
-#include <array>
-#include <cstdlib>
 #include <filesystem>
-#include <fstream>
+#include <algorithm>
 #include <glad/glad.h>
-#include <glm/gtc/matrix_transform.hpp>
-#include <sstream>
 #include <vector>
 
 namespace Nyx {
 
-// ------------------------------------------------------------
-// Small file helper
-// ------------------------------------------------------------
-static std::string readTextFile(const std::string &path) {
-  auto p = std::filesystem::absolute(path);
-  std::ifstream file(p);
-  if (!file.is_open()) {
-    Log::Error("Failed to open file: {}", p.string());
-    return "";
-  }
-  std::stringstream buffer;
-  buffer << file.rdbuf();
-  return buffer.str();
-}
-
 Renderer::Renderer() : m_rgRes(m_res) {
   m_fsTri.init();
-  m_passTonemap.init();
+  m_shaders.setShaderRoot("engine/resources/shaders");
 
   const char *rgDump = std::getenv("NYX_RG_DUMP");
   if (rgDump && rgDump[0] != '\0' && rgDump[0] != '0') {
@@ -48,87 +25,38 @@ Renderer::Renderer() : m_rgRes(m_res) {
     m_graph.enableDebug(path.string(), /*dumpLifetimes=*/true);
   }
 
-  std::string kPresentVS = readTextFile(Paths::shader("present.vert"));
-  std::string kPresentFS = readTextFile(Paths::shader("present.frag"));
-  std::string kForwardVS = readTextFile(Paths::shader("forward.vert"));
-  std::string kForwardFS = readTextFile(Paths::shader("forward.frag"));
-  std::string kOutlineVS = readTextFile(Paths::shader("fullscreen.vert"));
-  std::string kOutlineFS = readTextFile(Paths::shader("outline.frag"));
+  m_passEnvEquirect.configure(m_shaders);
+  m_passEnvIrradiance.configure(m_shaders);
+  m_passEnvPrefilter.configure(m_shaders);
+  m_passEnvBRDF.configure(m_shaders);
 
-  {
-    uint32_t vs = compileShader(GL_VERTEX_SHADER, kPresentVS);
-    uint32_t fs = compileShader(GL_FRAGMENT_SHADER, kPresentFS);
-    m_presentProg = linkProgram(vs, fs);
-    glDeleteShader(vs);
-    glDeleteShader(fs);
-  }
-
-  {
-    uint32_t vs = compileShader(GL_VERTEX_SHADER, kForwardVS);
-    uint32_t fs = compileShader(GL_FRAGMENT_SHADER, kForwardFS);
-    m_forwardProg = linkProgram(vs, fs);
-    glDeleteShader(vs);
-    glDeleteShader(fs);
-  }
-
-  {
-    uint32_t vs = compileShader(GL_VERTEX_SHADER, kOutlineVS);
-    uint32_t fs = compileShader(GL_FRAGMENT_SHADER, kOutlineFS);
-    m_outlineProg = linkProgram(vs, fs);
-    glDeleteShader(vs);
-    glDeleteShader(fs);
-  }
-
-  m_hdrFbo = m_res.acquireFBO();
-  m_outlineFbo = m_res.acquireFBO();
-
-  glCreateBuffers(1, &m_selectedSSBO);
-  std::vector<uint32_t> init{0u}; // selectedCount=0
-  glNamedBufferData(m_selectedSSBO,
-                    (GLsizeiptr)(init.size() * sizeof(uint32_t)), init.data(),
-                    GL_DYNAMIC_DRAW);
-
-  m_passDepthPre.configure(
-      m_hdrFbo, m_forwardProg,
-      [this](ProcMeshType t) { drawPrimitive(t); });
-  m_passForward.configure(
-      m_hdrFbo, m_forwardProg,
-      [this](ProcMeshType t) { drawPrimitive(t); });
-  m_passPost.configure(m_hdrFbo, m_presentProg, &m_fsTri);
-  m_passSelection.configure(m_outlineFbo, m_outlineProg, &m_fsTri,
-                            m_selectedSSBO);
-  m_passPresent.configure(m_presentProg, &m_fsTri);
+  m_passDepthPre.configure(m_shaders, m_res,
+                           [this](ProcMeshType t) { drawPrimitive(t); });
+  m_passShadowCSM.configure(m_shaders, m_res,
+                            [this](ProcMeshType t) { drawPrimitive(t); });
+  m_passShadowSpot.configure(m_shaders, m_res,
+                             [this](ProcMeshType t) { drawPrimitive(t); });
+  m_passShadowDir.configure(m_shaders, m_res,
+                            [this](ProcMeshType t) { drawPrimitive(t); });
+  m_passShadowPoint.configure(m_shaders, m_res,
+                              [this](ProcMeshType t) { drawPrimitive(t); });
+  m_passHiZ.configure(m_shaders);
+  m_passLightCluster.configure(m_shaders);
+  m_passLightGridDebug.configure(m_shaders);
+  m_passForward.configure(m_shaders, m_res,
+                          [this](ProcMeshType t) { drawPrimitive(t); });
+  m_passSky.configure(m_shaders);
+  m_passShadowDebug.configure(m_shaders);
+  m_passTonemap.configure(m_shaders);
+  m_passPost.configure(m_shaders, m_res, m_fsTri);
+  m_passSelection.configure(m_shaders, m_res, m_fsTri);
+  m_passPresent.configure(m_shaders, m_fsTri);
 }
 
-Renderer::~Renderer() {
-  m_passTonemap.shutdown();
-  m_fsTri.shutdown();
-
-  if (m_presentProg)
-    glDeleteProgram(m_presentProg);
-  if (m_forwardProg)
-    glDeleteProgram(m_forwardProg);
-  if (m_outlineProg)
-    glDeleteProgram(m_outlineProg);
-
-  if (m_selectedSSBO)
-    glDeleteBuffers(1, &m_selectedSSBO);
-
-  m_res.releaseFBO(m_hdrFbo);
-  m_res.releaseFBO(m_outlineFbo);
-}
+Renderer::~Renderer() { m_fsTri.shutdown(); }
 
 void Renderer::setSelectedPickIDs(const std::vector<uint32_t> &ids) {
-  const uint32_t count = (uint32_t)ids.size();
-  std::vector<uint32_t> tmp;
-  tmp.reserve(count + 1);
-  tmp.push_back(count);
-  for (uint32_t v : ids)
-    tmp.push_back(v);
-
-  glNamedBufferData(m_selectedSSBO, (GLsizeiptr)(tmp.size() * sizeof(uint32_t)),
-                    tmp.data(), GL_DYNAMIC_DRAW);
-  m_selectedCount = count;
+  m_passSelection.updateSelectedIDs(ids);
 }
 
 static uint32_t primIndex(ProcMeshType t) {
@@ -174,9 +102,21 @@ uint32_t Renderer::renderFrame(const RenderPassContext &ctx, bool editorVisible,
       .usage = RGTexUsage::DepthAttach | RGTexUsage::Sampled,
       .extent = {RenderExtentKind::Framebuffer, 0, 0},
   };
+  const RenderTextureDesc hizDesc{
+      .format = RGFormat::R32F,
+      .usage = RGTexUsage::Sampled | RGTexUsage::Image,
+      .extent = {RenderExtentKind::Framebuffer, 0, 0},
+      .mipCount = 1,
+  };
   const RenderTextureDesc hdrDesc{
       .format = RGFormat::RGBA16F,
-      .usage = RGTexUsage::ColorAttach | RGTexUsage::Sampled,
+      .usage = RGTexUsage::ColorAttach | RGTexUsage::Sampled |
+               RGTexUsage::Image,
+      .extent = {RenderExtentKind::Framebuffer, 0, 0},
+  };
+  const RenderTextureDesc hdrDebugDesc{
+      .format = RGFormat::RGBA16F,
+      .usage = RGTexUsage::Sampled | RGTexUsage::Image,
       .extent = {RenderExtentKind::Framebuffer, 0, 0},
   };
   const RenderTextureDesc idDesc{
@@ -199,15 +139,135 @@ uint32_t Renderer::renderFrame(const RenderPassContext &ctx, bool editorVisible,
       .usage = RGTexUsage::ColorAttach | RGTexUsage::Sampled,
       .extent = {RenderExtentKind::Framebuffer, 0, 0},
   };
+  const RenderTextureDesc shadowCSMDesc{
+      .format = RGFormat::Depth32F,
+      .usage = RGTexUsage::DepthAttach | RGTexUsage::Sampled,
+      .extent = {RenderExtentKind::Explicit, 2048, 2048},
+  };
 
   m_graph.declareTexture("Depth.Pre", depthDesc);
+  const uint32_t maxDim = std::max(ctx.fbWidth, ctx.fbHeight);
+  uint32_t hizMips = 1;
+  for (uint32_t v = maxDim; v > 1; v >>= 1)
+    ++hizMips;
+  RenderTextureDesc hizDescResolved = hizDesc;
+  hizDescResolved.mipCount = hizMips;
+  m_graph.declareTexture("HiZ.Depth", hizDescResolved);
   m_graph.declareTexture("HDR.Color", hdrDesc);
+  m_graph.declareTexture("HDR.Debug", hdrDebugDesc);
   m_graph.declareTexture("ID.Submesh", idDesc);
   m_graph.declareTexture("Post.In", postInDesc);
   m_graph.declareTexture("LDR.Color", ldrDesc);
   m_graph.declareTexture("OUT.Color", outDesc);
+  
+  // Shadow atlas textures
+  // 1. CSM Atlas: 4 cascades of primary directional light
+  const RenderTextureDesc shadowCSMAtlasDesc{
+      .format = RGFormat::Depth32F,
+      .usage = RGTexUsage::DepthAttach | RGTexUsage::Sampled,
+      .extent = {RenderExtentKind::Explicit, 4096u, 4096u},
+  };
+  m_graph.declareTexture("Shadow.CSMAtlas", shadowCSMAtlasDesc);
+
+  // 2. Spot Light Atlas: All spot lights packed into single atlas
+  const RenderTextureDesc shadowSpotAtlasDesc{
+      .format = RGFormat::Depth32F,
+      .usage = RGTexUsage::DepthAttach | RGTexUsage::Sampled,
+      .extent = {RenderExtentKind::Explicit, 2048u, 2048u},
+  };
+  m_graph.declareTexture("Shadow.SpotAtlas", shadowSpotAtlasDesc);
+
+  // 3. Dir Light Atlas: Additional directional lights (non-cascaded)
+  const RenderTextureDesc shadowDirAtlasDesc{
+      .format = RGFormat::Depth32F,
+      .usage = RGTexUsage::DepthAttach | RGTexUsage::Sampled,
+      .extent = {RenderExtentKind::Explicit, 2048u, 2048u},
+  };
+  m_graph.declareTexture("Shadow.DirAtlas", shadowDirAtlasDesc);
+
+  // 4. Point Light Cubemap Array: One cubemap per point light (6 faces each)
+  constexpr uint32_t kMaxPointLights = 16u;
+  const RenderTextureDesc shadowPointArrayDesc{
+      .format = RGFormat::Depth32F,
+      .usage = RGTexUsage::DepthAttach | RGTexUsage::Sampled,
+      .extent = {RenderExtentKind::Explicit, 512u, 512u},
+      .layers = kMaxPointLights * 6u,
+  };
+  m_graph.declareTexture("Shadow.PointArray", shadowPointArrayDesc);
+
+  const uint32_t tileSize = 16;
+  const uint32_t tilesX = (ctx.fbWidth + tileSize - 1) / tileSize;
+  const uint32_t tilesY = (ctx.fbHeight + tileSize - 1) / tileSize;
+  const uint32_t tileCount = tilesX * tilesY;
+  const uint32_t zSlices = 16;
+  const uint32_t maxPerCluster = 96;
+  const uint32_t clusterCount = tileCount * zSlices;
+
+  const RGBufferDesc headerDesc{
+      .byteSize = clusterCount * 8u,
+      .usage = RGBufferUsage::SSBO,
+      .dynamic = true,
+  };
+  const RGBufferDesc indicesDesc{
+      .byteSize = clusterCount * maxPerCluster * 4u,
+      .usage = RGBufferUsage::SSBO,
+      .dynamic = true,
+  };
+  const RGBufferDesc metaDesc{
+      .byteSize = 64u,
+      .usage = RGBufferUsage::UBO,
+      .dynamic = true,
+  };
+
+  m_graph.declareBuffer("LightGrid.Header", headerDesc);
+  m_graph.declareBuffer("LightGrid.Indices", indicesDesc);
+  m_graph.declareBuffer("LightGrid.Meta", metaDesc);
+  m_graph.declareBuffer(
+      "Scene.Lights",
+      RGBufferDesc{.byteSize = 1u, .usage = RGBufferUsage::SSBO, .dynamic = true});
+  {
+    auto &bb = m_graph.blackboard();
+    const RGBufferRef lightsRef = bb.getBuffer("Scene.Lights");
+    if (lightsRef != InvalidRGBuffer) {
+      GLBuffer external{};
+      external.buf = engine.lights().ssbo();
+      external.byteSize = 0;
+      bb.bindExternalBuffer(lightsRef, external);
+    }
+  }
+
+  m_passEnvEquirect.setup(m_graph, ctx, registry, engine, editorVisible);
+  m_passEnvIrradiance.setup(m_graph, ctx, registry, engine, editorVisible);
+  m_passEnvPrefilter.setup(m_graph, ctx, registry, engine, editorVisible);
+  m_passEnvBRDF.setup(m_graph, ctx, registry, engine, editorVisible);
+
+  m_passShadowCSM.setup(m_graph, ctx, registry, engine, editorVisible);
+  m_passShadowSpot.setup(m_graph, ctx, registry, engine, editorVisible);
+  m_passShadowDir.setup(m_graph, ctx, registry, engine, editorVisible);
+  m_passShadowPoint.setup(m_graph, ctx, registry, engine, editorVisible);
+  m_graph.addPass(
+      "ShadowMetadataUpload",
+      [&](RenderPassBuilder &b) {
+        b.readTexture("Shadow.SpotAtlas", RenderAccess::SampledRead);
+        b.readTexture("Shadow.DirAtlas", RenderAccess::SampledRead);
+        b.readTexture("Shadow.PointArray", RenderAccess::SampledRead);
+        b.writeBuffer("Scene.Lights", RenderAccess::SSBOWrite);
+      },
+      [&](const RenderPassContext &, RenderResourceBlackboard &, RGResources &) {
+        engine.lights().updateShadowMetadata(m_passShadowSpot, m_passShadowDir,
+                                             m_passShadowPoint);
+      });
+  
   m_passDepthPre.setup(m_graph, ctx, registry, engine, editorVisible);
+  m_passHiZ.setup(m_graph, ctx, registry, engine, editorVisible);
+  m_passLightCluster.setLightCount(engine.lights().lightCount());
+  m_passLightCluster.setup(m_graph, ctx, registry, engine, editorVisible);
+  m_passLightGridDebug.setup(m_graph, ctx, registry, engine, editorVisible);
   m_passForward.setup(m_graph, ctx, registry, engine, editorVisible);
+  m_passSky.setup(m_graph, ctx, registry, engine, editorVisible);
+  m_passShadowDebug.setMode(engine.shadowDebugMode());
+  m_passShadowDebug.setOverlayAlpha(engine.shadowDebugAlpha());
+  m_passShadowDebug.setup(m_graph, ctx, registry, engine, editorVisible);
   m_passTonemap.setup(m_graph, ctx, registry, engine, editorVisible);
   m_passPost.setup(m_graph, ctx, registry, engine, editorVisible);
   m_passSelection.setup(m_graph, ctx, registry, engine, editorVisible);
@@ -216,7 +276,7 @@ uint32_t Renderer::renderFrame(const RenderPassContext &ctx, bool editorVisible,
   m_graph.execute(ctx, m_rgRes);
 
   auto &bb = m_graph.blackboard();
-  m_out.hdr = bb.textureHandle(bb.getTexture("HDR.Color"));
+  m_out.hdr = bb.textureHandle(bb.getTexture("HDR.Debug"));
   m_out.id = bb.textureHandle(bb.getTexture("ID.Submesh"));
   m_out.depth = bb.textureHandle(bb.getTexture("Depth.Pre"));
   m_out.ldr = bb.textureHandle(bb.getTexture("LDR.Color"));

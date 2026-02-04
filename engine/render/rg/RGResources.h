@@ -17,6 +17,14 @@ struct RGTexture {
   bool alive = false;
 };
 
+struct RGBuffer {
+  GLBuffer buf{};
+  RGBufferDesc desc{};
+  uint32_t gen = 1;
+  uint32_t lastUsedFrame = 0;
+  bool alive = false;
+};
+
 class RGResources {
 public:
   explicit RGResources(GLResources &res) : m_res(res) {}
@@ -37,6 +45,15 @@ public:
   GLTexture2D &tex(RGHandle h);
   const RGTexDesc &desc(RGHandle h) const;
 
+  // Acquire a buffer resource matching the description
+  RGBufHandle acquireBuf(const char *debugName, const RGBufferDesc &desc);
+  RGBufHandle allocateBuf(const char *debugName, const RGBufferDesc &desc);
+  void releaseBuf(RGBufHandle h);
+
+  const GLBuffer &buf(RGBufHandle h) const;
+  GLBuffer &buf(RGBufHandle h);
+  const RGBufferDesc &bufDesc(RGBufHandle h) const;
+
   // Void: GC not used recently
   void gc(uint32_t keepFrames = 120);
 
@@ -51,7 +68,13 @@ private:
   std::vector<RGTexture> m_tex;
   std::vector<uint32_t> m_free;
 
+  std::vector<RGBuffer> m_buf;
+  std::vector<uint32_t> m_freeBuf;
+
   RGHandle makeHandle(uint32_t idx) { return RGHandle{idx, m_tex[idx].gen}; }
+  RGBufHandle makeBufHandle(uint32_t idx) {
+    return RGBufHandle{idx, m_buf[idx].gen};
+  }
 };
 
 } // namespace Nyx

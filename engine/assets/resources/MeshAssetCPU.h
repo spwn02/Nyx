@@ -1,6 +1,6 @@
 #pragma once
 
-#include "scene/MaterialData.h"
+#include "scene/material/MaterialData.h"
 #include <glm/glm.hpp>
 #include <string>
 

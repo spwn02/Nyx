@@ -1,5 +1,6 @@
 #pragma once
 
+#include "render/gl/GLShaderUtil.h"
 #include "render/passes/RenderPass.h"
 
 namespace Nyx {
@@ -8,14 +9,15 @@ class GLFullscreenTriangle;
 
 class PassPresent final : public RenderPass {
 public:
-  void configure(uint32_t presentProg, GLFullscreenTriangle *fsTri);
+  ~PassPresent() override;
+
+  void configure(GLShaderUtil &shaders, GLFullscreenTriangle &fsTri);
 
   void setup(RenderGraph &graph, const RenderPassContext &ctx,
              const RenderableRegistry &registry, EngineContext &engine,
              bool editorVisible) override;
 
 private:
-  uint32_t m_presentProg = 0;
   GLFullscreenTriangle *m_fsTri = nullptr;
 };
 

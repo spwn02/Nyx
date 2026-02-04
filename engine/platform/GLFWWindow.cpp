@@ -5,6 +5,7 @@
 #include "../input/InputSystem.h"
 
 #include <glad/glad.h>
+
 #include <GLFW/glfw3.h>
 
 namespace Nyx {
@@ -97,22 +98,38 @@ void GLFWWindow::initGL() {
 
 void GLFWWindow::pollEvents() { glfwPollEvents(); }
 
+void GLFWWindow::waitEventsTimeout(double seconds) {
+  glfwWaitEventsTimeout(seconds);
+}
+
 void GLFWWindow::swapBuffers() { glfwSwapBuffers(m_window); }
 
 bool GLFWWindow::shouldClose() const {
   return glfwWindowShouldClose(m_window) == GLFW_TRUE;
 }
 
+bool GLFWWindow::isFocused() const {
+  return glfwGetWindowAttrib(m_window, GLFW_FOCUSED) == GLFW_TRUE;
+}
+
+bool GLFWWindow::isVisible() const {
+  return glfwGetWindowAttrib(m_window, GLFW_VISIBLE) == GLFW_TRUE;
+}
+
+bool GLFWWindow::isMinimized() const {
+  return glfwGetWindowAttrib(m_window, GLFW_ICONIFIED) == GLFW_TRUE;
+}
+
 void GLFWWindow::installInputCallbacks() {
-  glfwSetKeyCallback(m_window, [](GLFWwindow *w, int key, int scancode,
-                                  int action, int mods) {
-    (void)scancode;
-    (void)mods;
-    auto *self = static_cast<GLFWWindow *>(glfwGetWindowUserPointer(w));
-    if (!self)
-      return;
-    self->m_input->onKey(key, action);
-  });
+  glfwSetKeyCallback(
+      m_window, [](GLFWwindow *w, int key, int scancode, int action, int mods) {
+        (void)scancode;
+        (void)mods;
+        auto *self = static_cast<GLFWWindow *>(glfwGetWindowUserPointer(w));
+        if (!self)
+          return;
+        self->m_input->onKey(key, action);
+      });
 
   glfwSetMouseButtonCallback(
       m_window, [](GLFWwindow *w, int button, int action, int mods) {
@@ -129,6 +146,14 @@ void GLFWWindow::installInputCallbacks() {
       return;
     self->m_input->onCursorPos(x, y);
   });
+}
+
+void GLFWWindow::disableCursor(bool disabled) const {
+  if (disabled) {
+    glfwSetInputMode(m_window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
+  } else {
+    glfwSetInputMode(m_window, GLFW_CURSOR, GLFW_CURSOR_NORMAL);
+  }
 }
 
 } // namespace Nyx

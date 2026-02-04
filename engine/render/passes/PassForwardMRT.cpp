@@ -9,14 +9,25 @@
 namespace Nyx {
 
 static constexpr uint32_t kMaterialsBinding = 14;
-static constexpr uint32_t kLightsBinding = 16;
-static constexpr uint32_t kShadowDirBinding = 17;
-static constexpr uint32_t kShadowSpotBinding = 18;
+static constexpr uint32_t kLightsBinding = 20;
 
-void PassForwardMRT::configure(uint32_t fbo, uint32_t forwardProg,
+PassForwardMRT::~PassForwardMRT() {
+  if (m_fbo != 0 && m_res) {
+    m_res->releaseFBO(m_fbo);
+    m_fbo = 0;
+  }
+  if (m_forwardProg != 0) {
+    glDeleteProgram(m_forwardProg);
+    m_forwardProg = 0;
+  }
+}
+
+void PassForwardMRT::configure(GLShaderUtil &shader, GLResources &res,
                                std::function<void(ProcMeshType)> drawFn) {
-  m_fbo = fbo;
-  m_forwardProg = forwardProg;
+  m_res = &res;
+
+  m_fbo = res.acquireFBO();
+  m_forwardProg = shader.buildProgramVF("forward_mrt.vert", "forward_mrt.frag");
   m_draw = std::move(drawFn);
 }
 
@@ -32,6 +43,14 @@ void PassForwardMRT::setup(RenderGraph &graph, const RenderPassContext &ctx,
         b.writeTexture("HDR.Color", RenderAccess::ColorWrite);
         b.writeTexture("ID.Submesh", RenderAccess::ColorWrite);
         b.readTexture("Depth.Pre", RenderAccess::SampledRead);
+        b.readTexture("Shadow.CSMAtlas", RenderAccess::SampledRead);
+        b.readTexture("Shadow.SpotAtlas", RenderAccess::SampledRead);
+        b.readTexture("Shadow.DirAtlas", RenderAccess::SampledRead);
+        b.readTexture("Shadow.PointArray", RenderAccess::SampledRead);
+        b.readBuffer("Scene.Lights", RenderAccess::SSBORead);
+        b.readBuffer("LightGrid.Meta", RenderAccess::UBORead);
+        b.readBuffer("LightGrid.Header", RenderAccess::SSBORead);
+        b.readBuffer("LightGrid.Indices", RenderAccess::SSBORead);
       },
       [&](const RenderPassContext &rc, RenderResourceBlackboard &bb,
           RGResources &rg) {
@@ -64,11 +83,21 @@ void PassForwardMRT::setup(RenderGraph &graph, const RenderPassContext &ctx,
         const uint32_t clearID[1] = {0u};
         glClearBufferuiv(GL_COLOR, 1, clearID);
 
-        engine.materials().uploadIfDirty();
         glBindBufferBase(GL_SHADER_STORAGE_BUFFER, kMaterialsBinding,
                          engine.materials().ssbo());
-        glBindBufferBase(GL_SHADER_STORAGE_BUFFER, kLightsBinding,
-                         engine.lights().ssbo());
+        const auto &lights = buf(bb, rg, "Scene.Lights");
+        const auto &gridMeta = buf(bb, rg, "LightGrid.Meta");
+        const auto &gridHeader = buf(bb, rg, "LightGrid.Header");
+        const auto &gridIndices = buf(bb, rg, "LightGrid.Indices");
+
+        if (lights.buf)
+          glBindBufferBase(GL_SHADER_STORAGE_BUFFER, kLightsBinding, lights.buf);
+        if (gridMeta.buf)
+          glBindBufferBase(GL_UNIFORM_BUFFER, 22, gridMeta.buf);
+        if (gridHeader.buf)
+          glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 24, gridHeader.buf);
+        if (gridIndices.buf)
+          glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 25, gridIndices.buf);
 
         glUseProgram(m_forwardProg);
 
@@ -85,37 +114,55 @@ void PassForwardMRT::setup(RenderGraph &graph, const RenderPassContext &ctx,
             glGetUniformLocation(m_forwardProg, "u_ShadowDirSize");
         const int locSpotSMSize =
             glGetUniformLocation(m_forwardProg, "u_ShadowSpotSize");
-        const int locIsLight =
-            glGetUniformLocation(m_forwardProg, "u_IsLight");
+        const int locIsLight = glGetUniformLocation(m_forwardProg, "u_IsLight");
         const int locLightColorInt =
             glGetUniformLocation(m_forwardProg, "u_LightColorIntensity");
         const int locLightExposure =
             glGetUniformLocation(m_forwardProg, "u_LightExposure");
+        const int locHasIBL = glGetUniformLocation(m_forwardProg, "u_HasIBL");
 
         glUniform1ui(locVM, static_cast<uint32_t>(engine.viewMode()));
         glUniformMatrix4fv(locVP, 1, GL_FALSE, &rc.viewProj[0][0]);
         if (locV >= 0)
           glUniformMatrix4fv(locV, 1, GL_FALSE, &rc.view[0][0]);
-        if (locSplits >= 0) {
-          const auto &splits = engine.shadows().csmSplits();
-          glUniform4fv(locSplits, 1, &splits[0]);
-        }
-        if (locDirSMSize >= 0)
-          glUniform2f(locDirSMSize,
-                      (float)engine.shadows().dirShadowSize(),
-                      (float)engine.shadows().dirShadowSize());
-        if (locSpotSMSize >= 0)
-          glUniform2f(locSpotSMSize,
-                      (float)engine.shadows().spotShadowSize(),
-                      (float)engine.shadows().spotShadowSize());
-        glBindTextureUnit(6, engine.shadows().dirShadowTex());
-        glBindTextureUnit(7, engine.shadows().spotShadowTex());
-        glBindTextureUnit(8, engine.shadows().pointShadowTex());
 
-        glBindBufferBase(GL_SHADER_STORAGE_BUFFER, kShadowDirBinding,
-                         engine.shadows().dirMatricesSSBO());
-        glBindBufferBase(GL_SHADER_STORAGE_BUFFER, kShadowSpotBinding,
-                         engine.shadows().spotMatricesSSBO());
+        const auto &csmAtlas = tex(bb, rg, "Shadow.CSMAtlas");
+        const auto &spotAtlas = tex(bb, rg, "Shadow.SpotAtlas");
+        const auto &dirAtlas = tex(bb, rg, "Shadow.DirAtlas");
+        const auto &pointArray = tex(bb, rg, "Shadow.PointArray");
+        
+        if (csmAtlas.tex)
+          glBindTextureUnit(6, csmAtlas.tex);
+        if (spotAtlas.tex)
+          glBindTextureUnit(7, spotAtlas.tex);
+        if (dirAtlas.tex)
+          glBindTextureUnit(8, dirAtlas.tex);
+        if (pointArray.tex)
+          glBindTextureUnit(9, pointArray.tex);
+
+        // CSM UBO binding=5 (set by PassShadowCSM)
+        glBindBufferBase(GL_UNIFORM_BUFFER, 5, engine.shadowCSMUBO());
+
+        // Shadow metadata UBO binding=10
+        glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 10, engine.lights().shadowMetadataUBO());
+
+        // Sky UBO is already bound at binding point 2 by EngineContext
+
+        auto &env = engine.envIBL();
+        if (env.ready()) {
+          glBindTextureUnit(0, env.envIrradianceCube());
+          glBindTextureUnit(1, env.envPrefilteredCube());
+          glBindTextureUnit(2, env.brdfLUT());
+        }
+        if (locHasIBL >= 0)
+          glUniform1i(locHasIBL, env.ready() ? 1 : 0);
+
+        glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 14,
+                         engine.materials().ssbo());
+
+        // Bind material texture table at unit 10 (matches forward_mrt.frag).
+        // Clamp to 16 samplers to stay under common limits.
+        engine.materials().textures().bindAll(10, 16);
 
         for (const auto &r : registry.all()) {
           if (engine.isEntityHidden(r.entity))

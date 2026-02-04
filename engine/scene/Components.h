@@ -81,6 +81,24 @@ struct CLight final {
   float exposure = 0.0f;
 
   bool enabled = true;
+  // Shadow parameters
+  bool castShadow = true;
+  uint16_t shadowRes = 1024;      // Resolution for spot/point shadows
+  uint16_t cascadeRes = 1024;     // Resolution per cascade (directional)
+  uint8_t cascadeCount = 4;       // Number of CSM cascades (directional)
+  float normalBias = 0.0025f;     // Normal-based bias
+  float slopeBias = 1.0f;         // Slope-based bias
+  float pcfRadius = 2.0f;         // PCF filter radius in texels
+  float pointFar = 25.0f;         // Far plane for point light shadows
+};
+
+struct CSky final {
+  std::string hdriPath;       // Path to HDRI equirect (EXR/HDR)
+  float intensity = 1.0f;     // Multiplier for sky/IBL
+  float exposure = 0.0f;      // Stops (pow(2, exposure))
+  float rotationYawDeg = 0.0f; // Rotation around Y axis
+  bool enabled = true;
+  bool drawBackground = true; // Sky visible in viewport
 };
 
 } // namespace Nyx

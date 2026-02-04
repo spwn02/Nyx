@@ -157,6 +157,18 @@ public:
   CLight &light(EntityID e);
   const CLight &light(EntityID e) const;
 
+  // ---- Sky ----
+  bool hasSky(EntityID e) const;
+  CSky &ensureSky(EntityID e);
+  CSky &sky(EntityID e);
+  const CSky &sky(EntityID e) const;
+  CSky &skySettings();
+  const CSky &skySettings() const;
+
+  // ---- Utility: world-space position/direction ----
+  glm::vec3 worldPosition(EntityID e) const;
+  glm::vec3 worldDirection(EntityID e, const glm::vec3 &localDir) const;
+
   // Active camera (only ONE)
   EntityID activeCamera() const { return m_activeCamera; }
   void setActiveCamera(EntityID cam);
@@ -180,6 +192,8 @@ private:
   std::unordered_map<EntityID, CCamera, EntityHash> m_cam;
   std::unordered_map<EntityID, CCameraMatrices, EntityHash> m_camMat;
   std::unordered_map<EntityID, CLight, EntityHash> m_light;
+  std::unordered_map<EntityID, CSky, EntityHash> m_sky;
+  CSky m_skySettings{};
 
   // UUID storage
   EntityUUIDGen m_uuidGen{};

@@ -1,5 +1,7 @@
 #pragma once
 
+#include "render/gl/GLResources.h"
+#include "render/gl/GLShaderUtil.h"
 #include "render/passes/RenderPass.h"
 
 namespace Nyx {
@@ -8,8 +10,12 @@ class GLFullscreenTriangle;
 
 class PassSelection final : public RenderPass {
 public:
-  void configure(uint32_t fbo, uint32_t outlineProg,
-                 GLFullscreenTriangle *fsTri, uint32_t selectedSSBO);
+  ~PassSelection() override;
+
+  void updateSelectedIDs(const std::vector<uint32_t> &ids);
+
+  void configure(GLShaderUtil &shaders, GLResources &res,
+                 GLFullscreenTriangle &fsTri);
 
   void setup(RenderGraph &graph, const RenderPassContext &ctx,
              const RenderableRegistry &registry, EngineContext &engine,
@@ -17,9 +23,9 @@ public:
 
 private:
   uint32_t m_fbo = 0;
-  uint32_t m_outlineProg = 0;
   GLFullscreenTriangle *m_fsTri = nullptr;
-  uint32_t m_selectedSSBO = 0;
+  GLResources *m_res = nullptr;
+  uint32_t m_selectedSSBO = 0, m_selectedCount = 0;
 };
 
 } // namespace Nyx

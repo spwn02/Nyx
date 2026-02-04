@@ -20,7 +20,8 @@ enum class WorldEventType : uint8_t {
   CameraCreated,     // a: camera entity
   CameraDestroyed,   // a: camera entity
   ActiveCameraChanged, // a: newActive, b: oldActive
-  LightChanged        // a: entity
+  LightChanged,      // a: entity
+  SkyChanged         // a: entity (Sky entity)
 };
 
 struct WorldEvent final {

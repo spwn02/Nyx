@@ -4,7 +4,6 @@
 #include "core/Assert.h"
 #include "scene/RenderableRegistry.h"
 
-#include <array>
 #include <glad/glad.h>
 
 namespace Nyx {
@@ -12,10 +11,23 @@ namespace Nyx {
 static constexpr uint32_t kMaterialsBinding = 14;
 static constexpr uint32_t kLightsBinding = 16;
 
-void PassDepthPre::configure(uint32_t fbo, uint32_t forwardProg,
+PassDepthPre::~PassDepthPre() {
+  if (m_fbo != 0 && m_res) {
+    m_res->releaseFBO(m_fbo);
+    m_fbo = 0;
+  }
+  if (m_prog != 0) {
+    glDeleteProgram(m_prog);
+    m_prog = 0;
+  }
+}
+
+void PassDepthPre::configure(GLShaderUtil &shader, GLResources &res,
                              std::function<void(ProcMeshType)> drawFn) {
-  m_fbo = fbo;
-  m_forwardProg = forwardProg;
+  m_res = &res;
+
+  m_fbo = res.acquireFBO();
+  m_prog = shader.buildProgramVF("forward.vert", "forward.frag");
   m_draw = std::move(drawFn);
 }
 
@@ -58,21 +70,19 @@ void PassDepthPre::setup(RenderGraph &graph, const RenderPassContext &ctx,
         glBindBufferBase(GL_SHADER_STORAGE_BUFFER, kLightsBinding,
                          engine.lights().ssbo());
 
-        glUseProgram(m_forwardProg);
+        glUseProgram(m_prog);
 
-        const int locVP = glGetUniformLocation(m_forwardProg, "u_ViewProj");
-        const int locV = glGetUniformLocation(m_forwardProg, "u_View");
-        const int locM = glGetUniformLocation(m_forwardProg, "u_Model");
-        const int locPick = glGetUniformLocation(m_forwardProg, "u_PickID");
-        const int locVM = glGetUniformLocation(m_forwardProg, "u_ViewMode");
-        const int locMat =
-            glGetUniformLocation(m_forwardProg, "u_MaterialIndex");
-        const int locIsLight =
-            glGetUniformLocation(m_forwardProg, "u_IsLight");
+        const int locVP = glGetUniformLocation(m_prog, "u_ViewProj");
+        const int locV = glGetUniformLocation(m_prog, "u_View");
+        const int locM = glGetUniformLocation(m_prog, "u_Model");
+        const int locPick = glGetUniformLocation(m_prog, "u_PickID");
+        const int locVM = glGetUniformLocation(m_prog, "u_ViewMode");
+        const int locMat = glGetUniformLocation(m_prog, "u_MaterialIndex");
+        const int locIsLight = glGetUniformLocation(m_prog, "u_IsLight");
         const int locLightColorInt =
-            glGetUniformLocation(m_forwardProg, "u_LightColorIntensity");
+            glGetUniformLocation(m_prog, "u_LightColorIntensity");
         const int locLightExposure =
-            glGetUniformLocation(m_forwardProg, "u_LightExposure");
+            glGetUniformLocation(m_prog, "u_LightExposure");
 
         glUniform1ui(locVM, static_cast<uint32_t>(engine.viewMode()));
         glUniformMatrix4fv(locVP, 1, GL_FALSE, &rc.viewProj[0][0]);

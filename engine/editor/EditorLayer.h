@@ -1,39 +1,25 @@
 #pragma once
 
-#include "../layers/Layer.h"
-#include "editor/AddMenu.h"
-#include "editor/EditorPersist.h"
-#include "editor/GizmoState.h"
-#include "editor/HierarchyPanel.h"
-#include "editor/InspectorPanel.h"
-#include "editor/LockCameraToView.h"
-#include "editor/Selection.h"
-#include "editor/ViewportState.h"
+#include "Selection.h"
+#include "ViewportState.h"
+#include "layers/Layer.h"
 #include "scene/EntityID.h"
 #include "scene/World.h"
+#include "tools/CameraController.h"
+#include "tools/EditorPersist.h"
+#include "tools/LockCameraToView.h"
+#include "ui/GizmoState.h"
+#include "ui/panels/AddMenu.h"
+#include "ui/panels/HierarchyPanel.h"
+#include "ui/panels/InspectorPanel.h"
+#include "ui/panels/InspectorSky.h"
+#include "ui/panels/ViewportPanel.h"
 #include <cstdint>
-#include <glm/glm.hpp>
 #include <string>
 
 namespace Nyx {
 
 class EngineContext;
-
-struct EditorCameraController final {
-  glm::vec3 position{0.0f, 1.5f, 3.0f};
-  float yawDeg = -90.0f;
-  float pitchDeg = 0.0f;
-
-  float fovYDeg = 60.0f;
-  float nearZ = 0.01f;
-  float farZ = 2000.0f;
-
-  float speed = 6.0f;
-  float boostMul = 2.0f;
-  float sensitivity = 0.12f;
-
-  bool mouseCaptured = false;
-};
 
 class EditorLayer final : public Layer {
 public:
@@ -41,9 +27,8 @@ public:
   void onDetach() override;
   void onImGui(EngineContext &engine) override;
 
-  void setViewportTexture(uint32_t tex) { m_viewportTex = tex; }
-
-  ViewportState &viewport() { return m_viewport; }
+  void setViewportTexture(uint32_t tex) { m_viewport.setViewportTexture(tex); }
+  ViewportState &viewport() { return m_viewport.viewport(); }
 
   void syncWorldEvents();
 
@@ -63,16 +48,21 @@ public:
   void setSceneLoaded(bool loaded) { m_sceneLoaded = loaded; }
   bool sceneLoaded() const { return m_sceneLoaded; }
 
-  void setViewThroughCamera(bool enabled) { m_viewThroughCamera = enabled; }
-  bool viewThroughCamera() const { return m_viewThroughCamera; }
+  void defaultScene(EngineContext &engine);
+
+  void setViewThroughCamera(bool enabled) {
+    m_viewport.setViewThroughCamera(enabled);
+  }
+  bool viewThroughCamera() { return m_viewport.viewThroughCamera(); }
 
   void setCameraEntity(EntityID e) { m_cameraEntity = e; }
   EntityID cameraEntity() const { return m_cameraEntity; }
+  EntityID editorCamera() const { return m_editorCamera; }
 
   Selection &selection() { return m_sel; }
   const Selection &selection() const { return m_sel; }
 
-  bool gizmoWantsMouse() const { return m_gizmoUsing || m_gizmoOver; }
+  bool gizmoWantsMouse() const { return m_viewport.gizmoWantsMouse(); }
 
   EditorPersistState &persist() { return m_persist; }
   const EditorPersistState &persist() const { return m_persist; }
@@ -81,34 +71,30 @@ public:
     return m_cameraCtrl;
   }
   EditorCameraController &cameraController() { return m_cameraCtrl; }
-  GizmoState &gizmo() { return m_gizmo; }
-  const GizmoState &gizmo() const { return m_gizmo; }
-  LockCameraToView &lockCameraToView() { return m_lockCam; }
-  const LockCameraToView &lockCameraToView() const { return m_lockCam; }
+  GizmoState &gizmo() { return m_viewport.gizmoState(); }
+  const GizmoState &gizmo() const { return m_viewport.gizmoState(); }
+  LockCameraToView &lockCameraToView() { return m_viewport.lockCameraToView(); }
+  const LockCameraToView &lockCameraToView() const {
+    return m_viewport.lockCameraToView();
+  }
 
 private:
-  void drawViewport(EngineContext &engine);
   void drawStats(EngineContext &engine);
   void processWorldEvents();
 
 private:
-  ViewportState m_viewport;
-  uint32_t m_viewportTex = 0;
   EntityID m_selected = InvalidEntity;
   EditorPersistState m_persist{};
   EditorCameraController m_cameraCtrl{};
-  GizmoState m_gizmo{};
-  bool m_gizmoUsing = false;
-  bool m_gizmoOver = false;
-  LockCameraToView m_lockCam{};
 
   World *m_world = nullptr;
   EntityID m_cameraEntity = InvalidEntity;
   Selection m_sel{};
-
+  EntityID m_editorCamera = InvalidEntity;
   HierarchyPanel m_hierarchy{};
   AddMenu m_add{};
   InspectorPanel m_inspector{};
+  ViewportPanel m_viewport{};
 
   std::string m_scenePath;
   bool m_autoSave = false;
@@ -116,7 +102,6 @@ private:
   bool m_openScenePopup = false;
   bool m_saveScenePopup = false;
   char m_scenePathBuf[512]{};
-  bool m_viewThroughCamera = false;
 };
 
 } // namespace Nyx

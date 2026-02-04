@@ -2,16 +2,29 @@
 
 #include "core/Assert.h"
 #include "render/gl/GLFullscreenTriangle.h"
+#include "render/gl/GLShaderUtil.h"
 
 #include <glad/glad.h>
 
 namespace Nyx {
 
-void PassPostFilters::configure(uint32_t fbo, uint32_t presentProg,
-                                GLFullscreenTriangle *fsTri) {
-  m_fbo = fbo;
-  m_presentProg = presentProg;
-  m_fsTri = fsTri;
+PassPostFilters::~PassPostFilters() {
+  if (m_prog != 0) {
+    glDeleteProgram(m_prog);
+    m_prog = 0;
+  }
+
+  if (m_fbo != 0 && m_res) {
+    m_res->releaseFBO(m_fbo);
+    m_fbo = 0;
+  }
+}
+
+void PassPostFilters::configure(GLShaderUtil &shaders, GLResources &res,
+                                GLFullscreenTriangle &fsTri) {
+  m_prog = shaders.buildProgramVF("fullscreen.vert", "present.frag");
+  m_fbo = res.acquireFBO();
+  m_fsTri = &fsTri;
 }
 
 void PassPostFilters::setup(RenderGraph &graph, const RenderPassContext &ctx,
@@ -45,7 +58,7 @@ void PassPostFilters::setup(RenderGraph &graph, const RenderPassContext &ctx,
         glViewport(0, 0, (int)rc.fbWidth, (int)rc.fbHeight);
         glDisable(GL_DEPTH_TEST);
 
-        glUseProgram(m_presentProg);
+        glUseProgram(m_prog);
         if (m_fsTri)
           glBindVertexArray(m_fsTri->vao);
 

@@ -1,11 +1,14 @@
 #pragma once
 
+#include "env/EnvironmentIBL.h"
 #include "imgui.h"
-#include "material/MaterialSystem.h"
+#include "render/material/MaterialSystem.h"
 #include "render/LightSystem.h"
 #include "render/Renderer.h"
-#include "render/ShadowSystem.h"
+#include "render/ShadowDebugMode.h"
+#include "render/SkyConstants.h"
 #include "render/ViewMode.h"
+#include "render/gl/GLShaderUtil.h"
 #include "render/shadows/CSMUtil.h"
 #include "scene/CameraSystem.h"
 #include "scene/EntityID.h"
@@ -58,6 +61,11 @@ public:
   ViewMode viewMode() const { return m_viewMode; }
   void setViewMode(ViewMode vm) { m_viewMode = vm; }
 
+  ShadowDebugMode shadowDebugMode() const { return m_shadowDebugMode; }
+  void setShadowDebugMode(ShadowDebugMode mode) { m_shadowDebugMode = mode; }
+  float shadowDebugAlpha() const { return m_shadowDebugAlpha; }
+  void setShadowDebugAlpha(float alpha) { m_shadowDebugAlpha = alpha; }
+
   void setRenderCameraOverride(EntityID cam) { m_renderCameraOverride = cam; }
   void setShadowDirViewProj(const glm::mat4 &m) { m_shadowDirViewProj = m; }
   const glm::mat4 &shadowDirViewProj() const { return m_shadowDirViewProj; }
@@ -80,16 +88,25 @@ public:
 
   LightSystem &lights() { return m_lights; }
   const LightSystem &lights() const { return m_lights; }
-  ShadowSystem &shadows() { return m_shadows; }
-  const ShadowSystem &shadows() const { return m_shadows; }
+
+  ShadowCSMConfig &shadowCSMConfig();
+  const ShadowCSMConfig &shadowCSMConfig() const;
 
   uint32_t materialIndex(const Renderable &r);
   void rebuildRenderables();
   void rebuildEntityIndexMap();
+  void resetMaterials();
+
+  EnvironmentIBL &envIBL() { return m_envIBL; }
+  const EnvironmentIBL &envIBL() const { return m_envIBL; }
+
+  uint32_t skyUBO() const { return m_skyUBO; }
+  uint32_t shadowCSMUBO() const { return m_shadowCSMUBO; }
 
 private:
   void buildRenderables();
   void handleWorldEvent(const WorldEvent &e);
+  void updateSkyUBO(const RenderPassContext &ctx);
 
 private:
   float m_time = 0.0f;
@@ -97,8 +114,12 @@ private:
   Renderer m_renderer{};
   MaterialSystem m_materials{};
   LightSystem m_lights{};
-  ShadowSystem m_shadows{};
   CameraSystem m_cameras{};
+  EnvironmentIBL m_envIBL{};
+
+  SkyConstants m_sky{};
+  uint32_t m_skyUBO = 0;
+  uint32_t m_shadowCSMUBO = 0;
 
   World m_world{};
   std::unordered_map<uint32_t, EntityID> m_entityByIndex;
@@ -123,6 +144,8 @@ private:
   float m_cachedFar = 2000.0f;
 
   ViewMode m_viewMode = ViewMode::Lit;
+  ShadowDebugMode m_shadowDebugMode = ShadowDebugMode::None;
+  float m_shadowDebugAlpha = 0.85f;
   ImGuiID m_dockspaceID = 0;
 };
 

@@ -8,15 +8,14 @@
 
 #include "../editor/EditorLayer.h"
 #include "../editor/Selection.h"
-#include "editor/DockspaceLayout.h"
-#include "editor/EditorStateIO.h"
-#include "editor/ProjectSerializer.h"
-#include "editor/ViewportPick.h"
+#include "editor/tools/DockspaceLayout.h"
+#include "editor/tools/EditorStateIO.h"
+#include "editor/tools/ProjectSerializer.h"
+#include "editor/tools/ViewportPick.h"
 
 #include "../input/KeyCodes.h"
 #include "../platform/GLFWWindow.h"
 
-#include "editor/EditorDockLayout.h"
 #include "input/InputSystem.h"
 #include "scene/EntityID.h"
 #include "scene/Pick.h"
@@ -24,10 +23,9 @@
 #include "scene/WorldSerializer.h"
 
 #include <GLFW/glfw3.h>
-#include <cmath>
 #include <filesystem>
-#include <imgui.h>
 #include <glm/gtx/quaternion.hpp>
+#include <imgui.h>
 
 #include <algorithm>
 #include <vector>
@@ -52,57 +50,6 @@ static bool isShiftDown(const InputSystem &in) {
 }
 static bool isCtrlDown(const InputSystem &in) {
   return in.isDown(Key::LeftCtrl) || in.isDown(Key::RightCtrl);
-}
-
-static glm::vec3 cameraFront(float yawDeg, float pitchDeg) {
-  const float yaw = glm::radians(yawDeg);
-  const float pit = glm::radians(pitchDeg);
-  glm::vec3 f{cos(yaw) * cos(pit), sin(pit), sin(yaw) * cos(pit)};
-  return glm::normalize(f);
-}
-
-static glm::quat cameraRotation(const glm::vec3 &front) {
-  const glm::vec3 up(0.0f, 1.0f, 0.0f);
-  const glm::vec3 f = glm::normalize(front);
-  const glm::vec3 r = glm::normalize(glm::cross(f, up));
-  const glm::vec3 u = glm::cross(r, f);
-  glm::mat3 m(1.0f);
-  m[0] = r;
-  m[1] = u;
-  m[2] = -f;
-  return glm::quat_cast(m);
-}
-
-static void applyEditorCameraController(World &world, EntityID camEnt,
-                                        const EditorCameraController &ctrl) {
-  if (camEnt == InvalidEntity || !world.isAlive(camEnt) ||
-      !world.hasCamera(camEnt))
-    return;
-
-  auto &tr = world.transform(camEnt);
-  tr.translation = ctrl.position;
-  tr.rotation = cameraRotation(cameraFront(ctrl.yawDeg, ctrl.pitchDeg));
-  tr.dirty = true;
-
-  auto &cam = world.ensureCamera(camEnt);
-  cam.fovYDeg = ctrl.fovYDeg;
-  cam.nearZ = ctrl.nearZ;
-  cam.farZ = ctrl.farZ;
-  cam.dirty = true;
-}
-
-static void releaseMouseCapture(GLFWwindow *w, EditorCameraController &cam) {
-  if (!cam.mouseCaptured)
-    return;
-  glfwSetInputMode(w, GLFW_CURSOR, GLFW_CURSOR_NORMAL);
-  cam.mouseCaptured = false;
-}
-
-static void captureMouse(GLFWwindow *w, EditorCameraController &cam) {
-  if (cam.mouseCaptured)
-    return;
-  glfwSetInputMode(w, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
-  cam.mouseCaptured = true;
 }
 
 static EntityID resolvePickEntity(EngineContext &engine, const Selection &sel,
@@ -155,21 +102,19 @@ static void deleteSelection(World &world, Selection &sel) {
     if (e != InvalidEntity)
       ents.push_back(e);
   }
-  std::sort(ents.begin(), ents.end(),
-            [](EntityID a, EntityID b) {
-              if (a.index != b.index)
-                return a.index < b.index;
-              return a.generation < b.generation;
-            });
+  std::sort(ents.begin(), ents.end(), [](EntityID a, EntityID b) {
+    if (a.index != b.index)
+      return a.index < b.index;
+    return a.generation < b.generation;
+  });
   ents.erase(std::unique(ents.begin(), ents.end()), ents.end());
 
   // Optional: delete children safely by descending ID
-  std::sort(ents.begin(), ents.end(),
-            [](EntityID a, EntityID b) {
-              if (a.index != b.index)
-                return a.index > b.index;
-              return a.generation > b.generation;
-            });
+  std::sort(ents.begin(), ents.end(), [](EntityID a, EntityID b) {
+    if (a.index != b.index)
+      return a.index > b.index;
+    return a.generation > b.generation;
+  });
 
   for (EntityID e : ents) {
     if (world.isAlive(e))
@@ -199,7 +144,7 @@ static void duplicateMaterialsForSubtree(World &world,
     auto &mc = world.ensureMesh(root);
     for (auto &sm : mc.submeshes) {
       if (sm.material != InvalidMaterial && materials.isAlive(sm.material)) {
-        MaterialData copy = materials.get(sm.material);
+        MaterialData copy = materials.cpu(sm.material);
         sm.material = materials.create(copy);
       }
     }
@@ -226,12 +171,11 @@ static void duplicateSelection(EngineContext &engine, Selection &sel) {
     if (e != InvalidEntity)
       ents.push_back(e);
   }
-  std::sort(ents.begin(), ents.end(),
-            [](EntityID a, EntityID b) {
-              if (a.index != b.index)
-                return a.index < b.index;
-              return a.generation < b.generation;
-            });
+  std::sort(ents.begin(), ents.end(), [](EntityID a, EntityID b) {
+    if (a.index != b.index)
+      return a.index < b.index;
+    return a.generation < b.generation;
+  });
   ents.erase(std::unique(ents.begin(), ents.end()), ents.end());
 
   // Filter out entities whose ancestor is also selected
@@ -357,20 +301,38 @@ int Application::run() {
   }
 
   bool loadedScene = false;
-  if (!m_editorState.lastScenePath.empty() &&
-      std::filesystem::exists(
-          resolveScenePath(m_editorState.lastScenePath, projPath))) {
-    const std::string scenePath =
-        resolveScenePath(m_editorState.lastScenePath, projPath);
-    loadedScene =
-        WorldSerializer::loadFromFile(m_engine->world(), scenePath);
-    if (loadedScene) {
-      EditorStateIO::onSceneOpened(m_editorState, scenePath);
-      if (m_app->editorLayer()) {
-        m_app->editorLayer()->setScenePath(scenePath);
-        m_app->editorLayer()->setWorld(&m_engine->world());
+  Log::Info("Last scene path: '{}'", m_editorState.lastScenePath);
+  
+  if (!m_editorState.lastScenePath.empty()) {
+    const std::string resolvedPath = resolveScenePath(m_editorState.lastScenePath, projPath);
+    Log::Info("Resolved scene path: '{}'", resolvedPath);
+    
+    if (std::filesystem::exists(resolvedPath)) {
+      Log::Info("Scene file exists, attempting to load...");
+      m_engine->resetMaterials();
+      loadedScene = WorldSerializer::loadFromFile(m_engine->world(),
+                                                  m_engine->materials(),
+                                                  resolvedPath);
+      
+      if (loadedScene) {
+        Log::Info("Scene loaded successfully");
+        EditorStateIO::onSceneOpened(m_editorState, resolvedPath);
+        if (m_app->editorLayer()) {
+          m_app->editorLayer()->setScenePath(resolvedPath);
+          m_app->editorLayer()->setWorld(&m_engine->world());
+        }
+        const auto &sky = m_engine->world().skySettings();
+        if (!sky.hdriPath.empty()) {
+          m_engine->envIBL().loadFromHDR(sky.hdriPath);
+        }
+      } else {
+        Log::Warn("Failed to load scene from '{}'", resolvedPath);
       }
+    } else {
+      Log::Warn("Scene file does not exist: '{}'", resolvedPath);
     }
+  } else {
+    Log::Info("No last scene path configured");
   }
 
   if (loadedScene) {
@@ -379,64 +341,17 @@ int Application::run() {
     if (m_app->editorLayer())
       m_app->editorLayer()->setSceneLoaded(true);
   } else if (m_app->editorLayer()) {
-    m_app->editorLayer()->setSceneLoaded(false);
+    m_app->editorLayer()->defaultScene(*m_engine);
   }
 
   // Editor camera entity (ECS-driven)
-  EntityID editorCam = m_engine->world().createEntity("Editor Camera");
-  if (editorCam != InvalidEntity) {
-    m_engine->world().ensureCamera(editorCam);
-    if (m_engine->world().activeCamera() == InvalidEntity)
-      m_engine->world().setActiveCamera(editorCam);
-    if (m_app->editorLayer()) {
-      auto &ctrl = m_app->editorLayer()->cameraController();
-      m_app->editorLayer()->setCameraEntity(editorCam);
-      applyEditorCameraController(m_engine->world(), editorCam, ctrl);
-    } else {
-      EditorCameraController ctrl{};
-      applyEditorCameraController(m_engine->world(), editorCam, ctrl);
-    }
-  }
-
-  if (m_editorState.activeCamera) {
+  if (loadedScene && m_editorState.activeCamera) {
     EntityID cam = m_engine->world().findByUUID(m_editorState.activeCamera);
     if (cam != InvalidEntity && m_engine->world().hasCamera(cam)) {
       m_engine->world().setActiveCamera(cam);
       if (m_app->editorLayer())
         m_app->editorLayer()->setCameraEntity(cam);
     }
-  }
-
-  // Demo spawn (optional)
-  if (!loadedScene) {
-    EntityID e = m_engine->world().createEntity("Cube");
-    auto &mc = m_engine->world().ensureMesh(e);
-    if (mc.submeshes.empty())
-      mc.submeshes.push_back(MeshSubmesh{.name = "Submesh 0",
-                                         .type = ProcMeshType::Cube,
-                                         .material = InvalidMaterial});
-    mc.submeshes[0].type = ProcMeshType::Cube;
-
-    auto &tr = m_engine->world().transform(e);
-    tr.translation = {0.0f, 0.0f, 0.0f};
-    tr.scale = {1.0f, 1.0f, 1.0f};
-
-    if (m_app->editorLayer()) {
-      auto &sel = m_app->editorLayer()->selection();
-      sel.setSinglePick(packPick(e, 0), e);
-      sel.activeEntity = e;
-    }
-
-    if (m_app->editorLayer()) {
-      auto &ctrl = m_app->editorLayer()->cameraController();
-      ctrl.position = tr.translation + glm::vec3(0.0f, 1.5f, 3.0f);
-      const glm::vec3 dir = glm::normalize(tr.translation - ctrl.position);
-      ctrl.pitchDeg = glm::degrees(std::asin(dir.y));
-      ctrl.yawDeg = glm::degrees(std::atan2(dir.z, dir.x));
-      applyEditorCameraController(m_engine->world(), editorCam, ctrl);
-    }
-
-    // Light components are no longer part of the ECS surface API.
   }
 
   while (!m_app->window().shouldClose()) {
@@ -450,6 +365,13 @@ int Application::run() {
     auto &win = m_app->window();
     auto &input = win.input();
     input.beginFrame();
+    if (win.isMinimized() || !win.isVisible()) {
+      // Keep pumping events while minimized/hidden to avoid OS "not responding".
+      win.waitEventsTimeout(0.1);
+      input.endFrame();
+      lastT = getTimeSeconds();
+      continue;
+    }
     m_app->beginFrame();
 
     // ------------------------------------------------------------
@@ -463,15 +385,13 @@ int Application::run() {
 
       // When hiding editor, release capture so it doesn't "go insane"
       if (wasVisible && !m_app->isEditorVisible()) {
-        releaseMouseCapture(win.handle(),
-                            m_app->editorLayer()->cameraController());
+        m_app->editorLayer()->cameraController().captureMouse(false, win);
       }
 
       // When showing editor again, also ensure capture is released
       // (user should RMB-capture explicitly inside viewport).
       if (!wasVisible && m_app->isEditorVisible()) {
-        releaseMouseCapture(win.handle(),
-                            m_app->editorLayer()->cameraController());
+        m_app->editorLayer()->cameraController().captureMouse(false, win);
 
         if (m_app->editorLayer())
           m_app->editorLayer()->setWorld(&m_engine->world());
@@ -480,8 +400,7 @@ int Application::run() {
 
     if (input.isPressed(Key::Escape)) {
       // ESC always releases mouse capture
-      releaseMouseCapture(win.handle(),
-                          m_app->editorLayer()->cameraController());
+      m_app->editorLayer()->cameraController().captureMouse(false, win);
     }
 
     // ------------------------------------------------------------
@@ -515,8 +434,7 @@ int Application::run() {
       if (auto *ed = m_app->editorLayer()) {
         if (imguiIniMissing())
           m_editorState.dockFallbackApplied = false;
-        DockspaceLayout::applyDefaultLayoutIfNeeded(m_editorState,
-                                                    dockspaceId);
+        DockspaceLayout::applyDefaultLayoutIfNeeded(m_editorState, dockspaceId);
       }
 
       for (auto &layer : m_app->layers()) {
@@ -568,69 +486,16 @@ int Application::run() {
         !gizmoWantsMouse;
 
     if (allowRmbCapture && input.isPressed(Key::MouseRight)) {
-      captureMouse(win.handle(), m_app->editorLayer()->cameraController());
+      m_app->editorLayer()->cameraController().captureMouse(true, win);
     }
     if (input.isReleased(Key::MouseRight)) {
-      releaseMouseCapture(win.handle(), m_app->editorLayer()->cameraController());
+      m_app->editorLayer()->cameraController().captureMouse(false, win);
     }
 
     // ------------------------------------------------------------
     // Camera movement
     // ------------------------------------------------------------
-    {
-      auto *ed = m_app->editorLayer();
-      auto &ctrl = ed->cameraController();
-      if (ctrl.mouseCaptured) {
-        ctrl.yawDeg += float(input.state().mouseDeltaX) * ctrl.sensitivity;
-        ctrl.pitchDeg -= float(input.state().mouseDeltaY) * ctrl.sensitivity;
-        ctrl.pitchDeg = std::clamp(ctrl.pitchDeg, -120.0f, 120.0f);
-
-        const glm::vec3 front = cameraFront(ctrl.yawDeg, ctrl.pitchDeg);
-        const glm::vec3 right =
-            glm::normalize(glm::cross(front, glm::vec3(0.0f, 1.0f, 0.0f)));
-
-        float speed = ctrl.speed * dt;
-        if (isShiftDown(input))
-          speed *= ctrl.boostMul;
-
-        glm::vec3 moveDelta(0.0f);
-        if (input.isDown(Key::W))
-          moveDelta += front * speed;
-        if (input.isDown(Key::S))
-          moveDelta -= front * speed;
-        if (input.isDown(Key::A))
-          moveDelta -= right * speed;
-        if (input.isDown(Key::D))
-          moveDelta += right * speed;
-        if (input.isDown(Key::Q))
-          moveDelta.y -= speed;
-        if (input.isDown(Key::E))
-          moveDelta.y += speed;
-
-        if (moveDelta != glm::vec3(0.0f)) {
-          ctrl.position += moveDelta;
-        }
-
-        const bool viewThrough = ed->viewThroughCamera();
-        const bool lockToView = ed->lockCameraToView().enabled;
-
-        if (!viewThrough || !lockToView) {
-          applyEditorCameraController(m_engine->world(), ed->cameraEntity(),
-                                      ctrl);
-        }
-
-        if (viewThrough && lockToView) {
-          const EntityID active = m_engine->world().activeCamera();
-          if (active != InvalidEntity && active != ed->cameraEntity()) {
-            EditorCameraState camState{};
-            camState.position = ctrl.position;
-            camState.yawDeg = ctrl.yawDeg;
-            camState.pitchDeg = ctrl.pitchDeg;
-            ed->lockCameraToView().tick(m_engine->world(), active, camState);
-          }
-        }
-      }
-    }
+    m_app->editorLayer()->cameraController().tick(*m_engine, *m_app, dt);
 
     // ------------------------------------------------------------
     // Keybinds (editor only; ignore when typing)
@@ -668,7 +533,7 @@ int Application::run() {
             gizmo.op = GizmoOp::Scale;
           if (input.isPressed(Key::Q))
             gizmo.mode = (gizmo.mode == GizmoMode::Local) ? GizmoMode::World
-                                                         : GizmoMode::Local;
+                                                          : GizmoMode::Local;
         }
       }
     }
@@ -733,7 +598,8 @@ int Application::run() {
       }
       if (renderCam == InvalidEntity) {
         const EntityID editorCam = ed->cameraEntity();
-        if (editorCam != InvalidEntity && m_engine->world().hasCamera(editorCam))
+        if (editorCam != InvalidEntity &&
+            m_engine->world().hasCamera(editorCam))
           renderCam = editorCam;
       }
       m_engine->setRenderCameraOverride(renderCam);

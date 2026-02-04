@@ -1,0 +1,165 @@
+#version 460 core
+
+#include "include/LightsCommon.glsl"
+
+layout(local_size_x = 64, local_size_y = 1, local_size_z = 1) in;
+
+layout(binding = 0) uniform sampler2D uHiZ;
+
+uniform mat4 uInvViewProj;
+uniform mat4 uView;
+uniform vec2 uViewportSize;
+uniform float uNear;
+uniform float uFar;
+
+struct ClusterHeader {
+  uint offset;
+  uint count;
+};
+
+layout(std430, binding = 24) buffer ClusterHeaders { ClusterHeader gHead[]; };
+layout(std430, binding = 25) buffer ClusterIndices { uint gIdx[]; };
+
+layout(std140, binding = 22) uniform ClusterMetaUBO {
+  uint uTileCountX;
+  uint uTileCountY;
+  uint uTileSize;
+  uint uZSlices;
+  uint uMaxPerCluster;
+  float uNearZ;
+  float uFarZ;
+  uint uHiZMip;
+} gC;
+
+shared uint sCount;
+shared uint sList[96];
+
+float linearizeDepth(float d01) {
+  float z = d01 * 2.0 - 1.0;
+  return (2.0 * uNear * uFar) / (uFar + uNear - z * (uFar - uNear));
+}
+
+vec3 unproject(vec2 ndc, float z) {
+  vec4 p = uInvViewProj * vec4(ndc, z, 1.0);
+  return p.xyz / p.w;
+}
+
+struct Plane {
+  vec3 n;
+  float d;
+};
+
+Plane makePlane(vec3 a, vec3 b, vec3 c) {
+  vec3 n = normalize(cross(b - a, c - a));
+  float d = -dot(n, a);
+  Plane p;
+  p.n = n;
+  p.d = d;
+  return p;
+}
+
+bool sphereInsidePlane(Plane p, vec3 center, float r) {
+  float dist = dot(p.n, center) + p.d;
+  return dist >= -r;
+}
+
+float sliceZ0(uint slice) {
+  float t = float(slice) / float(gC.uZSlices);
+  return gC.uNearZ * pow(gC.uFarZ / gC.uNearZ, t);
+}
+
+float sliceZ1(uint slice) {
+  float t = float(slice + 1u) / float(gC.uZSlices);
+  return gC.uNearZ * pow(gC.uFarZ / gC.uNearZ, t);
+}
+
+void main() {
+  uvec2 tile = gl_WorkGroupID.xy;
+  uint slice = gl_WorkGroupID.z;
+
+  if (tile.x >= gC.uTileCountX || tile.y >= gC.uTileCountY)
+    return;
+  if (slice >= gC.uZSlices)
+    return;
+
+  uint tileIndex = tile.x + tile.y * gC.uTileCountX;
+  uint clusterIndex = tileIndex + slice * (gC.uTileCountX * gC.uTileCountY);
+
+  if (gl_LocalInvocationIndex == 0)
+    sCount = 0u;
+  barrier();
+
+  float tileMinDepth01 = texelFetch(uHiZ, ivec2(tile), int(gC.uHiZMip)).r;
+  float tileMinZ = linearizeDepth(tileMinDepth01);
+
+  float z0 = sliceZ0(slice);
+  float z1 = sliceZ1(slice);
+
+  vec2 pix0 = vec2(tile) * float(gC.uTileSize);
+  vec2 pix1 = min(pix0 + vec2(gC.uTileSize), uViewportSize);
+
+  vec2 ndc0 = (pix0 / uViewportSize) * 2.0 - 1.0;
+  vec2 ndc1 = (pix1 / uViewportSize) * 2.0 - 1.0;
+
+  vec3 n00 = unproject(vec2(ndc0.x, ndc0.y), -1.0);
+  vec3 n10 = unproject(vec2(ndc1.x, ndc0.y), -1.0);
+  vec3 n01 = unproject(vec2(ndc0.x, ndc1.y), -1.0);
+  vec3 n11 = unproject(vec2(ndc1.x, ndc1.y), -1.0);
+
+  vec3 f00 = unproject(vec2(ndc0.x, ndc0.y), 1.0);
+  vec3 f10 = unproject(vec2(ndc1.x, ndc0.y), 1.0);
+  vec3 f01 = unproject(vec2(ndc0.x, ndc1.y), 1.0);
+  vec3 f11 = unproject(vec2(ndc1.x, ndc1.y), 1.0);
+
+  Plane left = makePlane(n00, f00, f01);
+  Plane right = makePlane(n11, f11, f10);
+  Plane bottom = makePlane(n10, f10, f00);
+  Plane top = makePlane(n01, f01, f11);
+
+  const float eps = 0.05;
+
+  for (uint i = uint(gl_LocalInvocationIndex); i < uLightCount; i += 64u) {
+    GpuLight L = gLights[i];
+    uint type = uint(L.params.z + 0.5);
+
+    if (type == LIGHT_DIR) {
+      uint idx = atomicAdd(sCount, 1u);
+      if (idx < gC.uMaxPerCluster)
+        sList[idx] = i;
+      continue;
+    }
+
+    vec3 c = L.position.xyz;
+    float r = L.position.w;
+
+    bool ok = sphereInsidePlane(left, c, r) &&
+              sphereInsidePlane(right, c, r) &&
+              sphereInsidePlane(bottom, c, r) &&
+              sphereInsidePlane(top, c, r);
+    if (!ok)
+      continue;
+
+    vec3 vpos = (uView * vec4(c, 1.0)).xyz;
+    float z = -vpos.z;
+    if ((z - r) > z1 || (z + r) < z0)
+      continue;
+
+    // NOTE: Occlusion culling with HiZ can incorrectly drop lights at distance.
+    // Disable this test to keep lights stable while moving the camera.
+
+    uint idx = atomicAdd(sCount, 1u);
+    if (idx < gC.uMaxPerCluster)
+      sList[idx] = i;
+  }
+
+  barrier();
+
+  if (gl_LocalInvocationIndex == 0) {
+    uint count = min(sCount, gC.uMaxPerCluster);
+    uint base = clusterIndex * gC.uMaxPerCluster;
+    gHead[clusterIndex].offset = base;
+    gHead[clusterIndex].count = count;
+    for (uint k = 0; k < count; ++k)
+      gIdx[base + k] = sList[k];
+  }
+}

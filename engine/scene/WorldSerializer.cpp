@@ -1,7 +1,10 @@
 #include "WorldSerializer.h"
 
+#include "scene/EntityID.h"
 #include "scene/JsonLite.h"
 #include "scene/World.h"
+#include "render/material/MaterialSystem.h"
+#include "scene/material/MaterialData.h"
 
 #include <algorithm>
 #include <filesystem>
@@ -18,6 +21,20 @@ static Value jVec3(float x, float y, float z) {
   a.emplace_back((double)x);
   a.emplace_back((double)y);
   a.emplace_back((double)z);
+  return Value(std::move(a));
+}
+static Value jVec2(float x, float y) {
+  Array a;
+  a.emplace_back((double)x);
+  a.emplace_back((double)y);
+  return Value(std::move(a));
+}
+static Value jVec4(float x, float y, float z, float w) {
+  Array a;
+  a.emplace_back((double)x);
+  a.emplace_back((double)y);
+  a.emplace_back((double)z);
+  a.emplace_back((double)w);
   return Value(std::move(a));
 }
 static Value jQuatWXYZ(float w, float x, float y, float z) {
@@ -57,6 +74,28 @@ static bool readVec3(const Value &v, float &x, float &y, float &z) {
   z = (float)a[2].asNum();
   return true;
 }
+static bool readVec2(const Value &v, float &x, float &y) {
+  if (!v.isArray())
+    return false;
+  const auto &a = v.asArray();
+  if (a.size() != 2)
+    return false;
+  x = (float)a[0].asNum();
+  y = (float)a[1].asNum();
+  return true;
+}
+static bool readVec4(const Value &v, float &x, float &y, float &z, float &w) {
+  if (!v.isArray())
+    return false;
+  const auto &a = v.asArray();
+  if (a.size() != 4)
+    return false;
+  x = (float)a[0].asNum();
+  y = (float)a[1].asNum();
+  z = (float)a[2].asNum();
+  w = (float)a[3].asNum();
+  return true;
+}
 static bool readQuatWXYZ(const Value &v, float &w, float &x, float &y,
                          float &z) {
   if (!v.isArray())
@@ -94,7 +133,9 @@ static bool writeAllText(const std::string &path, const std::string &text) {
   return true;
 }
 
-bool WorldSerializer::saveToFile(const World &world, const std::string &path) {
+static bool saveToFileImpl(const World &world, EntityID editorCamera,
+                           const MaterialSystem *materials,
+                           const std::string &path) {
   struct ERec {
     EntityUUID uuid;
     EntityID e;
@@ -116,9 +157,27 @@ bool WorldSerializer::saveToFile(const World &world, const std::string &path) {
   });
 
   Object root;
-  root["version"] = 2;
+  root["version"] = materials ? 4 : 3;
   root["type"] = "NyxScene";
   root["activeCamera"] = u64ToString(world.activeCameraUUID().value);
+
+  std::vector<MaterialData> materialList;
+  std::unordered_map<uint64_t, uint32_t> materialIndex;
+  if (materials) {
+    materialList.reserve(64);
+  }
+
+  {
+    const auto &sky = world.skySettings();
+    Object js;
+    js["enabled"] = sky.enabled;
+    js["drawBackground"] = sky.drawBackground;
+    js["intensity"] = (double)sky.intensity;
+    js["exposure"] = (double)sky.exposure;
+    js["rotationYawDeg"] = (double)sky.rotationYawDeg;
+    js["hdriPath"] = sky.hdriPath;
+    root["sky"] = Value(std::move(js));
+  }
 
   Array jEntities;
   jEntities.reserve(ents.size());
@@ -126,10 +185,7 @@ bool WorldSerializer::saveToFile(const World &world, const std::string &path) {
   for (const auto &rec : ents) {
     const EntityID e = rec.e;
 
-    const bool isEditorCamera =
-        (world.name(e).name == "Editor Camera") && world.hasCamera(e) &&
-        !world.hasMesh(e);
-    if (isEditorCamera)
+    if (e == editorCamera)
       continue;
 
     Object je;
@@ -168,6 +224,23 @@ bool WorldSerializer::saveToFile(const World &world, const std::string &path) {
         mh.emplace_back((double)sm.material.gen);
         js["material"] = Value(std::move(mh));
 
+        if (materials && materials->isAlive(sm.material)) {
+          const uint64_t key =
+              (uint64_t(sm.material.slot) << 32) | uint64_t(sm.material.gen);
+          auto it = materialIndex.find(key);
+          if (it == materialIndex.end()) {
+            const MaterialData &md = materials->cpu(sm.material);
+            const uint32_t idx = (uint32_t)materialList.size();
+            materialList.push_back(md);
+            materialIndex[key] = idx;
+            js["materialIndex"] = (double)idx;
+          } else {
+            js["materialIndex"] = (double)it->second;
+          }
+        } else {
+          js["materialIndex"] = (double)-1;
+        }
+
         subs.emplace_back(Value(std::move(js)));
       }
 
@@ -201,17 +274,57 @@ bool WorldSerializer::saveToFile(const World &world, const std::string &path) {
       je["light"] = Value(std::move(jl));
     }
 
+    if (world.hasSky(e))
+      continue;
+
     jEntities.emplace_back(Value(std::move(je)));
   }
 
   root["entities"] = Value(std::move(jEntities));
+
+  if (materials) {
+    Array mats;
+    mats.reserve(materialList.size());
+    for (const auto &m : materialList) {
+      Object jm;
+      jm["baseColorFactor"] =
+          jVec4(m.baseColorFactor.x, m.baseColorFactor.y, m.baseColorFactor.z,
+                m.baseColorFactor.w);
+      jm["emissiveFactor"] =
+          jVec3(m.emissiveFactor.x, m.emissiveFactor.y, m.emissiveFactor.z);
+      jm["metallic"] = (double)m.metallic;
+      jm["roughness"] = (double)m.roughness;
+      jm["ao"] = (double)m.ao;
+      jm["uvScale"] = jVec2(m.uvScale.x, m.uvScale.y);
+      jm["uvOffset"] = jVec2(m.uvOffset.x, m.uvOffset.y);
+      Array texPaths;
+      texPaths.reserve(m.texPath.size());
+      for (const auto &p : m.texPath)
+        texPaths.emplace_back(p);
+      jm["texPath"] = Value(std::move(texPaths));
+      mats.emplace_back(Value(std::move(jm)));
+    }
+    root["materials"] = Value(std::move(mats));
+  }
 
   const std::string out =
       stringify(Value(std::move(root)), /*pretty=*/true, /*indent=*/2);
   return writeAllText(path, out);
 }
 
-bool WorldSerializer::loadFromFile(World &world, const std::string &path) {
+bool WorldSerializer::saveToFile(const World &world, EntityID editorCamera,
+                                 const std::string &path) {
+  return saveToFileImpl(world, editorCamera, nullptr, path);
+}
+
+bool WorldSerializer::saveToFile(const World &world, EntityID editorCamera,
+                                 const MaterialSystem &materials,
+                                 const std::string &path) {
+  return saveToFileImpl(world, editorCamera, &materials, path);
+}
+
+static bool loadFromFileImpl(World &world, MaterialSystem *materials,
+                             const std::string &path) {
   const std::string text = readAllText(path);
   if (text.empty())
     return false;
@@ -236,6 +349,66 @@ bool WorldSerializer::loadFromFile(World &world, const std::string &path) {
     return false;
 
   world.clear();
+
+  std::vector<MaterialHandle> loadedMaterials;
+  if (materials) {
+    materials->reset();
+    if (const Value *vMats = root.get("materials"); vMats && vMats->isArray()) {
+      const auto &arr = vMats->asArray();
+      loadedMaterials.reserve(arr.size());
+      for (const Value &vm : arr) {
+        if (!vm.isObject()) {
+          loadedMaterials.push_back(InvalidMaterial);
+          continue;
+        }
+        MaterialData md{};
+        if (const Value *vb = vm.get("baseColorFactor"); vb && vb->isArray()) {
+          readVec4(*vb, md.baseColorFactor.x, md.baseColorFactor.y,
+                   md.baseColorFactor.z, md.baseColorFactor.w);
+        }
+        if (const Value *ve = vm.get("emissiveFactor"); ve && ve->isArray()) {
+          readVec3(*ve, md.emissiveFactor.x, md.emissiveFactor.y,
+                   md.emissiveFactor.z);
+        }
+        if (const Value *vmc = vm.get("metallic"); vmc && vmc->isNum())
+          md.metallic = (float)vmc->asNum(md.metallic);
+        if (const Value *vr = vm.get("roughness"); vr && vr->isNum())
+          md.roughness = (float)vr->asNum(md.roughness);
+        if (const Value *vao = vm.get("ao"); vao && vao->isNum())
+          md.ao = (float)vao->asNum(md.ao);
+        if (const Value *vus = vm.get("uvScale"); vus && vus->isArray())
+          readVec2(*vus, md.uvScale.x, md.uvScale.y);
+        if (const Value *vuo = vm.get("uvOffset"); vuo && vuo->isArray())
+          readVec2(*vuo, md.uvOffset.x, md.uvOffset.y);
+        if (const Value *vt = vm.get("texPath"); vt && vt->isArray()) {
+          const auto &ta = vt->asArray();
+          const size_t n =
+              std::min(ta.size(), md.texPath.size());
+          for (size_t i = 0; i < n; ++i) {
+            if (ta[i].isString())
+              md.texPath[i] = ta[i].asString();
+          }
+        }
+        loadedMaterials.push_back(materials->create(md));
+      }
+    }
+  }
+
+  if (const Value *vSky = root.get("sky"); vSky && vSky->isObject()) {
+    auto &sky = world.skySettings();
+    if (const Value *ve = vSky->get("enabled"); ve && ve->isBool())
+      sky.enabled = ve->asBool(true);
+    if (const Value *vb = vSky->get("drawBackground"); vb && vb->isBool())
+      sky.drawBackground = vb->asBool(true);
+    if (const Value *vi = vSky->get("intensity"); vi && vi->isNum())
+      sky.intensity = (float)vi->asNum(sky.intensity);
+    if (const Value *ve = vSky->get("exposure"); ve && ve->isNum())
+      sky.exposure = (float)ve->asNum(sky.exposure);
+    if (const Value *vy = vSky->get("rotationYawDeg"); vy && vy->isNum())
+      sky.rotationYawDeg = (float)vy->asNum(sky.rotationYawDeg);
+    if (const Value *vp = vSky->get("hdriPath"); vp && vp->isString())
+      sky.hdriPath = vp->asString();
+  }
 
   std::unordered_map<uint64_t, EntityID> map;
   map.reserve(vEnts->asArray().size());
@@ -313,12 +486,24 @@ bool WorldSerializer::loadFromFile(World &world, const std::string &path) {
               sm.name = sn->asString();
             if (const Value *st = vs.get("type"); st && st->isNum())
               sm.type = (ProcMeshType)(int)st->asNum();
-            if (const Value *smat = vs.get("material");
-                smat && smat->isArray()) {
-              const auto &mh = smat->asArray();
-              if (mh.size() >= 2) {
-                sm.material.slot = (uint32_t)mh[0].asNum();
-                sm.material.gen = (uint32_t)mh[1].asNum();
+            bool setMat = false;
+            if (!loadedMaterials.empty()) {
+              if (const Value *vmi = vs.get("materialIndex"); vmi && vmi->isNum()) {
+                int idx = (int)vmi->asNum(-1.0);
+                if (idx >= 0 && idx < (int)loadedMaterials.size()) {
+                  sm.material = loadedMaterials[(size_t)idx];
+                  setMat = true;
+                }
+              }
+            }
+            if (!setMat) {
+              if (const Value *smat = vs.get("material");
+                  smat && smat->isArray()) {
+                const auto &mh = smat->asArray();
+                if (mh.size() >= 2) {
+                  sm.material.slot = (uint32_t)mh[0].asNum();
+                  sm.material.gen = (uint32_t)mh[1].asNum();
+                }
               }
             }
 
@@ -332,7 +517,8 @@ bool WorldSerializer::loadFromFile(World &world, const std::string &path) {
       if (const Value *vc = ve.get("camera")) {
         if (vc->isObject()) {
           auto &cam = world.ensureCamera(e);
-          if (const Value *vproj = vc->get("projection"); vproj && vproj->isNum())
+          if (const Value *vproj = vc->get("projection");
+              vproj && vproj->isNum())
             cam.projection = (CameraProjection)(int)vproj->asNum(0.0);
           if (const Value *vfov = vc->get("fovYDeg"); vfov && vfov->isNum())
             cam.fovYDeg = (float)vfov->asNum(60.0);
@@ -368,6 +554,19 @@ bool WorldSerializer::loadFromFile(World &world, const std::string &path) {
           L.exposure = (float)ve->asNum(L.exposure);
         if (const Value *ve = vl->get("enabled"); ve && ve->isBool())
           L.enabled = ve->asBool(true);
+        // Shadow parameters
+        if (const Value *vs = vl->get("castShadow"); vs && vs->isBool())
+          L.castShadow = vs->asBool(false);
+        if (const Value *vsr = vl->get("shadowRes"); vsr && vsr->isNum())
+          L.shadowRes = (uint16_t)vsr->asNum(1024);
+        if (const Value *vcr = vl->get("cascadeRes"); vcr && vcr->isNum())
+          L.cascadeRes = (uint16_t)vcr->asNum(1024);
+        if (const Value *vcc = vl->get("cascadeCount"); vcc && vcc->isNum())
+          L.cascadeCount = (uint8_t)vcc->asNum(4);
+        if (const Value *vnb = vl->get("normalBias"); vnb && vnb->isNum())
+          L.normalBias = (float)vnb->asNum(0.0025f);
+        if (const Value *vsb = vl->get("slopeBias"); vsb && vsb->isNum())
+          L.slopeBias = (float)vsb->asNum(1.0f);
       }
     }
 
@@ -398,6 +597,15 @@ bool WorldSerializer::loadFromFile(World &world, const std::string &path) {
   world.updateTransforms();
   world.clearEvents();
   return true;
+}
+
+bool WorldSerializer::loadFromFile(World &world, const std::string &path) {
+  return loadFromFileImpl(world, nullptr, path);
+}
+
+bool WorldSerializer::loadFromFile(World &world, MaterialSystem &materials,
+                                   const std::string &path) {
+  return loadFromFileImpl(world, &materials, path);
 }
 
 } // namespace Nyx

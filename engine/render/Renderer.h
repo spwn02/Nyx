@@ -3,12 +3,26 @@
 #include "render/gl/GLFullscreenTriangle.h"
 #include "render/gl/GLMesh.h"
 #include "render/gl/GLResources.h"
+#include "render/gl/GLShaderUtil.h"
 #include "render/passes/PassDepthPre.h"
+#include "render/passes/PassEnvBRDFLUT.h"
+#include "render/passes/PassEnvEquirectToCube.h"
+#include "render/passes/PassEnvIrradiance.h"
+#include "render/passes/PassEnvPrefilter.h"
 #include "render/passes/PassForwardMRT.h"
+#include "render/passes/PassHiZBuild.h"
+#include "render/passes/PassShadowCSM.h"
+#include "render/passes/PassShadowDebugOverlay.h"
+#include "render/passes/PassShadowSpot.h"
+#include "render/passes/PassShadowDir.h"
+#include "render/passes/PassShadowPoint.h"
+#include "render/passes/PassLightCluster.h"
+#include "render/passes/PassLightGridDebug.h"
 #include "render/passes/PassPostFilters.h"
 #include "render/passes/PassPresent.h"
 #include "render/passes/PassSelection.h"
-#include "render/passes/PassTonemapRG.h"
+#include "render/passes/PassSkyIBL.h"
+#include "render/passes/PassTonemap.h"
 #include "render/rg/RGResource.h"
 #include "render/rg/RGResources.h"
 #include "render/rg/RenderPassContext.h"
@@ -42,26 +56,53 @@ public:
   void setSelectedPickIDs(const std::vector<uint32_t> &ids);
   void drawPrimitive(ProcMeshType type);
 
-private:
-  void ensureTargets(uint32_t w, uint32_t h);
-  void ensureScene();
+  GLShaderUtil &shaders() { return m_shaders; }
+  const GLShaderUtil &shaders() const { return m_shaders; }
 
-  void ensurePrimitiveMeshes();
+  GLResources &resources() { return m_res; }
+  const GLResources &resources() const { return m_res; }
+
+  ShadowCSMConfig &shadowCSMConfig() { return m_passShadowCSM.config(); }
+  const ShadowCSMConfig &shadowCSMConfig() const {
+    return m_passShadowCSM.config();
+  }
+
+  const PassShadowSpot& shadowSpotPass() const { return m_passShadowSpot; }
+  const PassShadowDir& shadowDirPass() const { return m_passShadowDir; }
+  const PassShadowPoint& shadowPointPass() const { return m_passShadowPoint; }
+
+private:
+  // void ensureTargets(uint32_t w, uint32_t h);
+  // void ensureScene();
+
+  // void ensurePrimitiveMeshes();
 
 private:
   RenderGraph m_graph;
   RGResources m_rgRes;
   FrameOutputs m_out;
   GLResources m_res;
+  GLShaderUtil m_shaders{};
 
   GLFullscreenTriangle m_fsTri;
-  uint32_t m_hdrFbo, m_outlineFbo;
-  uint32_t m_presentProg, m_forwardProg, m_outlineProg;
-  uint32_t m_selectedSSBO, m_selectedCount;
+
+  PassEnvEquirectToCube m_passEnvEquirect;
+  PassEnvIrradiance m_passEnvIrradiance;
+  PassEnvPrefilter m_passEnvPrefilter;
+  PassEnvBRDFLUT m_passEnvBRDF;
 
   PassDepthPre m_passDepthPre;
+  PassHiZBuild m_passHiZ;
+  PassLightCluster m_passLightCluster;
+  PassLightGridDebug m_passLightGridDebug;
+  PassShadowCSM m_passShadowCSM;
+  PassShadowSpot m_passShadowSpot;
+  PassShadowDir m_passShadowDir;
+  PassShadowPoint m_passShadowPoint;
   PassForwardMRT m_passForward;
-  PassTonemapRG m_passTonemap;
+  PassSkyIBL m_passSky;
+  PassShadowDebugOverlay m_passShadowDebug;
+  PassTonemap m_passTonemap;
   PassPostFilters m_passPost;
   PassSelection m_passSelection;
   PassPresent m_passPresent;

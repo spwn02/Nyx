@@ -117,6 +117,8 @@ void World::clear() {
   m_cam.clear();
   m_camMat.clear();
   m_light.clear();
+  m_sky.clear();
+  m_skySettings = CSky{};
 
   m_uuid.clear();
   m_entityByUUID.clear();
@@ -393,6 +395,26 @@ const CWorldTransform &World::worldTransform(EntityID e) const {
   return m_wtr.at(e);
 }
 
+glm::vec3 World::worldPosition(EntityID e) const {
+  if (!isAlive(e))
+    return glm::vec3(0.0f);
+  const auto it = m_wtr.find(e);
+  if (it == m_wtr.end())
+    return glm::vec3(0.0f);
+  return glm::vec3(it->second.world[3]);
+}
+
+glm::vec3 World::worldDirection(EntityID e, const glm::vec3 &localDir) const {
+  if (!isAlive(e))
+    return localDir;
+  const auto it = m_wtr.find(e);
+  if (it == m_wtr.end())
+    return localDir;
+  // Transform direction by world matrix (ignore translation)
+  glm::vec4 worldDir = it->second.world * glm::vec4(localDir, 0.0f);
+  return glm::normalize(glm::vec3(worldDir));
+}
+
 void World::updateTransforms() {
   // Roots first; DFS propagate
   // For now we recompute if dirty flags indicate changes; still fast enough.
@@ -522,6 +544,27 @@ CLight &World::ensureLight(EntityID e) {
 
 CLight &World::light(EntityID e) { return m_light.at(e); }
 const CLight &World::light(EntityID e) const { return m_light.at(e); }
+
+// ---- Sky ----
+
+bool World::hasSky(EntityID e) const {
+  return m_sky.find(e) != m_sky.end();
+}
+
+CSky &World::ensureSky(EntityID e) {
+  auto it = m_sky.find(e);
+  if (it != m_sky.end())
+    return it->second;
+
+  m_sky[e] = CSky{};
+  return m_sky.at(e);
+}
+
+CSky &World::sky(EntityID e) { return m_sky.at(e); }
+const CSky &World::sky(EntityID e) const { return m_sky.at(e); }
+
+CSky &World::skySettings() { return m_skySettings; }
+const CSky &World::skySettings() const { return m_skySettings; }
 
 void World::setActiveCamera(EntityID cam) {
   if (cam != InvalidEntity && !isAlive(cam))

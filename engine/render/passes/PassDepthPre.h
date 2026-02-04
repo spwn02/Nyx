@@ -1,5 +1,7 @@
 #pragma once
 
+#include "render/gl/GLResources.h"
+#include "render/gl/GLShaderUtil.h"
 #include "render/passes/RenderPass.h"
 #include <functional>
 
@@ -7,7 +9,9 @@ namespace Nyx {
 
 class PassDepthPre final : public RenderPass {
 public:
-  void configure(uint32_t fbo, uint32_t forwardProg,
+  ~PassDepthPre() override;
+
+  void configure(GLShaderUtil &shaders, GLResources &res,
                  std::function<void(ProcMeshType)> drawFn);
 
   void setup(RenderGraph &graph, const RenderPassContext &ctx,
@@ -16,7 +20,7 @@ public:
 
 private:
   uint32_t m_fbo = 0;
-  uint32_t m_forwardProg = 0;
+  GLResources *m_res = nullptr;
   std::function<void(ProcMeshType)> m_draw;
 };
 

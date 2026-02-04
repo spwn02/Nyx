@@ -1,14 +1,23 @@
 #include "PassPresent.h"
 
 #include "render/gl/GLFullscreenTriangle.h"
+#include "render/gl/GLShaderUtil.h"
 
 #include <glad/glad.h>
 
 namespace Nyx {
 
-void PassPresent::configure(uint32_t presentProg, GLFullscreenTriangle *fsTri) {
-  m_presentProg = presentProg;
-  m_fsTri = fsTri;
+PassPresent::~PassPresent() {
+  if (m_prog != 0) {
+    glDeleteProgram(m_prog);
+    m_prog = 0;
+  }
+}
+
+void PassPresent::configure(GLShaderUtil &shaders,
+                            GLFullscreenTriangle &fsTri) {
+  m_prog = shaders.buildProgramVF("present.vert", "present.frag");
+  m_fsTri = &fsTri;
 }
 
 void PassPresent::setup(RenderGraph &graph, const RenderPassContext &ctx,
@@ -34,7 +43,7 @@ void PassPresent::setup(RenderGraph &graph, const RenderPassContext &ctx,
         glViewport(0, 0, (int)rc.fbWidth, (int)rc.fbHeight);
         glDisable(GL_DEPTH_TEST);
 
-        glUseProgram(m_presentProg);
+        glUseProgram(m_prog);
         if (m_fsTri)
           glBindVertexArray(m_fsTri->vao);
 

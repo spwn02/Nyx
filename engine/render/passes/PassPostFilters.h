@@ -1,7 +1,8 @@
 #pragma once
 
+#include "render/gl/GLResources.h"
+#include "render/gl/GLShaderUtil.h"
 #include "render/passes/RenderPass.h"
-#include <functional>
 
 namespace Nyx {
 
@@ -9,8 +10,10 @@ class GLFullscreenTriangle;
 
 class PassPostFilters final : public RenderPass {
 public:
-  void configure(uint32_t fbo, uint32_t presentProg,
-                 GLFullscreenTriangle *fsTri);
+  ~PassPostFilters() override;
+
+  void configure(GLShaderUtil &shaders, GLResources &res,
+                 GLFullscreenTriangle &fsTri);
 
   void setup(RenderGraph &graph, const RenderPassContext &ctx,
              const RenderableRegistry &registry, EngineContext &engine,
@@ -18,7 +21,7 @@ public:
 
 private:
   uint32_t m_fbo = 0;
-  uint32_t m_presentProg = 0;
+  GLResources *m_res = nullptr;
   GLFullscreenTriangle *m_fsTri = nullptr;
 };
 

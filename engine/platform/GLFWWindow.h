@@ -26,9 +26,16 @@ public:
   GLFWWindow &operator=(const GLFWWindow &) = delete;
 
   void pollEvents();
+  void waitEventsTimeout(double seconds);
   void swapBuffers();
 
   bool shouldClose() const;
+
+  bool isFocused() const;
+  bool isVisible() const;
+  bool isMinimized() const;
+
+  void disableCursor(bool disabled) const;
 
   int32_t width() const { return m_width; }
   int32_t height() const { return m_height; }

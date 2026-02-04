@@ -1,0 +1,33 @@
+#version 460 core
+
+layout(local_size_x = 16, local_size_y = 16) in;
+
+layout(binding = 0) uniform sampler2D uDepthPre;
+layout(r32f, binding = 1) uniform writeonly image2D uHiZ;
+
+uniform uint uMip;
+uniform uvec2 uBaseSize;
+
+float fetchDepth(uvec2 p) {
+  return texelFetch(uDepthPre, ivec2(p), 0).r;
+}
+
+void main() {
+  uvec2 gid = gl_GlobalInvocationID.xy;
+
+  uvec2 sizeMip = max(uvec2(1), uBaseSize >> uMip);
+  if (gid.x >= sizeMip.x || gid.y >= sizeMip.y)
+    return;
+
+  uint scale = 1u << uMip;
+  uvec2 base = gid * scale;
+
+  uvec2 maxP = uBaseSize - uvec2(1);
+  float d0 = fetchDepth(base);
+  float d1 = fetchDepth(min(base + uvec2(scale, 0), maxP));
+  float d2 = fetchDepth(min(base + uvec2(0, scale), maxP));
+  float d3 = fetchDepth(min(base + uvec2(scale, scale), maxP));
+
+  float dmin = min(min(d0, d1), min(d2, d3));
+  imageStore(uHiZ, ivec2(gid), vec4(dmin, 0.0, 0.0, 0.0));
+}

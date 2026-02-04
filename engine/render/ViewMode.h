@@ -12,7 +12,8 @@ enum class ViewMode : uint8_t {
   Metallic = 4,
   AO = 5,
   Depth = 6,
-  ID = 7
+  ID = 7,
+  LightGrid = 8
 };
 
 } // namespace Nyx

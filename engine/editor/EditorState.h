@@ -1,5 +1,5 @@
 #pragma once
-#include "editor/GizmoState.h"
+#include "ui/GizmoState.h"
 #include "render/ViewMode.h"
 #include "scene/EntityUUID.h"
 

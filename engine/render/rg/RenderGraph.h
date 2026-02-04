@@ -23,6 +23,7 @@ enum class RenderAccess : uint32_t {
   ImageWrite = 1u << 4,
   SSBORead = 1u << 5,
   SSBOWrite = 1u << 6,
+  UBORead = 1u << 7,
 };
 
 inline RenderAccess operator|(RenderAccess a, RenderAccess b) {
@@ -56,6 +57,8 @@ struct RenderTextureDesc {
   RGFormat format = RGFormat::RGBA8;
   RGTexUsage usage = RGTexUsage::None;
   RenderExtent extent{};
+  uint32_t layers = 1;
+  uint32_t mipCount = 1;
 };
 
 struct RGTextureRef {
@@ -65,6 +68,14 @@ struct RGTextureRef {
 inline bool operator==(RGTextureRef a, RGTextureRef b) { return a.id == b.id; }
 inline bool operator!=(RGTextureRef a, RGTextureRef b) { return a.id != b.id; }
 static constexpr RGTextureRef InvalidRGTexture{0u};
+
+struct RGBufferRef {
+  uint32_t id = 0;
+};
+
+inline bool operator==(RGBufferRef a, RGBufferRef b) { return a.id == b.id; }
+inline bool operator!=(RGBufferRef a, RGBufferRef b) { return a.id != b.id; }
+static constexpr RGBufferRef InvalidRGBuffer{0u};
 
 class RenderResourceBlackboard final {
 public:
@@ -81,6 +92,21 @@ public:
   const std::string &textureName(RGTextureRef ref) const;
   uint32_t textureCount() const { return (uint32_t)m_textures.size(); }
 
+  RGBufferRef declareBuffer(const std::string &name,
+                            const RGBufferDesc &desc);
+  RGBufferRef getBuffer(const std::string &name) const;
+
+  const RGBufferDesc &bufferDesc(RGBufferRef ref) const;
+  RGBufHandle bufferHandle(RGBufferRef ref) const;
+  void setBufferHandle(RGBufferRef ref, RGBufHandle handle);
+
+  const std::string &bufferName(RGBufferRef ref) const;
+  uint32_t bufferCount() const { return (uint32_t)m_buffers.size(); }
+
+  void bindExternalBuffer(RGBufferRef ref, const GLBuffer &buf);
+  const GLBuffer &externalBuffer(RGBufferRef ref) const;
+  bool isExternalBuffer(RGBufferRef ref) const;
+
 private:
   struct TextureEntry {
     std::string name;
@@ -90,13 +116,25 @@ private:
 
   std::vector<TextureEntry> m_textures;
   std::unordered_map<std::string, uint32_t> m_texByName;
+
+  struct BufferEntry {
+    std::string name;
+    RGBufferDesc desc{};
+    RGBufHandle handle = InvalidRG;
+    GLBuffer external{};
+    bool externalBound = false;
+  };
+
+  std::vector<BufferEntry> m_buffers;
+  std::unordered_map<std::string, uint32_t> m_bufByName;
 };
 
 class RenderPassBuilder final {
 public:
   RenderPassBuilder(RenderResourceBlackboard &bb,
-                    std::vector<std::pair<uint32_t, RenderAccess>> &uses)
-      : m_bb(bb), m_uses(uses) {}
+                    std::vector<std::pair<uint32_t, RenderAccess>> &texUses,
+                    std::vector<std::pair<uint32_t, RenderAccess>> &bufUses)
+      : m_bb(bb), m_texUses(texUses), m_bufUses(bufUses) {}
 
   RGTextureRef readTexture(const std::string &name,
                            RenderAccess access = RenderAccess::SampledRead);
@@ -106,9 +144,15 @@ public:
                              const RenderTextureDesc &desc,
                              RenderAccess access = RenderAccess::ColorWrite);
 
+  RGBufferRef readBuffer(const std::string &name,
+                         RenderAccess access = RenderAccess::SSBORead);
+  RGBufferRef writeBuffer(const std::string &name,
+                          RenderAccess access = RenderAccess::SSBOWrite);
+
 private:
   RenderResourceBlackboard &m_bb;
-  std::vector<std::pair<uint32_t, RenderAccess>> &m_uses;
+  std::vector<std::pair<uint32_t, RenderAccess>> &m_texUses;
+  std::vector<std::pair<uint32_t, RenderAccess>> &m_bufUses;
 };
 
 class RenderGraph final {
@@ -124,6 +168,10 @@ public:
   RGTextureRef declareTexture(const std::string &name,
                               const RenderTextureDesc &desc) {
     return m_blackboard.declareTexture(name, desc);
+  }
+  RGBufferRef declareBuffer(const std::string &name,
+                            const RGBufferDesc &desc) {
+    return m_blackboard.declareBuffer(name, desc);
   }
   RenderResourceBlackboard &blackboard() { return m_blackboard; }
   const RenderResourceBlackboard &blackboard() const { return m_blackboard; }
@@ -146,7 +194,8 @@ private:
     std::string name;
     SetupFn setup;
     ExecuteFn exec;
-    std::vector<std::pair<uint32_t, RenderAccess>> uses;
+    std::vector<std::pair<uint32_t, RenderAccess>> texUses;
+    std::vector<std::pair<uint32_t, RenderAccess>> bufUses;
     uint32_t order = 0;
   };
 
