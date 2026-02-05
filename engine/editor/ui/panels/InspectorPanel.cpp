@@ -3,11 +3,14 @@
 #include "InspectorLight.h"
 #include "app/EngineContext.h"
 #include "editor/ui/panels/InspectorMaterial.h"
+#include "material/MaterialHandle.h"
 #include "scene/Pick.h"
 
+#include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 #include <glm/gtx/quaternion.hpp>
 #include <imgui.h>
+#include <algorithm>
 #include <string>
 
 namespace Nyx {
@@ -89,6 +92,7 @@ void InspectorPanel::draw(World &world, EngineContext &engine, Selection &sel) {
 
   if (sel.isEmpty()) {
     ImGui::TextUnformatted("No selection.");
+    engine.setPreviewMaterial(InvalidMaterial);
     ImGui::End();
     return;
   }
@@ -128,6 +132,7 @@ void InspectorPanel::draw(World &world, EngineContext &engine, Selection &sel) {
     }
 
     ImGui::End();
+    engine.setPreviewMaterial(InvalidMaterial);
     return;
   }
 
@@ -210,35 +215,41 @@ void InspectorPanel::draw(World &world, EngineContext &engine, Selection &sel) {
     lightInspector.draw(world, sel);
   }
 
-  {
+  MaterialHandle previewMat = InvalidMaterial;
+  if (!world.hasLight(e) && world.hasMesh(e) && sub < world.submeshCount(e)) {
     static InspectorMaterial matInspector;
     matInspector.draw(engine.materials(), world.submesh(e, sub).material);
-  }
+    previewMat = world.submesh(e, sub).material;
 
-  // if (world.hasMesh(e)) {
-  //   ImGui::SeparatorText("Material");
-  //   auto &sm = world.submesh(e, sub);
-  //   auto mh = sm.material;
-  //   if (mh == InvalidMaterial || !engine.materials().isAlive(mh)) {
-  //     MaterialData def{};
-  //     mh = engine.materials().create(def);
-  //     sm.material = mh;
-  //   }
-  //   auto &mat = engine.materials().cpu(mh);
-  //
-  //   float base[4] = {mat.baseColorFactor.x, mat.baseColorFactor.y,
-  //                    mat.baseColorFactor.z, mat.baseColorFactor.w};
-  //   if (ImGui::ColorEdit4("Base Color", base)) {
-  //     mat.baseColorFactor = {base[0], base[1], base[2], base[3]};
-  //     engine.materials().markDirty(mh);
-  //   }
-  //   float mr[2] = {mat.metallic, mat.roughness};
-  //   if (ImGui::DragFloat2("Metal/Rough", mr, 0.01f, 0.0f, 1.0f)) {
-  //     mat.metallic = mr[0];
-  //     mat.roughness = mr[1];
-  //     engine.materials().markDirty(mh);
-  //   }
-  // }
+    if (ImGui::CollapsingHeader("Preview", ImGuiTreeNodeFlags_DefaultOpen)) {
+      glm::vec3 dir = engine.previewLightDir();
+      if (ImGui::DragFloat3("Light Dir", &dir.x, 0.01f, -1.0f, 1.0f)) {
+        if (glm::length(dir) < 1e-4f)
+          dir = glm::vec3(0.0f, 1.0f, 0.0f);
+        engine.previewLightDir() = glm::normalize(dir);
+      }
+      float intensity = engine.previewLightIntensity();
+      if (ImGui::DragFloat("Light Intensity", &intensity, 0.05f, 0.0f, 100.0f)) {
+        engine.previewLightIntensity() = std::max(0.0f, intensity);
+      }
+      float exposure = engine.previewLightExposure();
+      if (ImGui::DragFloat("Light Exposure", &exposure, 0.05f, -10.0f, 10.0f)) {
+        engine.previewLightExposure() = exposure;
+      }
+
+      const uint32_t tex = engine.renderer().previewTexture();
+      if (tex != 0) {
+        ImGui::Image((ImTextureID)(uintptr_t)tex, ImVec2(256, 256),
+                     ImVec2(0, 1), ImVec2(1, 0));
+      } else {
+        ImGui::TextDisabled("Preview not available.");
+      }
+    }
+  } else {
+    ImGui::SeparatorText("Material");
+    ImGui::TextDisabled("No mesh/submesh selected.");
+  }
+  engine.setPreviewMaterial(previewMat);
 
   ImGui::End();
 }

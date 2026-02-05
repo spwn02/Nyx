@@ -1,21 +1,28 @@
 #pragma once
 
-#include <cstdint>
+#include "material/MaterialHandle.h"
+#include "scene/material/MaterialTypes.h"
 
 namespace Nyx {
 
 class MaterialSystem;
-struct MaterialHandle;
 
 class InspectorMaterial final {
 public:
-  // Draw inspector for a material. If material is invalid/not alive - draws
-  // nothing.
-  void draw(MaterialSystem &materialSystem, MaterialHandle handle);
+  void draw(MaterialSystem &materials, MaterialHandle &handle);
 
 private:
-  void drawTextureSlot(MaterialSystem &materialSystem, MaterialHandle handle,
-                       const char *label, uint32_t slotIndex, bool srgb);
+  // UI helpers
+  bool drawSlot(MaterialSystem &materials, MaterialHandle handle,
+                MaterialTexSlot slot);
+  bool assignSlotFromPath(MaterialSystem &materials, MaterialHandle handle,
+                          MaterialTexSlot slot, const std::string &absPath);
+  bool clearSlot(MaterialSystem &materials, MaterialHandle handle,
+                 MaterialTexSlot slot);
+  bool reloadSlot(MaterialSystem &materials, MaterialHandle handle,
+                  MaterialTexSlot slot);
+
+  static bool acceptTexturePathDrop(std::string &outAbsPath);
 };
 
 } // namespace Nyx

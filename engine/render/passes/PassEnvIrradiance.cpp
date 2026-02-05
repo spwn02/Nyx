@@ -45,13 +45,17 @@ void PassEnvIrradiance::setup(RenderGraph &graph, const RenderPassContext &ctx,
         auto &env = engine.envIBL();
         if (!env.dirty())
           return;
+        if (env.hdrEquirect() == 0)
+          return;
 
         env.ensureResources();
 
         const uint32_t envTex = env.envCube();
         const uint32_t irrTex = env.envIrradianceCube();
-        NYX_ASSERT(envTex != 0 && irrTex != 0,
-                   "PassEnvIrradiance: missing env textures");
+        if (envTex == 0 || irrTex == 0) {
+          // Sky/IBL may be intentionally unset. Skip without asserting.
+          return;
+        }
 
         GLint size = 0;
         glGetTextureLevelParameteriv(irrTex, 0, GL_TEXTURE_WIDTH, &size);

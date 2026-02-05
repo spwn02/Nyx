@@ -1,134 +1,232 @@
 #include "InspectorMaterial.h"
 
-#include "glm/fwd.hpp"
-#include "material/MaterialHandle.h"
 #include "platform/FileDialogs.h"
-
 #include "render/material/MaterialSystem.h"
+#include "render/material/MaterialTexturePolicy.h"
+#include "render/material/TextureTable.h"
 #include "scene/material/MaterialData.h"
-#include "scene/material/MaterialTypes.h"
-
-#include <glad/glad.h>
 #include <imgui.h>
 
 namespace Nyx {
 
-static bool imguiVec3(const char *label, glm::vec3 &vec) {
-  return ImGui::ColorEdit3(label, &vec.x);
+static ImTextureID toImTex(uint32_t glTex) {
+  return (ImTextureID)(intptr_t)glTex;
 }
 
-static bool imguiVec4(const char *label, glm::vec4 &vec) {
-  return ImGui::ColorEdit4(label, &vec.x);
+bool InspectorMaterial::acceptTexturePathDrop(std::string &outAbsPath) {
+  if (!ImGui::BeginDragDropTarget())
+    return false;
+
+  const ImGuiPayload *p = ImGui::AcceptDragDropPayload("NYX_ASSET_PATH_TEX");
+  if (p && p->Data && p->DataSize > 0) {
+    const char *str = (const char *)p->Data;
+    outAbsPath = std::string(str);
+    ImGui::EndDragDropTarget();
+    return true;
+  }
+
+  ImGui::EndDragDropTarget();
+  return false;
 }
 
-void InspectorMaterial::draw(MaterialSystem &mats, MaterialHandle h) {
-  if (!mats.isAlive(h)) {
-    return;
-  }
+bool InspectorMaterial::assignSlotFromPath(MaterialSystem &materials,
+                                           MaterialHandle handle,
+                                           MaterialTexSlot slot,
+                                           const std::string &absPath) {
+  if (!materials.isAlive(handle))
+    return false;
 
-  MaterialData &m = mats.cpu(h);
+  auto &mat = materials.cpu(handle);
+  mat.texPath[static_cast<size_t>(slot)] = absPath;
+  materials.markDirty(handle);
 
-  if (!ImGui::CollapsingHeader("Material", ImGuiTreeNodeFlags_DefaultOpen))
-    return;
-
-  bool dirty = false;
-
-  // Factors
-  glm::vec4 bc = m.baseColorFactor;
-  if (imguiVec4("Base Color", bc)) {
-    m.baseColorFactor = bc;
-    dirty = true;
-  }
-
-  glm::vec3 em = m.emissiveFactor;
-  if (imguiVec3("Emissive", em)) {
-    m.emissiveFactor = em;
-    dirty = true;
-  }
-
-  dirty |= ImGui::SliderFloat("Metallic", &m.metallic, 0.0f, 1.0f);
-  dirty |= ImGui::SliderFloat("Roughness", &m.roughness, 0.0f, 1.0f);
-  dirty |= ImGui::SliderFloat("AO", &m.ao, 0.0f, 1.0f);
-
-  // UV
-  dirty |= ImGui::SliderFloat2("UV Scale", &m.uvScale.x, 0.0f, 100.0f, "%.3f");
-  dirty |=
-      ImGui::SliderFloat2("UV Offset", &m.uvOffset.x, -100.0f, 100.0f, "%.3f");
-
-  ImGui::SeparatorText("Textures");
-
-  // Slots
-  drawTextureSlot(mats, h, "Base Color (sRGB)",
-                  static_cast<uint32_t>(MaterialTexSlot::BaseColor), true);
-  drawTextureSlot(mats, h, "Metallic-Roughness (Linear)",
-                  static_cast<uint32_t>(MaterialTexSlot::MetalRough), false);
-  drawTextureSlot(mats, h, "Normal Map (Linear)",
-                  static_cast<uint32_t>(MaterialTexSlot::Normal), false);
-  drawTextureSlot(mats, h, "Emissive (sRGB)",
-                  static_cast<uint32_t>(MaterialTexSlot::Emissive), true);
-  drawTextureSlot(mats, h, "Ambient Occlusion (Linear)",
-                  static_cast<uint32_t>(MaterialTexSlot::AO), false);
-
-  if (dirty) {
-    mats.markDirty(h);
-  }
+  const bool wantSRGB = materialSlotWantsSRGB(slot);
+  materials.textures().getOrCreate2D(absPath, wantSRGB);
+  return true;
 }
 
-void InspectorMaterial::drawTextureSlot(MaterialSystem &mats, MaterialHandle h,
-                                        const char *label, uint32_t slotIndex,
-                                        bool srgb) {
-  MaterialData &m = mats.cpu(h);
+bool InspectorMaterial::clearSlot(MaterialSystem &materials,
+                                  MaterialHandle handle,
+                                  MaterialTexSlot slot) {
+  if (!materials.isAlive(handle))
+    return false;
+  auto &mat = materials.cpu(handle);
+  mat.texPath[static_cast<size_t>(slot)].clear();
+  materials.markDirty(handle);
+  return true;
+}
 
-  ImGui::PushID(static_cast<int>(slotIndex));
+bool InspectorMaterial::reloadSlot(MaterialSystem &materials,
+                                   MaterialHandle handle,
+                                   MaterialTexSlot slot) {
+  if (!materials.isAlive(handle))
+    return false;
+  auto &mat = materials.cpu(handle);
+  const std::string &path = mat.texPath[static_cast<size_t>(slot)];
+  if (path.empty())
+    return false;
 
-  ImGui::TextUnformatted(label);
+  const bool wantSRGB = materialSlotWantsSRGB(slot);
+  uint32_t idx = materials.textures().getOrCreate2D(path, wantSRGB);
+  if (idx != TextureTable::Invalid) {
+    materials.textures().reloadByIndex(idx);
+    materials.markDirty(handle);
+    return true;
+  }
+  return false;
+}
 
-  // Current path (short)
-  const std::string &path = m.texPath[slotIndex];
+bool InspectorMaterial::drawSlot(MaterialSystem &materials,
+                                 MaterialHandle handle,
+                                 MaterialTexSlot slot) {
+  if (!materials.isAlive(handle))
+    return false;
+
+  auto &mat = materials.cpu(handle);
+  const std::string &path = mat.texPath[static_cast<size_t>(slot)];
+  const bool wantSRGB = materialSlotWantsSRGB(slot);
+  bool changed = false;
+
+  uint32_t glTex = 0;
+  uint32_t texIndex = TextureTable::Invalid;
   if (!path.empty()) {
-    ImGui::SameLine();
-    ImGui::TextDisabled("(%s)", path.c_str());
+    texIndex = materials.textures().getOrCreate2D(path, wantSRGB);
+    if (texIndex != TextureTable::Invalid)
+      glTex = materials.textures().glTexByIndex(texIndex);
   }
 
-  // Buttons
-  if (ImGui::Button("Choose...")) {
-    // Common texture formats
-    auto p = FileDialogs::openFile(
-        "Select Texture", "png,jpg,jpeg,tga,bmp,ktx,ktx2,hdr,exr", nullptr);
-    if (p.has_value()) {
-      m.texPath[slotIndex] = *p;
+  ImGui::PushID((int)slot);
 
-      // Preload into table so preview works immediately.
-      mats.textures().getOrCreate2D(m.texPath[slotIndex], srgb);
+  ImGui::TextUnformatted(materialSlotName(slot));
+  ImGui::SameLine();
+  ImGui::TextDisabled(wantSRGB ? "[sRGB]" : "[Linear]");
 
-      mats.markDirty(h);
-    }
+  const float thumb = 72.0f;
+  if (glTex != 0) {
+    ImGui::Image(toImTex(glTex), ImVec2(thumb, thumb));
+  } else {
+    ImGui::Button("##empty", ImVec2(thumb, thumb));
+  }
+
+  std::string dropPath;
+  if (acceptTexturePathDrop(dropPath)) {
+    changed |= assignSlotFromPath(materials, handle, slot, dropPath);
   }
 
   ImGui::SameLine();
-  if (ImGui::Button("Clear")) {
-    if (!m.texPath[slotIndex].empty()) {
-      m.texPath[slotIndex].clear();
-      mats.markDirty(h);
+  ImGui::BeginGroup();
+  {
+    if (!path.empty()) {
+      ImGui::TextWrapped("%s", path.c_str());
+    } else {
+      ImGui::TextDisabled("No texture");
     }
-  }
 
-  // Preview (if available in table)
-  if (!m.texPath[slotIndex].empty()) {
-    const uint32_t texIndex =
-        mats.textures().getOrCreate2D(m.texPath[slotIndex], srgb);
-    if (texIndex != 0xFFFFFFFF) {
-      const auto &gl = mats.textures().glTextures();
-      if (texIndex < gl.size() && gl[texIndex] != 0) {
-        ImGui::SameLine();
-        const ImVec2 sz(48.0f, 48.0f);
-        ImGui::Image(
-            reinterpret_cast<void *>(static_cast<uintptr_t>(gl[texIndex])), sz);
+    SlotBinding binding{};
+    binding.path = path;
+    binding.requestedSRGB = wantSRGB;
+    binding.texIndex = texIndex;
+    const SlotIssue issue = validateSlot(slot, binding);
+    if (issue.kind != SlotIssueKind::None) {
+      ImGui::TextColored(ImVec4(1.0f, 0.65f, 0.2f, 1.0f), "Warning: %s",
+                         issue.message.c_str());
+    }
+
+    if (ImGui::Button("Open...")) {
+      const char *filters = "png,jpg,jpeg,tga,bmp,ktx,ktx2,hdr,exr";
+      auto chosen =
+          FileDialogs::openFile(materialSlotName(slot), filters, nullptr);
+      if (chosen.has_value()) {
+        changed |= assignSlotFromPath(materials, handle, slot, chosen.value());
       }
     }
+    ImGui::SameLine();
+    if (ImGui::Button("Clear")) {
+      changed |= clearSlot(materials, handle, slot);
+    }
+    ImGui::SameLine();
+    if (ImGui::Button("Reload")) {
+      changed |= reloadSlot(materials, handle, slot);
+    }
   }
+  ImGui::EndGroup();
 
   ImGui::PopID();
+  ImGui::Separator();
+  return changed;
+}
+
+void InspectorMaterial::draw(MaterialSystem &materials, MaterialHandle &handle) {
+  ImGui::SeparatorText("Material");
+
+  if (!materials.isAlive(handle)) {
+    ImGui::TextDisabled("No material selected.");
+    if (ImGui::Button("Create Material")) {
+      MaterialData def{};
+      handle = materials.create(def);
+    }
+    return;
+  }
+
+  auto &mat = materials.cpu(handle);
+
+  bool changed = false;
+
+  float base[4] = {mat.baseColorFactor.x, mat.baseColorFactor.y,
+                   mat.baseColorFactor.z, mat.baseColorFactor.w};
+  if (ImGui::ColorEdit4("Base Color", base)) {
+    mat.baseColorFactor = {base[0], base[1], base[2], base[3]};
+    materials.markDirty(handle);
+    changed = true;
+  }
+
+  float emi[3] = {mat.emissiveFactor.x, mat.emissiveFactor.y,
+                 mat.emissiveFactor.z};
+  if (ImGui::ColorEdit3("Emissive", emi)) {
+    mat.emissiveFactor = {emi[0], emi[1], emi[2]};
+    materials.markDirty(handle);
+    changed = true;
+  }
+
+  float mr[2] = {mat.metallic, mat.roughness};
+  if (ImGui::DragFloat2("Metal/Rough", mr, 0.01f, 0.0f, 1.0f)) {
+    mat.metallic = mr[0];
+    mat.roughness = mr[1];
+    materials.markDirty(handle);
+    changed = true;
+  }
+
+  if (ImGui::DragFloat("AO", &mat.ao, 0.01f, 0.0f, 1.0f)) {
+    materials.markDirty(handle);
+    changed = true;
+  }
+
+  float uvScale[2] = {mat.uvScale.x, mat.uvScale.y};
+  if (ImGui::DragFloat2("UV Scale", uvScale, 0.01f, 0.0f, 100.0f)) {
+    mat.uvScale = {uvScale[0], uvScale[1]};
+    materials.markDirty(handle);
+    changed = true;
+  }
+
+  float uvOffset[2] = {mat.uvOffset.x, mat.uvOffset.y};
+  if (ImGui::DragFloat2("UV Offset", uvOffset, 0.01f, -100.0f, 100.0f)) {
+    mat.uvOffset = {uvOffset[0], uvOffset[1]};
+    materials.markDirty(handle);
+    changed = true;
+  }
+
+  ImGui::Separator();
+
+  changed |= drawSlot(materials, handle, MaterialTexSlot::BaseColor);
+  changed |= drawSlot(materials, handle, MaterialTexSlot::Normal);
+  changed |= drawSlot(materials, handle, MaterialTexSlot::Metallic);
+  changed |= drawSlot(materials, handle, MaterialTexSlot::Roughness);
+  changed |= drawSlot(materials, handle, MaterialTexSlot::AO);
+  changed |= drawSlot(materials, handle, MaterialTexSlot::Emissive);
+
+  if (changed) {
+    materials.uploadIfDirty();
+  }
 }
 
 } // namespace Nyx

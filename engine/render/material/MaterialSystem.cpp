@@ -86,6 +86,11 @@ const MaterialData &MaterialSystem::cpu(MaterialHandle h) const {
   return m_slots[idxFromHandle(h)].cpu;
 }
 
+const GpuMaterialPacked &MaterialSystem::gpu(MaterialHandle h) const {
+  NYX_ASSERT(isAlive(h), "MaterialSystem::gpu invalid handle");
+  return m_slots[idxFromHandle(h)].gpu;
+}
+
 uint32_t MaterialSystem::gpuIndex(MaterialHandle h) const {
   NYX_ASSERT(isAlive(h), "MaterialSystem::gpuIndex invalid handle");
   return idxFromHandle(h);
@@ -120,7 +125,8 @@ void MaterialSystem::rebuildGpuForSlot(uint32_t idx) {
   const uint32_t tBase = setTex(MaterialTexSlot::BaseColor, true);
   const uint32_t tEmis = setTex(MaterialTexSlot::Emissive, true);
   const uint32_t tNorm = setTex(MaterialTexSlot::Normal, false);
-  const uint32_t tMR = setTex(MaterialTexSlot::MetalRough, false);
+  const uint32_t tMet = setTex(MaterialTexSlot::Metallic, false);
+  const uint32_t tRgh = setTex(MaterialTexSlot::Roughness, false);
   const uint32_t tOcc = setTex(MaterialTexSlot::AO, false);
 
   if (tBase != kInvalidTexIndex)
@@ -129,14 +135,16 @@ void MaterialSystem::rebuildGpuForSlot(uint32_t idx) {
     flags |= Mat_HasEmissive;
   if (tNorm != kInvalidTexIndex)
     flags |= Mat_HasNormal;
-  if (tMR != kInvalidTexIndex)
-    flags |= Mat_HasMetalRough;
+  if (tMet != kInvalidTexIndex)
+    flags |= Mat_HasMetallic;
+  if (tRgh != kInvalidTexIndex)
+    flags |= Mat_HasRoughness;
   if (tOcc != kInvalidTexIndex)
     flags |= Mat_HasAO;
 
   g.mrAoFlags.w = static_cast<float>(flags);
-  g.tex0123 = glm::uvec4(tBase, tEmis, tNorm, tMR);
-  g.tex4_pad = glm::uvec4(tOcc, 0u, 0u, 0u);
+  g.tex0123 = glm::uvec4(tBase, tEmis, tNorm, tMet);
+  g.tex4_pad = glm::uvec4(tRgh, tOcc, 0u, 0u);
   g.uvScaleOffset = glm::vec4(m.uvScale, m.uvOffset);
 
   s.gpu = g;

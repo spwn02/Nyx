@@ -43,11 +43,16 @@ void PassEnvBRDFLUT::setup(RenderGraph &graph, const RenderPassContext &ctx,
         auto &env = engine.envIBL();
         if (!env.dirty())
           return;
+        if (env.hdrEquirect() == 0)
+          return;
 
         env.ensureResources();
 
         const uint32_t lutTex = env.brdfLUT();
-        NYX_ASSERT(lutTex != 0, "PassEnvBRDFLUT: missing BRDF LUT");
+        if (lutTex == 0) {
+          // Sky/IBL may be intentionally unset. Skip without asserting.
+          return;
+        }
 
         GLint size = 0;
         glGetTextureLevelParameteriv(lutTex, 0, GL_TEXTURE_WIDTH, &size);

@@ -62,6 +62,7 @@ gShadowSpot;
 
 #include "include/common.glsl"
 #include "include/forward_light.glsl"
+#include "include/SkyCommon.glsl"
 
 void main() {
   if (u_ViewMode == 7u) {
@@ -135,6 +136,8 @@ void main() {
   if (u_HasIBL != 0) {
     ambient = computeIBL(N, V, baseColor, metallic, roughness, ao,
                          u_EnvIrradiance, u_EnvPrefilter, u_BRDFLUT);
+  } else {
+    ambient = baseColor * ao * gSky.uSkyParams2.x;
   }
 
   vec3 hdr = direct + ambient;

@@ -6,26 +6,18 @@
 
 namespace Nyx {
 
-// Tangent is vec4: xyz = tangent, w = handedness sign (bitangnt = sign *
-// cross(N,T))
 struct VertexPNut {
-  glm::vec3 pos;
-  glm::vec3 nrm;
-  glm::vec2 uv;
-  glm::vec4 tan; // (0,0,0,0) means "no tangent"
+  glm::vec3 pos{0.0f};
+  glm::vec3 nrm{0.0f, 1.0f, 0.0f};
+  glm::vec2 uv{0.0f};
+  glm::vec4 tan{1.0f, 0.0, 0.0f, 1.0f}; // xyz = tangent, w = handedness
 };
 
 struct MeshCPU {
   std::vector<VertexPNut> vertices;
   std::vector<uint32_t> indices;
-};
 
-inline bool hasTangents(const MeshCPU &m) {
-  for (const auto &v : m.vertices) {
-    if (glm::length(glm::vec3(v.tan)) > 0.0001f)
-      return true;
-  }
-  return false;
-}
+  bool hasTangents = false;
+};
 
 } // namespace Nyx

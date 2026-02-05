@@ -10,7 +10,7 @@ const uint LIGHT_SPOT = 2u;
 // - params.x = cosInner, params.y = intensity, params.z = type, params.w = castShadow
 // - shadowData.x = metadata index, yzw = reserved
 struct GpuLight {
-  vec4 color;      // rgb=color (linear), a unused
+  vec4 color;      // rgb=color (linear), a=exposure (stops)
   vec4 position;   // xyz=pos, w=radius
   vec4 direction;  // xyz=dir, w=cosOuter
   vec4 params;     // x=cosInner, y=intensity, z=type (0/1/2), w=castShadow

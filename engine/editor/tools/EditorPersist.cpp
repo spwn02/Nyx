@@ -14,6 +14,9 @@ static void put(std::ostringstream &o, const char *k, int v) {
 static void put(std::ostringstream &o, const char *k, float v) {
   o << k << "=" << v << "\n";
 }
+static void put(std::ostringstream &o, const char *k, const std::string &v) {
+  o << k << "=" << v << "\n";
+}
 
 std::expected<void, std::string>
 EditorPersist::save(const std::string &path, const EditorPersistState &s) {
@@ -53,8 +56,28 @@ EditorPersist::save(const std::string &path, const EditorPersistState &s) {
     put(o, "panel.stats", s.panels.stats);
     put(o, "panel.renderSettings", s.panels.renderSettings);
     put(o, "panel.projectSettings", s.panels.projectSettings);
+    put(o, "panel.lutManager", s.panels.lutManager);
+
+    // Asset browser UI state
+    put(o, "assetBrowser.folder", s.assetBrowserFolder);
+    put(o, "assetBrowser.filter", s.assetBrowserFilter);
 
     put(o, "dock.layoutVersion", s.dockLayoutVersion);
+
+    // PostGraph filters
+    put(o, "postgraph.count", (int)s.postGraphFilters.size());
+    for (size_t i = 0; i < s.postGraphFilters.size(); ++i) {
+      const auto &n = s.postGraphFilters[i];
+      const std::string base = "postgraph.node." + std::to_string(i);
+      put(o, (base + ".type").c_str(), (int)n.typeId);
+      put(o, (base + ".enabled").c_str(), n.enabled);
+      put(o, (base + ".label").c_str(), n.label);
+      put(o, (base + ".lutPath").c_str(), n.lutPath);
+      put(o, (base + ".paramCount").c_str(), (int)n.params.size());
+      for (size_t p = 0; p < n.params.size(); ++p) {
+        put(o, (base + ".param." + std::to_string(p)).c_str(), n.params[p]);
+      }
+    }
 
     std::ofstream f(p, std::ios::binary);
     if (!f.is_open())
@@ -123,8 +146,38 @@ std::expected<void, std::string> EditorPersist::load(const std::string &path,
         toBool(get("panel.renderSettings"), out.panels.renderSettings);
     out.panels.projectSettings =
         toBool(get("panel.projectSettings"), out.panels.projectSettings);
+    out.panels.lutManager =
+        toBool(get("panel.lutManager"), out.panels.lutManager);
+
+    out.assetBrowserFolder = get("assetBrowser.folder");
+    out.assetBrowserFilter = get("assetBrowser.filter");
 
     out.dockLayoutVersion = toInt(get("dock.layoutVersion"), out.dockLayoutVersion);
+
+    // PostGraph filters
+    const int pgCount = toInt(get("postgraph.count"), 0);
+    out.postGraphFilters.clear();
+    if (pgCount > 0) {
+      out.postGraphFilters.reserve((size_t)pgCount);
+      for (int i = 0; i < pgCount; ++i) {
+        const std::string base = "postgraph.node." + std::to_string(i);
+        EditorPersistState::PostGraphPersistNode n{};
+        n.typeId = (uint32_t)toInt(get((base + ".type").c_str()), 0);
+        n.enabled = toBool(get((base + ".enabled").c_str()), true);
+        n.label = get((base + ".label").c_str());
+        n.lutPath = get((base + ".lutPath").c_str());
+        const int pc = toInt(get((base + ".paramCount").c_str()), 0);
+        if (pc > 0) {
+          n.params.reserve((size_t)pc);
+          for (int p = 0; p < pc; ++p) {
+            n.params.push_back(
+                toFloat(get((base + ".param." + std::to_string(p)).c_str()),
+                        0.0f));
+          }
+        }
+        out.postGraphFilters.push_back(std::move(n));
+      }
+    }
 
     return {};
   } catch (const std::exception &e) {

@@ -5,6 +5,6 @@ namespace Nyx {
 class World;
 
 // Sky panel for ImGui
-void drawSkyPanel(World &world);
+void drawSkyPanel(World &world, class EngineContext &engine);
 
 } // namespace Nyx

@@ -33,11 +33,11 @@
     },
     {
       "texPath": [
+        "/home/spawn/dev/cpp/projects/Nyx/assets/Rough_Sand_Cast_Aluminium_4K/Rough_Sand_Cast_Aluminium_basecolor_4K.png",
         "",
-        "",
-        "",
-        "",
-        ""
+        "/home/spawn/dev/cpp/projects/Nyx/assets/Rough_Sand_Cast_Aluminium_4K/Rough_Sand_Cast_Aluminium_normal_4K.png",
+        "/home/spawn/dev/cpp/projects/Nyx/assets/Rough_Sand_Cast_Aluminium_4K/Rough_Sand_Cast_Aluminium_roughness_4K.png",
+        "/home/spawn/dev/cpp/projects/Nyx/assets/Rough_Sand_Cast_Aluminium_4K/Rough_Sand_Cast_Aluminium_ambientocclusion_4K.png"
       ],
       "uvScale": [
         1,
@@ -95,41 +95,10 @@
     },
     {
       "texPath": [
-        "/home/spawn/Pictures/Avatars/evernight-1.jpg",
+        "/home/spawn/dev/cpp/projects/Nyx/assets/Raspberry_Red_Heavily_Damaged_Plastic_4K/Raspberry_Red_Heavily_Damaged_Plastic_basecolor_4K.png",
         "",
-        "",
-        "",
-        ""
-      ],
-      "uvScale": [
-        1,
-        1
-      ],
-      "roughness": 0.5,
-      "uvOffset": [
-        0,
-        0
-      ],
-      "metallic": 0,
-      "ao": 1,
-      "emissiveFactor": [
-        0,
-        0,
-        0
-      ],
-      "baseColorFactor": [
-        1,
-        1,
-        1,
-        1
-      ]
-    },
-    {
-      "texPath": [
-        "",
-        "",
-        "",
-        "",
+        "/home/spawn/dev/cpp/projects/Nyx/assets/Raspberry_Red_Heavily_Damaged_Plastic_4K/Raspberry_Red_Heavily_Damaged_Plastic_normal_4K.png",
+        "/home/spawn/dev/cpp/projects/Nyx/assets/Raspberry_Red_Heavily_Damaged_Plastic_4K/Raspberry_Red_Heavily_Damaged_Plastic_roughness_4K.png",
         ""
       ],
       "uvScale": [
@@ -157,42 +126,6 @@
     }
   ],
   "entities": [
-    {
-      "mesh": {
-        "submeshes": [
-          {
-            "material": [
-              0,
-              1
-            ],
-            "materialIndex": 0,
-            "type": 0,
-            "name": "Submesh 0"
-          }
-        ]
-      },
-      "transform": {
-        "s": [
-          1,
-          1,
-          1
-        ],
-        "r": [
-          1,
-          0,
-          0,
-          0
-        ],
-        "t": [
-          -1.67334,
-          -1.22501,
-          -6.942
-        ]
-      },
-      "parent": null,
-      "name": "Cube",
-      "uuid": "838150848453682292"
-    },
     {
       "mesh": {
         "submeshes": [
@@ -246,16 +179,16 @@
               1
             ],
             "materialIndex": 1,
-            "type": 1,
+            "type": 3,
             "name": "Submesh 0"
           }
         ]
       },
       "transform": {
         "s": [
-          36.8413,
-          36.8413,
-          36.8413
+          1,
+          1,
+          1
         ],
         "r": [
           1,
@@ -264,14 +197,14 @@
           0
         ],
         "t": [
+          -2.04124,
           0,
-          -2.08674,
           0
         ]
       },
       "parent": null,
-      "name": "Plane",
-      "uuid": "5878957102278466019"
+      "name": "Sphere",
+      "uuid": "6967632437758034340"
     },
     {
       "light": {
@@ -332,7 +265,7 @@
               1
             ],
             "materialIndex": 3,
-            "type": 0,
+            "type": 3,
             "name": "Submesh 0"
           }
         ]
@@ -356,58 +289,8 @@
         ]
       },
       "parent": null,
-      "name": "Cube",
-      "uuid": "12968320386246303523"
-    },
-    {
-      "light": {
-        "enabled": true,
-        "exposure": 0,
-        "radius": 8,
-        "outerDeg": 25,
-        "intensity": 80,
-        "innerDeg": 15,
-        "color": [
-          0,
-          0.852941,
-          1
-        ],
-        "type": 1
-      },
-      "mesh": {
-        "submeshes": [
-          {
-            "material": [
-              4,
-              1
-            ],
-            "materialIndex": 4,
-            "type": 3,
-            "name": "Light"
-          }
-        ]
-      },
-      "transform": {
-        "s": [
-          0.1,
-          0.1,
-          0.1
-        ],
-        "r": [
-          1,
-          0,
-          0,
-          0
-        ],
-        "t": [
-          0.629755,
-          0.787256,
-          0.624842
-        ]
-      },
-      "parent": null,
-      "name": "Point Light",
-      "uuid": "16951715694291216734"
+      "name": "Sphere",
+      "uuid": "15059628418178456482"
     }
   ],
   "sky": {

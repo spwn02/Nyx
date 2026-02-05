@@ -1,0 +1,673 @@
+#version 460 core
+
+layout(local_size_x = 16, local_size_y = 16) in;
+
+// Input HDR
+layout(binding = 0) uniform sampler2D uHDR;
+layout(binding = 2) uniform sampler3D uLUTs[8];
+
+uniform float u_Time;
+uniform uint u_StartIndex;
+uniform uint u_EndIndex;
+
+// Output LDR
+layout(rgba8, binding = 1) uniform writeonly image2D uLDR;
+
+// Filter SSBO
+struct GpuFilterNode {
+  uint type;
+  uint enabled;
+  uint paramCount;
+  uint pad0;
+  float params[16];
+};
+
+layout(std430, binding = 12) readonly buffer FilterStackSSBO {
+  uint count;
+  uint pad1;
+  uint pad2;
+  uint pad3;
+  GpuFilterNode nodes[];
+}
+gFS;
+
+// --- helpers ---
+float saturate(float x) { return clamp(x, 0.0, 1.0); }
+vec3 saturate(vec3 x) { return clamp(x, vec3(0.0), vec3(1.0)); }
+
+// Filter IDs must match FilterRegistry registrations.
+#define FILTER_EXPOSURE 1u
+#define FILTER_CONTRAST 2u
+#define FILTER_SATURATION 3u
+#define FILTER_GAMMA 4u
+#define FILTER_VIGNETTE 5u
+#define FILTER_SHARPEN 6u
+#define FILTER_INVERT 7u
+#define FILTER_GRAYSCALE 8u
+#define FILTER_BRIGHTNESS 9u
+#define FILTER_HUE 10u
+#define FILTER_TINT 11u
+#define FILTER_SEPIA 12u
+#define FILTER_LUT 13u
+#define FILTER_CHROMA_AB 14u
+#define FILTER_LENS_DISTORT 15u
+#define FILTER_GLITCH 16u
+#define FILTER_PIXELATE 17u
+#define FILTER_NOISE 18u
+#define FILTER_BLUR 19u
+#define FILTER_EMBOSS 20u
+#define FILTER_GLOW 21u
+#define FILTER_BLOOM 22u
+#define FILTER_TILT_SHIFT 23u
+#define FILTER_FILM_GRAIN 24u
+#define FILTER_FISHEYE 25u
+#define FILTER_SWIRL 26u
+#define FILTER_HALFTONE 27u
+#define FILTER_PIXEL_SORT 28u
+#define FILTER_MOTION_TILE 29u
+
+vec3 applyExposure(vec3 c, float ev) {
+  // ev in stops: +1 => *2
+  return c * exp2(ev);
+}
+
+vec3 applyContrast(vec3 c, float k) {
+  // k: 1 = identity, >1 more contrast, <1 less
+  return (c - 0.5) * k + 0.5;
+}
+
+vec3 applySaturation(vec3 c, float s) {
+  float l = dot(c, vec3(0.2126, 0.7152, 0.0722));
+  return mix(vec3(l), c, s);
+}
+
+vec3 applyGamma(vec3 c, float invGamma) {
+  // invGamma = 1/2.2 => gamma encode; invGamma=2.2 => decode.
+  return pow(max(c, vec3(0.0)), vec3(invGamma));
+}
+
+vec3 applyVignette(vec3 c, vec2 uv, float strength, float radius,
+                   float softness) {
+  // strength: 0..1
+  vec2 p = uv * 2.0 - 1.0;
+  float d = length(p);
+  float inner = radius;
+  float outer = radius + softness;
+  float v = smoothstep(inner, outer, d);
+  return c * (1.0 - strength * v);
+}
+
+vec3 applyBrightness(vec3 c, float amount) { return c + amount; }
+
+vec3 rgb2hsv(vec3 c) {
+  vec4 K = vec4(0.0, -1.0 / 3.0, 2.0 / 3.0, -1.0);
+  vec4 p = mix(vec4(c.bg, K.wz), vec4(c.gb, K.xy), step(c.b, c.g));
+  vec4 q = mix(vec4(p.xyw, c.r), vec4(c.r, p.yzx), step(p.x, c.r));
+  float d = q.x - min(q.w, q.y);
+  float e = 1.0e-10;
+  return vec3(abs(q.z + (q.w - q.y) / (6.0 * d + e)), d / (q.x + e), q.x);
+}
+
+vec3 hsv2rgb(vec3 c) {
+  vec4 K = vec4(1.0, 2.0 / 3.0, 1.0 / 3.0, 3.0);
+  vec3 p = abs(fract(c.xxx + K.xyz) * 6.0 - K.www);
+  return c.z * mix(K.xxx, clamp(p - K.xxx, 0.0, 1.0), c.y);
+}
+
+vec3 applyHue(vec3 c, float degrees) {
+  vec3 h = rgb2hsv(c);
+  h.x = fract(h.x + degrees / 360.0);
+  return hsv2rgb(h);
+}
+
+vec3 applyTint(vec3 c, vec3 tint, float strength) {
+  return mix(c, c * tint, saturate(strength));
+}
+
+vec3 applySepia(vec3 c, float amount) {
+  vec3 sep = vec3(
+      dot(c, vec3(0.393, 0.769, 0.189)),
+      dot(c, vec3(0.349, 0.686, 0.168)),
+      dot(c, vec3(0.272, 0.534, 0.131)));
+  return mix(c, sep, saturate(amount));
+}
+
+vec3 applyLUT(vec3 c, float intensity, float idx) {
+  int i = int(round(idx));
+  i = clamp(i, 0, 7);
+  vec3 lut = texture(uLUTs[i], saturate(c)).rgb;
+  return mix(c, lut, saturate(intensity));
+}
+
+vec2 distort(vec2 uv, float k, float zoom) {
+  vec2 p = uv * 2.0 - 1.0;
+  float r2 = dot(p, p);
+  p *= (1.0 + k * r2);
+  p /= max(zoom, 0.001);
+  return p * 0.5 + 0.5;
+}
+
+vec3 applyChromaticAberration(vec2 uv, vec3 c, float amount, float dispersion) {
+  vec2 center = uv - 0.5;
+  float r = length(center);
+  vec2 dir = (r > 1e-5) ? (center / r) : vec2(0.0);
+  float a = amount * (0.5 + r);
+  float d = dispersion;
+  vec2 offR = dir * a * (1.0 + d);
+  vec2 offG = dir * a;
+  vec2 offB = dir * a * (1.0 - d);
+  float rC = texture(uHDR, uv + offR).r;
+  float gC = texture(uHDR, uv + offG).g;
+  float bC = texture(uHDR, uv + offB).b;
+  return vec3(rC, gC, bC);
+}
+
+vec3 applyChromaticAberrationAdvanced(vec2 uv, vec3 c, float amount,
+                                      float dispersion, float radius,
+                                      float angle) {
+  vec2 center = uv - 0.5;
+  float r = length(center);
+  if (radius > 0.0)
+    r = max(0.0, r - radius);
+  vec2 dir = (r > 1e-5) ? normalize(center) : vec2(0.0);
+  float ca = amount * (0.5 + r);
+  vec2 rot = vec2(cos(angle), sin(angle));
+  dir = vec2(dir.x * rot.x - dir.y * rot.y, dir.x * rot.y + dir.y * rot.x);
+  float d = dispersion;
+  vec2 offR = dir * ca * (1.0 + d);
+  vec2 offG = dir * ca;
+  vec2 offB = dir * ca * (1.0 - d);
+  float rC = texture(uHDR, uv + offR).r;
+  float gC = texture(uHDR, uv + offG).g;
+  float bC = texture(uHDR, uv + offB).b;
+  return vec3(rC, gC, bC);
+}
+
+vec3 applyLensDistortion(vec2 uv, float k1, float k2, float zoom, float chroma,
+                         vec2 center) {
+  vec2 uvC = uv - center;
+  vec2 uvR = distort(uvC + 0.5, k1 + k2, zoom);
+  vec2 uvG = distort(uvC + 0.5, k1, zoom);
+  vec2 uvB = distort(uvC + 0.5, k1 - k2, zoom);
+  vec2 cdir = uv - center;
+  float r = length(center);
+  vec2 dir = (r > 1e-5) ? (cdir / r) : vec2(0.0);
+  vec2 off = dir * chroma * (0.5 + r);
+  uvR += off;
+  uvB -= off;
+  return vec3(texture(uHDR, uvR).r, texture(uHDR, uvG).g,
+              texture(uHDR, uvB).b);
+}
+
+float hash12(vec2 p) {
+  vec3 p3 = fract(vec3(p.xyx) * 0.1031);
+  p3 += dot(p3, p3.yzx + 33.33);
+  return fract((p3.x + p3.y) * p3.z);
+}
+
+vec3 applyGlitch(vec2 uv, vec3 c, float amount, float blockSize, float speed,
+                 float mode, float scanline, float jitter) {
+  float t = u_Time * speed;
+  vec2 grid = floor(uv * blockSize) / blockSize;
+  float n = hash12(grid + t);
+  float shift = (n - 0.5) * amount * (0.1 + jitter * 0.2);
+  vec2 uv2 = uv + vec2(shift, 0.0);
+  vec3 base = texture(uHDR, uv2).rgb;
+  if (mode > 0.5) {
+    // color split
+    float r = texture(uHDR, uv2 + vec2(shift, 0.0)).r;
+    float g = texture(uHDR, uv2).g;
+    float b = texture(uHDR, uv2 - vec2(shift, 0.0)).b;
+    base = vec3(r, g, b);
+  }
+  if (scanline > 0.0) {
+    float l = step(0.5, fract(uv.y * 200.0));
+    base = mix(base, base * (0.5 + l * 0.5), scanline);
+  }
+  return mix(c, base, saturate(amount));
+}
+
+vec3 applyPixelate(vec2 uv, float size) {
+  vec2 s = max(vec2(1.0), vec2(size));
+  vec2 uvp = floor(uv * s) / s;
+  return texture(uHDR, uvp).rgb;
+}
+
+vec3 applyNoise(vec3 c, vec2 uv, float amount, float colorNoise) {
+  float n = hash12(uv * vec2(123.4, 456.7) + u_Time);
+  if (colorNoise > 0.5) {
+    vec3 cn = vec3(hash12(uv * 12.3 + u_Time),
+                   hash12(uv * 45.6 + u_Time),
+                   hash12(uv * 78.9 + u_Time));
+    return c + (cn - 0.5) * amount;
+  }
+  return c + (n - 0.5) * amount;
+}
+
+vec3 applyBlur(vec2 uv, float radius) {
+  vec2 texel = 1.0 / vec2(textureSize(uHDR, 0));
+  float r = max(0.0, radius);
+  vec3 sum = vec3(0.0);
+  sum += texture(uHDR, uv + texel * vec2(-r, -r)).rgb;
+  sum += texture(uHDR, uv + texel * vec2(0.0, -r)).rgb;
+  sum += texture(uHDR, uv + texel * vec2(r, -r)).rgb;
+  sum += texture(uHDR, uv + texel * vec2(-r, 0.0)).rgb;
+  sum += texture(uHDR, uv).rgb;
+  sum += texture(uHDR, uv + texel * vec2(r, 0.0)).rgb;
+  sum += texture(uHDR, uv + texel * vec2(-r, r)).rgb;
+  sum += texture(uHDR, uv + texel * vec2(0.0, r)).rgb;
+  sum += texture(uHDR, uv + texel * vec2(r, r)).rgb;
+  return sum / 9.0;
+}
+
+vec3 applyEmboss(vec2 uv, float amount) {
+  vec2 texel = 1.0 / vec2(textureSize(uHDR, 0));
+  vec3 c1 = texture(uHDR, uv + texel * vec2(-1.0, -1.0)).rgb;
+  vec3 c2 = texture(uHDR, uv + texel * vec2(1.0, 1.0)).rgb;
+  vec3 e = (c1 - c2) * 0.5 + 0.5;
+  return mix(texture(uHDR, uv).rgb, e, saturate(amount));
+}
+
+vec3 applyGlow(vec2 uv, vec3 c, float strength, float radius, float threshold,
+               vec3 tint) {
+  vec3 blur = applyBlur(uv, radius);
+  vec3 bright = max(blur - vec3(threshold), vec3(0.0));
+  return c + bright * strength * tint;
+}
+
+vec3 applyBloom(vec2 uv, vec3 c, float strength, float threshold, float knee,
+                float radius, vec3 tint) {
+  vec3 blur = applyBlur(uv, radius);
+  vec3 bright = max(blur - vec3(threshold), vec3(0.0));
+  bright = bright * (1.0 + knee);
+  return c + bright * strength * tint;
+}
+
+vec3 applyTiltShift(vec2 uv, vec3 c, float center, float range,
+                    float radius, float angle, float falloff) {
+  vec2 p = uv - 0.5;
+  float ca = cos(angle), sa = sin(angle);
+  vec2 pr = vec2(ca * p.x - sa * p.y, sa * p.x + ca * p.y);
+  float y = pr.y + 0.5;
+  float d = abs(y - center);
+  float t = smoothstep(range, 0.5, d);
+  t = pow(t, max(0.1, falloff));
+  vec3 blur = applyBlur(uv, radius * t);
+  return mix(c, blur, t);
+}
+
+vec3 applyFilmGrain(vec2 uv, vec3 c, float amount, float colorNoise,
+                    float size, float speed) {
+  float n = hash12(uv * vec2(1024.0, 768.0) * size + u_Time * speed);
+  vec3 g = vec3(n);
+  if (colorNoise > 0.5) {
+    g = vec3(hash12(uv * 13.7 * size + u_Time * speed),
+             hash12(uv * 37.1 * size + u_Time * speed),
+             hash12(uv * 91.7 * size + u_Time * speed));
+  }
+  return c + (g - 0.5) * amount;
+}
+
+vec3 applyFisheye(vec2 uv, float strength, float zoom, float chroma) {
+  vec2 p = uv * 2.0 - 1.0;
+  float r = length(p);
+  float k = strength * r * r;
+  vec2 q = p * (1.0 + k);
+  vec2 uv2 = q * 0.5 + 0.5;
+  vec2 dir = (r > 1e-5) ? (p / r) : vec2(0.0);
+  vec2 off = dir * chroma * (0.5 + r);
+  vec3 c;
+  c.r = texture(uHDR, uv2 + off).r;
+  c.g = texture(uHDR, uv2).g;
+  c.b = texture(uHDR, uv2 - off).b;
+  return c / max(zoom, 0.001);
+}
+
+vec3 applySwirl(vec2 uv, float angle, float radius, vec2 center) {
+  vec2 p = uv - center;
+  float r = length(p);
+  if (r < radius && radius > 0.0) {
+    float t = (1.0 - r / radius);
+    float a = angle * t;
+    float s = sin(a);
+    float c = cos(a);
+    p = vec2(c * p.x - s * p.y, s * p.x + c * p.y);
+  }
+  return texture(uHDR, p + center).rgb;
+}
+
+vec3 applyHalftone(vec2 uv, vec3 c, float scale, float intensity, float angle,
+                   float invert) {
+  float ca = cos(angle), sa = sin(angle);
+  vec2 p = uv * scale;
+  p = vec2(ca * p.x - sa * p.y, sa * p.x + ca * p.y);
+  vec2 cell = fract(p) - 0.5;
+  float d = length(cell);
+  float l = dot(c, vec3(0.299, 0.587, 0.114));
+  float r = mix(0.5, 0.0, l);
+  float mask = smoothstep(r, r + 0.02, d);
+  vec3 ht = mix(vec3(0.0), vec3(1.0), 1.0 - mask);
+  if (invert > 0.5)
+    ht = vec3(1.0) - ht;
+  return mix(c, ht, saturate(intensity));
+}
+
+vec3 applyPixelSort(vec2 uv, vec3 c, float threshold, float strength,
+                    float direction, float blockSize) {
+  float l = dot(c, vec3(0.299, 0.587, 0.114));
+  if (l > threshold) {
+    float axis = mix(uv.y, uv.x, step(0.0, direction));
+    float shift = (hash12(vec2(axis * blockSize, u_Time)) - 0.5) * strength * 0.2;
+    vec2 dir = (direction >= 0.0) ? vec2(1.0, 0.0) : vec2(0.0, 1.0);
+    return texture(uHDR, uv + dir * shift).rgb;
+  }
+  return c;
+}
+
+float roundRectMask(vec2 uv, float radius) {
+  vec2 p = uv * 2.0 - 1.0;
+  vec2 q = abs(p) - (1.0 - radius * 2.0);
+  float d = length(max(q, 0.0)) + min(max(q.x, q.y), 0.0);
+  return smoothstep(0.0, 0.02, -d);
+}
+
+vec3 applyMotionTile(vec2 uv, float expandX, float expandY, float wrap,
+                     float resize, float spacing, float roundness,
+                     float trailStrength, float trailCount, float trailAngle,
+                     float trailDist) {
+  vec2 uv2 = uv;
+
+  float mx = clamp(abs(expandX), 0.0, 0.45);
+  float my = clamp(abs(expandY), 0.0, 0.45);
+  vec2 minUV = vec2(mx, my);
+  vec2 maxUV = vec2(1.0 - mx, 1.0 - my);
+  vec2 sizeUV = maxUV - minUV;
+  sizeUV = max(sizeUV, vec2(1e-3));
+
+  if (wrap > 1.5) {
+    vec2 t = fract((uv - minUV) / sizeUV);
+    uv2 = minUV + (1.0 - abs(t * 2.0 - 1.0)) * sizeUV;
+  } else if (wrap > 0.5) {
+    uv2 = minUV + fract((uv - minUV) / sizeUV) * sizeUV;
+  } else {
+    if (uv.x < minUV.x || uv.x > maxUV.x || uv.y < minUV.y || uv.y > maxUV.y)
+      return vec3(0.0);
+    uv2 = uv;
+  }
+
+  vec2 tiled = (uv2 - minUV) / sizeUV;
+
+  // spacing: shrink valid region in each tile
+  float sp = clamp(spacing, 0.0, 0.45);
+  vec2 tile = tiled;
+  vec2 tileMin = vec2(sp);
+  vec2 tileMax = vec2(1.0 - sp);
+  bool inTile = tile.x >= tileMin.x && tile.x <= tileMax.x &&
+                tile.y >= tileMin.y && tile.y <= tileMax.y;
+  if (!inTile)
+    return vec3(0.0);
+  tile = clamp(tile, tileMin, tileMax);
+
+  // roundness: mask outside rounded rect
+  if (roundness > 0.0) {
+    float m = roundRectMask(tile, roundness);
+    if (m < 0.5)
+      return vec3(0.0);
+  }
+
+  vec2 sampleUV = (resize > 0.5)
+                      ? tiled
+                      : ((wrap > 0.5) ? uv2 : uv);
+  vec3 base = texture(uHDR, sampleUV).rgb;
+
+  // motion trail: sample along direction
+  if (trailStrength > 0.0) {
+    float count = max(1.0, trailCount);
+    vec2 dir = vec2(cos(trailAngle), sin(trailAngle));
+    vec3 acc = base;
+    for (int i = 1; i < 16; ++i) {
+      if (float(i) >= count)
+        break;
+      float t = float(i) / count;
+      vec2 off = dir * trailDist * t;
+      vec3 s = texture(uHDR, sampleUV - off).rgb;
+      acc += s;
+    }
+    acc /= count;
+    base = mix(base, acc, trailStrength);
+  }
+
+  return base;
+}
+vec3 applySharpen(vec3 c, vec2 uv, vec2 texel, float amount, float radius) {
+  float r = max(0.5, radius);
+  vec2 off = texel * r;
+  vec3 up = texture(uHDR, uv + vec2(0.0, -off.y)).rgb;
+  vec3 down = texture(uHDR, uv + vec2(0.0, off.y)).rgb;
+  vec3 left = texture(uHDR, uv + vec2(-off.x, 0.0)).rgb;
+  vec3 right = texture(uHDR, uv + vec2(off.x, 0.0)).rgb;
+  vec3 blur = (up + down + left + right) * 0.25;
+  return mix(c, c + (c - blur) * amount, saturate(amount));
+}
+
+vec3 applyInvert(vec3 c, float enabled) {
+  if (enabled <= 0.5)
+    return c;
+  return vec3(1.0) - c;
+}
+
+vec3 applyGrayscale(vec3 c, float amount) {
+  float l = dot(c, vec3(0.2126, 0.7152, 0.0722));
+  return mix(c, vec3(l), saturate(amount));
+}
+
+vec3 applyFilter(vec3 c, uint type, uint pc, float p[16], vec2 uv) {
+  // Convention: params are in p[0..pc-1]
+  switch (type) {
+  case FILTER_EXPOSURE: {
+    float ev = (pc > 0u) ? p[0] : 0.0;
+    return applyExposure(c, ev);
+  }
+  case FILTER_CONTRAST: {
+    float k = (pc > 0u) ? p[0] : 1.0;
+    return applyContrast(c, k);
+  }
+  case FILTER_SATURATION: {
+    float s = (pc > 0u) ? p[0] : 1.0;
+    return applySaturation(c, s);
+  }
+  case FILTER_BRIGHTNESS: {
+    float b = (pc > 0u) ? p[0] : 0.0;
+    return applyBrightness(c, b);
+  }
+  case FILTER_HUE: {
+    float h = (pc > 0u) ? p[0] : 0.0;
+    return applyHue(c, h);
+  }
+  case FILTER_TINT: {
+    float strength = (pc > 0u) ? p[0] : 0.0;
+    vec3 tint = vec3((pc > 1u) ? p[1] : 1.0, (pc > 2u) ? p[2] : 1.0,
+                     (pc > 3u) ? p[3] : 1.0);
+    return applyTint(c, tint, strength);
+  }
+  case FILTER_SEPIA: {
+    float amt = (pc > 0u) ? p[0] : 1.0;
+    return applySepia(c, amt);
+  }
+  case FILTER_LUT: {
+    float intensity = (pc > 0u) ? p[0] : 1.0;
+    float idx = (pc > 1u) ? p[1] : 0.0;
+    return applyLUT(c, intensity, idx);
+  }
+  case FILTER_GAMMA: {
+    float g = (pc > 0u) ? p[0] : 1.0;
+    return applyGamma(c, g);
+  }
+  case FILTER_VIGNETTE: {
+    float strength = (pc > 0u) ? p[0] : 0.0;
+    float radius = (pc > 1u) ? p[1] : 0.75;
+    float softness = (pc > 2u) ? p[2] : 0.35;
+    return applyVignette(c, uv, strength, radius, softness);
+  }
+  case FILTER_SHARPEN: {
+    float amount = (pc > 0u) ? p[0] : 0.0;
+    float radius = (pc > 1u) ? p[1] : 1.0;
+    vec2 texel = 1.0 / vec2(textureSize(uHDR, 0));
+    return applySharpen(c, uv, texel, amount, radius);
+  }
+  case FILTER_CHROMA_AB: {
+    float amount = (pc > 0u) ? p[0] : 0.0;
+    float disp = (pc > 1u) ? p[1] : 1.0;
+    float radius = (pc > 2u) ? p[2] : 0.0;
+    float angle = (pc > 3u) ? p[3] : 0.0;
+    return applyChromaticAberrationAdvanced(uv, c, amount, disp, radius, angle);
+  }
+  case FILTER_LENS_DISTORT: {
+    float k1 = (pc > 0u) ? p[0] : 0.0;
+    float k2 = (pc > 1u) ? p[1] : 0.0;
+    float zoom = (pc > 2u) ? p[2] : 1.0;
+    float chroma = (pc > 3u) ? p[3] : 0.0;
+    vec2 center = vec2((pc > 4u) ? p[4] : 0.5, (pc > 5u) ? p[5] : 0.5);
+    return applyLensDistortion(uv, k1, k2, zoom, chroma, center);
+  }
+  case FILTER_GLITCH: {
+    float amt = (pc > 0u) ? p[0] : 0.0;
+    float bs = (pc > 1u) ? p[1] : 32.0;
+    float sp = (pc > 2u) ? p[2] : 1.0;
+    float mode = (pc > 3u) ? p[3] : 0.0;
+    float scan = (pc > 4u) ? p[4] : 0.0;
+    float jit = (pc > 5u) ? p[5] : 0.0;
+    return applyGlitch(uv, c, amt, bs, sp, mode, scan, jit);
+  }
+  case FILTER_PIXELATE: {
+    float size = (pc > 0u) ? p[0] : 8.0;
+    return applyPixelate(uv, size);
+  }
+  case FILTER_NOISE: {
+    float amt = (pc > 0u) ? p[0] : 0.0;
+    float color = (pc > 1u) ? p[1] : 0.0;
+    return applyNoise(c, uv, amt, color);
+  }
+  case FILTER_BLUR: {
+    float r = (pc > 0u) ? p[0] : 0.0;
+    return applyBlur(uv, r);
+  }
+  case FILTER_EMBOSS: {
+    float a = (pc > 0u) ? p[0] : 1.0;
+    return applyEmboss(uv, a);
+  }
+  case FILTER_GLOW: {
+    float s = (pc > 0u) ? p[0] : 0.5;
+    float r = (pc > 1u) ? p[1] : 2.0;
+    float th = (pc > 2u) ? p[2] : 0.0;
+    vec3 tint = vec3((pc > 3u) ? p[3] : 1.0, (pc > 4u) ? p[4] : 1.0,
+                     (pc > 5u) ? p[5] : 1.0);
+    return applyGlow(uv, c, s, r, th, tint);
+  }
+  case FILTER_BLOOM: {
+    float s = (pc > 0u) ? p[0] : 0.6;
+    float t = (pc > 1u) ? p[1] : 0.8;
+    float k = (pc > 2u) ? p[2] : 0.3;
+    float r = (pc > 3u) ? p[3] : 2.5;
+    vec3 tint = vec3((pc > 4u) ? p[4] : 1.0, (pc > 5u) ? p[5] : 1.0,
+                     (pc > 6u) ? p[6] : 1.0);
+    return applyBloom(uv, c, s, t, k, r, tint);
+  }
+  case FILTER_TILT_SHIFT: {
+    float center = (pc > 0u) ? p[0] : 0.5;
+    float range = (pc > 1u) ? p[1] : 0.2;
+    float r = (pc > 2u) ? p[2] : 3.0;
+    float a = (pc > 3u) ? p[3] : 0.0;
+    float f = (pc > 4u) ? p[4] : 1.0;
+    return applyTiltShift(uv, c, center, range, r, a, f);
+  }
+  case FILTER_FILM_GRAIN: {
+    float a = (pc > 0u) ? p[0] : 0.06;
+    float col = (pc > 1u) ? p[1] : 0.0;
+    float sz = (pc > 2u) ? p[2] : 1.0;
+    float sp = (pc > 3u) ? p[3] : 1.0;
+    return applyFilmGrain(uv, c, a, col, sz, sp);
+  }
+  case FILTER_FISHEYE: {
+    float s = (pc > 0u) ? p[0] : 0.25;
+    float z = (pc > 1u) ? p[1] : 1.0;
+    float ca = (pc > 2u) ? p[2] : 0.0;
+    return applyFisheye(uv, s, z, ca);
+  }
+  case FILTER_SWIRL: {
+    float a = (pc > 0u) ? p[0] : 1.0;
+    float r = (pc > 1u) ? p[1] : 0.5;
+    vec2 center = vec2((pc > 2u) ? p[2] : 0.5, (pc > 3u) ? p[3] : 0.5);
+    return applySwirl(uv, a, r, center);
+  }
+  case FILTER_HALFTONE: {
+    float scale = (pc > 0u) ? p[0] : 120.0;
+    float inten = (pc > 1u) ? p[1] : 0.8;
+    float ang = (pc > 2u) ? p[2] : 0.0;
+    float inv = (pc > 3u) ? p[3] : 0.0;
+    return applyHalftone(uv, c, scale, inten, ang, inv);
+  }
+  case FILTER_PIXEL_SORT: {
+    float t = (pc > 0u) ? p[0] : 0.5;
+    float s = (pc > 1u) ? p[1] : 0.5;
+    float dir = (pc > 2u) ? p[2] : 0.0;
+    float bs = (pc > 3u) ? p[3] : 64.0;
+    return applyPixelSort(uv, c, t, s, dir, bs);
+  }
+  case FILTER_MOTION_TILE: {
+    float ex = (pc > 0u) ? p[0] * 0.01 : 0.0;
+    float ey = (pc > 1u) ? p[1] * 0.01 : 0.0;
+    float wrap = (pc > 2u) ? p[2] : 0.0;
+    float resize = (pc > 3u) ? p[3] : 0.0;
+    float spacing = (pc > 4u) ? p[4] : 0.0;
+    float round = (pc > 5u) ? p[5] : 0.0;
+    float trailStr = (pc > 6u) ? p[6] : 0.0;
+    float trailCount = (pc > 7u) ? p[7] : 4.0;
+    float trailAng = (pc > 8u) ? p[8] : 0.0;
+    float trailDist = (pc > 9u) ? p[9] : 0.02;
+    return applyMotionTile(uv, ex, ey, wrap, resize, spacing, round, trailStr,
+                           trailCount, trailAng, trailDist);
+  }
+  case FILTER_INVERT: {
+    float enabled = (pc > 0u) ? p[0] : 1.0;
+    return applyInvert(c, enabled);
+  }
+  case FILTER_GRAYSCALE: {
+    float amount = (pc > 0u) ? p[0] : 1.0;
+    return applyGrayscale(c, amount);
+  }
+  default:
+    return c;
+  }
+}
+
+void main() {
+  ivec2 pix = ivec2(gl_GlobalInvocationID.xy);
+  ivec2 sz = imageSize(uLDR);
+  if (pix.x >= sz.x || pix.y >= sz.y)
+    return;
+
+  vec2 uv = (vec2(pix) + 0.5) / vec2(sz);
+
+  vec3 hdr = texelFetch(uHDR, pix, 0).rgb;
+
+  // 1) Apply filter chain in LDR domain (post-tonemap)
+  vec3 c = hdr;
+
+  for (uint i = 0u; i < gFS.count; ++i) {
+    if (gFS.nodes[i].enabled == 0u)
+      continue;
+    if (i < u_StartIndex || i > u_EndIndex)
+      continue;
+
+    // copy params into local array for switch friendliness
+    float pp[16];
+    for (uint k = 0u; k < 16u; ++k)
+      pp[k] = gFS.nodes[i].params[k];
+
+    c = applyFilter(c, gFS.nodes[i].type, gFS.nodes[i].paramCount, pp, uv);
+  }
+
+  // PassTonemap already handles tonemap + gamma. Keep LDR here.
+  imageStore(uLDR, pix, vec4(saturate(c), 1.0));
+}

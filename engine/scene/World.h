@@ -138,6 +138,7 @@ public:
   CMesh &ensureMesh(EntityID e);
   CMesh &mesh(EntityID e);
   const CMesh &mesh(EntityID e) const;
+  void removeMesh(EntityID e);
 
   uint32_t submeshCount(EntityID e) const;
   MeshSubmesh &submesh(EntityID e, uint32_t si);

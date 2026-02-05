@@ -2,9 +2,12 @@
 
 #include "app/EngineContext.h"
 #include "core/Assert.h"
+#include "scene/World.h"
+#include "render/material/GpuMaterial.h"
 
 #include <array>
 #include <glad/glad.h>
+#include <unordered_map>
 
 namespace Nyx {
 
@@ -108,6 +111,8 @@ void PassForwardMRT::setup(RenderGraph &graph, const RenderPassContext &ctx,
         const int locVM = glGetUniformLocation(m_forwardProg, "u_ViewMode");
         const int locMat =
             glGetUniformLocation(m_forwardProg, "u_MaterialIndex");
+        const int locTexRemapCount =
+            glGetUniformLocation(m_forwardProg, "u_TexRemapCount");
         const int locSplits =
             glGetUniformLocation(m_forwardProg, "u_CSM_Splits");
         const int locDirSMSize =
@@ -160,9 +165,69 @@ void PassForwardMRT::setup(RenderGraph &graph, const RenderPassContext &ctx,
         glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 14,
                          engine.materials().ssbo());
 
-        // Bind material texture table at unit 10 (matches forward_mrt.frag).
-        // Clamp to 16 samplers to stay under common limits.
-        engine.materials().textures().bindAll(10, 16);
+        // Build a compact texture table for this frame (<=16).
+        auto &texTable = engine.materials().textures();
+        std::vector<uint32_t> compactOrig;
+        compactOrig.reserve(16);
+        std::unordered_map<uint32_t, uint32_t> used;
+
+        auto tryAdd = [&](uint32_t origIdx) {
+          if (origIdx == kInvalidTexIndex)
+            return;
+          if (used.find(origIdx) != used.end())
+            return;
+          if (compactOrig.size() >= 16)
+            return;
+          uint32_t compactIdx = static_cast<uint32_t>(compactOrig.size());
+          used[origIdx] = compactIdx;
+          compactOrig.push_back(origIdx);
+        };
+
+        for (const auto &r : registry.all()) {
+          if (engine.isEntityHidden(r.entity))
+            continue;
+          (void)engine.materialIndex(r);
+          const auto &mc = engine.world().mesh(r.entity);
+          if (r.submesh >= mc.submeshes.size())
+            continue;
+          const auto &sm = mc.submeshes[r.submesh];
+          if (!engine.materials().isAlive(sm.material))
+            continue;
+
+          const auto &gpu = engine.materials().gpu(sm.material);
+          tryAdd(gpu.tex0123.x);
+          tryAdd(gpu.tex0123.y);
+          tryAdd(gpu.tex0123.z);
+          tryAdd(gpu.tex0123.w);
+          tryAdd(gpu.tex4_pad.x);
+        }
+
+        const auto &glTex = texTable.glTextures();
+        std::vector<uint32_t> remap(glTex.size(), TextureTable::Invalid);
+
+        for (size_t i = 0; i < compactOrig.size(); ++i) {
+          const uint32_t origIdx = compactOrig[i];
+          if (origIdx < remap.size())
+            remap[origIdx] = static_cast<uint32_t>(i);
+        }
+
+        glNamedBufferData(engine.texRemapSSBO(),
+                          remap.size() * sizeof(uint32_t), remap.data(),
+                          GL_DYNAMIC_DRAW);
+        glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 15, engine.texRemapSSBO());
+
+        if (locTexRemapCount >= 0)
+          glUniform1ui(locTexRemapCount,
+                       static_cast<uint32_t>(remap.size()));
+
+        // Bind compacted textures at unit 10 (matches forward_mrt.frag).
+        for (uint32_t i = 0; i < 16; ++i) {
+          uint32_t tex = 0;
+          if (i < compactOrig.size()) {
+            tex = texTable.glTexByIndex(compactOrig[i]);
+          }
+          glBindTextureUnit(10 + i, tex);
+        }
 
         for (const auto &r : registry.all()) {
           if (engine.isEntityHidden(r.entity))

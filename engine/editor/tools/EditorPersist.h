@@ -5,6 +5,7 @@
 #include <glm/glm.hpp>
 #include <string>
 #include <unordered_map>
+#include <vector>
 
 namespace Nyx {
 
@@ -31,6 +32,7 @@ struct EditorPanels final {
   bool stats = false;
   bool renderSettings = false;
   bool projectSettings = false;
+  bool lutManager = false;
 };
 
 struct EditorPersistState final {
@@ -44,10 +46,21 @@ struct EditorPersistState final {
   float gizmoSnapScale = 0.1f;
 
   EditorPanels panels{};
+  std::string assetBrowserFolder{};
+  std::string assetBrowserFilter{};
 
   // Dock layout fallback
   int dockLayoutVersion = 1;
   bool dockLayoutApplied = false; // runtime flag
+
+  struct PostGraphPersistNode final {
+    uint32_t typeId = 0;
+    bool enabled = true;
+    std::string label{};
+    std::vector<float> params{};
+    std::string lutPath{};
+  };
+  std::vector<PostGraphPersistNode> postGraphFilters{};
 };
 
 struct EditorPersist final {

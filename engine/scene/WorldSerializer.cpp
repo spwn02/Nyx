@@ -175,6 +175,7 @@ static bool saveToFileImpl(const World &world, EntityID editorCamera,
     js["intensity"] = (double)sky.intensity;
     js["exposure"] = (double)sky.exposure;
     js["rotationYawDeg"] = (double)sky.rotationYawDeg;
+    js["ambient"] = (double)sky.ambient;
     js["hdriPath"] = sky.hdriPath;
     root["sky"] = Value(std::move(js));
   }
@@ -382,11 +383,20 @@ static bool loadFromFileImpl(World &world, MaterialSystem *materials,
           readVec2(*vuo, md.uvOffset.x, md.uvOffset.y);
         if (const Value *vt = vm.get("texPath"); vt && vt->isArray()) {
           const auto &ta = vt->asArray();
-          const size_t n =
-              std::min(ta.size(), md.texPath.size());
-          for (size_t i = 0; i < n; ++i) {
-            if (ta[i].isString())
-              md.texPath[i] = ta[i].asString();
+          if (ta.size() == 5 && md.texPath.size() == 6) {
+            md.texPath[0] = ta[0].asString(); // base
+            md.texPath[1] = ta[1].asString(); // emissive
+            md.texPath[2] = ta[2].asString(); // normal
+            const std::string mr = ta[3].asString();
+            md.texPath[3] = mr;               // metallic
+            md.texPath[4] = mr;               // roughness
+            md.texPath[5] = ta[4].asString(); // ao
+          } else {
+            const size_t n = std::min(ta.size(), md.texPath.size());
+            for (size_t i = 0; i < n; ++i) {
+              if (ta[i].isString())
+                md.texPath[i] = ta[i].asString();
+            }
           }
         }
         loadedMaterials.push_back(materials->create(md));
@@ -406,6 +416,8 @@ static bool loadFromFileImpl(World &world, MaterialSystem *materials,
       sky.exposure = (float)ve->asNum(sky.exposure);
     if (const Value *vy = vSky->get("rotationYawDeg"); vy && vy->isNum())
       sky.rotationYawDeg = (float)vy->asNum(sky.rotationYawDeg);
+    if (const Value *va = vSky->get("ambient"); va && va->isNum())
+      sky.ambient = (float)va->asNum(sky.ambient);
     if (const Value *vp = vSky->get("hdriPath"); vp && vp->isString())
       sky.hdriPath = vp->asString();
   }
@@ -570,12 +582,8 @@ static bool loadFromFileImpl(World &world, MaterialSystem *materials,
       }
     }
 
-    if (world.hasCamera(e) && !world.hasMesh(e)) {
-      auto &mc = world.ensureMesh(e);
-      if (mc.submeshes.empty())
-        mc.submeshes.push_back(MeshSubmesh{});
-      mc.submeshes[0].name = "Camera Body";
-      mc.submeshes[0].type = ProcMeshType::Cube;
+    if (world.hasCamera(e) && world.hasMesh(e)) {
+      world.removeMesh(e);
     }
 
     if (world.hasLight(e) && !world.hasMesh(e)) {

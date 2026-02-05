@@ -8,7 +8,7 @@
 namespace Nyx {
 
 struct GpuLight {
-  glm::vec4 color;     // rgb=color (linear), a unused
+  glm::vec4 color;     // rgb=color (linear), a=exposure (stops)
   glm::vec4 position;  // xyz=pos, w=radius
   glm::vec4 direction; // xyz=dir, w=cosOuter
   glm::vec4 params;    // x=cosInner, y=intensity, z=type, w=castShadow

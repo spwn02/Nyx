@@ -87,12 +87,6 @@ void AddMenu::tick(World &world, Selection &sel, bool allowOpen) {
                                : CameraProjection::Orthographic;
           cam.dirty = true;
 
-          auto &mc = world.ensureMesh(e);
-          if (mc.submeshes.empty())
-            mc.submeshes.push_back(MeshSubmesh{});
-          mc.submeshes[0].name = "Camera Body";
-          mc.submeshes[0].type = ProcMeshType::Cube;
-
           auto &tr = world.transform(e);
           tr.translation = {0.0f, 2.0f, 6.0f};
           tr.scale = {1.0f, 1.0f, 1.0f};

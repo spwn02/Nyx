@@ -18,6 +18,7 @@
 #include "render/passes/PassShadowPoint.h"
 #include "render/passes/PassLightCluster.h"
 #include "render/passes/PassLightGridDebug.h"
+#include "render/passes/PassMaterialPreview.h"
 #include "render/passes/PassPostFilters.h"
 #include "render/passes/PassPresent.h"
 #include "render/passes/PassSelection.h"
@@ -39,6 +40,7 @@ struct FrameOutputs {
   RGHandle id = InvalidRG;
   RGHandle outlined = InvalidRG;
   RGHandle depth = InvalidRG;
+  RGHandle preview = InvalidRG;
 };
 
 class Renderer final {
@@ -70,6 +72,7 @@ public:
   const PassShadowSpot& shadowSpotPass() const { return m_passShadowSpot; }
   const PassShadowDir& shadowDirPass() const { return m_passShadowDir; }
   const PassShadowPoint& shadowPointPass() const { return m_passShadowPoint; }
+  uint32_t previewTexture() const;
 
 private:
   // void ensureTargets(uint32_t w, uint32_t h);
@@ -100,6 +103,7 @@ private:
   PassShadowDir m_passShadowDir;
   PassShadowPoint m_passShadowPoint;
   PassForwardMRT m_passForward;
+  PassMaterialPreview m_passPreview;
   PassSkyIBL m_passSky;
   PassShadowDebugOverlay m_passShadowDebug;
   PassTonemap m_passTonemap;

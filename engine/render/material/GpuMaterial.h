@@ -13,9 +13,9 @@ struct GpuMaterialPacked final {
   glm::vec4 mrAoFlags; // metallic, roughness, ao, flags
 
   // texture indices into texture table (or 0xFFFFFFFF for none)
-  // baseColor, emissive, normal, metalRough, ao
-  glm::uvec4 tex0123;  // base/emis/norm/mr
-  glm::uvec4 tex4_pad; // occ, ext, pad, pad
+  // baseColor, emissive, normal, metallic, roughness, ao
+  glm::uvec4 tex0123;  // base/emis/norm/metallic
+  glm::uvec4 tex4_pad; // roughness, ao, pad, pad
 
   glm::vec4 uvScaleOffset; // xy=scale, zw=offset
 };

@@ -45,13 +45,17 @@ void PassEnvPrefilter::setup(RenderGraph &graph, const RenderPassContext &ctx,
         auto &env = engine.envIBL();
         if (!env.dirty())
           return;
+        if (env.hdrEquirect() == 0)
+          return;
 
         env.ensureResources();
 
         const uint32_t envTex = env.envCube();
         const uint32_t preTex = env.envPrefilteredCube();
-        NYX_ASSERT(envTex != 0 && preTex != 0,
-                   "PassEnvPrefilter: missing env textures");
+        if (envTex == 0 || preTex == 0) {
+          // Sky/IBL may be intentionally unset. Skip without asserting.
+          return;
+        }
 
         GLint baseSize = 0;
         glGetTextureLevelParameteriv(preTex, 0, GL_TEXTURE_WIDTH, &baseSize);

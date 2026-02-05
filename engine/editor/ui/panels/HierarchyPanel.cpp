@@ -1,10 +1,12 @@
 #include "HierarchyPanel.h"
 
+#include "app/EngineContext.h"
 #include "core/Paths.h"
 #include "editor/Selection.h"
 #include "scene/EntityID.h"
 #include "scene/Pick.h"
 #include "scene/SelectionCycler.h"
+#include "material/MaterialHandle.h"
 
 #include <algorithm>
 #include <cstdint>
@@ -34,6 +36,54 @@ static const char *meshTypeName(ProcMeshType t) {
 
 static uintptr_t treeId(EntityID e) {
   return (uintptr_t(e.generation) << 32) | uintptr_t(e.index);
+}
+
+// Material drag/drop + clipboard
+static MaterialHandle g_matClipboard = InvalidMaterial;
+
+static bool beginMaterialDragSource(MaterialHandle mh, const char *label) {
+  if (mh == InvalidMaterial)
+    return false;
+  if (ImGui::BeginDragDropSource(ImGuiDragDropFlags_SourceAllowNullID)) {
+    ImGui::SetDragDropPayload("NYX_MATERIAL_HANDLE", &mh,
+                              sizeof(MaterialHandle));
+    ImGui::Text("Material: %s", label ? label : "(unnamed)");
+    ImGui::EndDragDropSource();
+    return true;
+  }
+  return false;
+}
+
+static bool acceptMaterialDrop(MaterialHandle &outMh) {
+  if (!ImGui::BeginDragDropTarget())
+    return false;
+  if (const ImGuiPayload *p =
+          ImGui::AcceptDragDropPayload("NYX_MATERIAL_HANDLE")) {
+    if (p->Data && p->DataSize == sizeof(MaterialHandle)) {
+      outMh = *(const MaterialHandle *)p->Data;
+      ImGui::EndDragDropTarget();
+      return true;
+    }
+  }
+  ImGui::EndDragDropTarget();
+  return false;
+}
+
+static void applyMaterialToSubmesh(World &world, EntityID e, uint32_t si,
+                                   MaterialHandle mh) {
+  if (!world.hasMesh(e) || world.hasLight(e))
+    return;
+  world.submesh(e, si).material = mh;
+}
+
+static void applyMaterialToAllSubmeshes(World &world, EntityID e,
+                                        MaterialHandle mh) {
+  if (!world.hasMesh(e) || world.hasLight(e))
+    return;
+  const uint32_t n = world.submeshCount(e);
+  for (uint32_t si = 0; si < n; ++si) {
+    applyMaterialToSubmesh(world, e, si, mh);
+  }
 }
 
 static void DrawAtlasIconAt(const Nyx::IconAtlas &atlas,
@@ -261,7 +311,8 @@ void HierarchyPanel::onWorldEvent(World &world, const WorldEvent &e) {
   }
 }
 
-void HierarchyPanel::draw(World &world, EntityID editorCamera, Selection &sel) {
+void HierarchyPanel::draw(World &world, EntityID editorCamera,
+                          EngineContext &engine, Selection &sel) {
   if (!m_iconInit) {
     m_iconInit = true;
     const std::filesystem::path iconDir = Paths::engineRes() / "icons";
@@ -300,14 +351,15 @@ void HierarchyPanel::draw(World &world, EntityID editorCamera, Selection &sel) {
   for (EntityID e : m_roots) {
     if (e == editorCamera)
       continue;
-    drawEntityNode(world, e, sel);
+    drawEntityNode(world, e, engine, sel);
   }
 
   ImGui::Dummy(ImVec2(0.0f, 200.0f));
   ImGui::End();
 }
 
-void HierarchyPanel::drawEntityNode(World &world, EntityID e, Selection &sel) {
+void HierarchyPanel::drawEntityNode(World &world, EntityID e,
+                                    EngineContext &engine, Selection &sel) {
   if (!world.isAlive(e))
     return;
 
@@ -430,8 +482,17 @@ void HierarchyPanel::drawEntityNode(World &world, EntityID e, Selection &sel) {
     ImGui::EndDragDropTarget();
   }
 
+  // Material drop on entity row => apply to all submeshes
+  {
+    MaterialHandle dropped = InvalidMaterial;
+    if (acceptMaterialDrop(dropped)) {
+      applyMaterialToAllSubmeshes(world, e, dropped);
+    }
+  }
+
   // Show submeshes/materials only when open OR entity is selected
-  const bool showMeshUI = hasSubmeshes && (open || isSelected);
+  const bool showMeshUI =
+      hasSubmeshes && !world.hasLight(e) && (open || isSelected);
   if (showMeshUI) {
     auto &mc = world.mesh(e);
 
@@ -469,6 +530,14 @@ void HierarchyPanel::drawEntityNode(World &world, EntityID e, Selection &sel) {
         sel.activeEntity = e;
       }
 
+      // Material drop on submesh row => apply to this submesh
+      {
+        MaterialHandle dropped = InvalidMaterial;
+        if (acceptMaterialDrop(dropped)) {
+          applyMaterialToSubmesh(world, e, si, dropped);
+        }
+      }
+
       // Material node (uses SAME pickID; Inspector decides to show material UI)
       const bool showMat = subOpen || subSel;
       if (showMat) {
@@ -483,7 +552,25 @@ void HierarchyPanel::drawEntityNode(World &world, EntityID e, Selection &sel) {
           mflags |= ImGuiTreeNodeFlags_Selected;
 
         const uintptr_t matId = treeId(e) ^ (uintptr_t(0x9E370000u) + si);
-        ImGui::TreeNodeEx((void *)matId, mflags, "Material");
+        const char *matLabel = "Material";
+
+        const uint32_t previewTex = engine.renderer().previewTexture();
+        const MaterialHandle previewMat = engine.previewMaterial();
+        const bool showPreview =
+            (previewTex != 0 && previewMat != InvalidMaterial &&
+             previewMat == sm.material);
+
+        const float frameH = ImGui::GetFrameHeight();
+        const float thumb = std::min(18.0f, std::max(12.0f, frameH - 2.0f));
+        if (showPreview) {
+          ImGui::Image((ImTextureID)(uintptr_t)previewTex,
+                       ImVec2(thumb, thumb), ImVec2(0, 1), ImVec2(1, 0));
+        } else {
+          ImGui::Dummy(ImVec2(thumb, thumb));
+        }
+        ImGui::SameLine(0.0f, 4.0f);
+
+        ImGui::TreeNodeEx((void *)matId, mflags, "%s", matLabel);
 
         if (ImGui::IsItemClicked(ImGuiMouseButton_Left)) {
           // set active pick to this submesh; keep multi-selection if ctrl/shift
@@ -496,6 +583,32 @@ void HierarchyPanel::drawEntityNode(World &world, EntityID e, Selection &sel) {
             sel.setSinglePick(pid, e);
           }
           sel.activeEntity = e;
+        }
+
+        // Drag material
+        {
+          MaterialHandle mh = sm.material;
+          beginMaterialDragSource(mh, matLabel);
+        }
+
+        // Drop material onto material row
+        {
+          MaterialHandle dropped = InvalidMaterial;
+          if (acceptMaterialDrop(dropped)) {
+            applyMaterialToSubmesh(world, e, si, dropped);
+          }
+        }
+
+        // Context menu: Copy/Paste
+        if (ImGui::BeginPopupContextItem("mat_ctx")) {
+          if (ImGui::MenuItem("Copy")) {
+            g_matClipboard = sm.material;
+          }
+          const bool canPaste = (g_matClipboard != InvalidMaterial);
+          if (ImGui::MenuItem("Paste", nullptr, false, canPaste)) {
+            applyMaterialToSubmesh(world, e, si, g_matClipboard);
+          }
+          ImGui::EndPopup();
         }
 
         ImGui::Unindent();
@@ -514,7 +627,7 @@ void HierarchyPanel::drawEntityNode(World &world, EntityID e, Selection &sel) {
       EntityID child = world.hierarchy(e).firstChild;
       while (child != InvalidEntity) {
         EntityID next = world.hierarchy(child).nextSibling;
-        drawEntityNode(world, child, sel);
+        drawEntityNode(world, child, engine, sel);
         child = next;
       }
     }

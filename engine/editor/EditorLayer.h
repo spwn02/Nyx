@@ -2,6 +2,7 @@
 
 #include "Selection.h"
 #include "ViewportState.h"
+#include "editor/ui/panels/PostGraphEditorPanel.h"
 #include "layers/Layer.h"
 #include "scene/EntityID.h"
 #include "scene/World.h"
@@ -10,9 +11,11 @@
 #include "tools/LockCameraToView.h"
 #include "ui/GizmoState.h"
 #include "ui/panels/AddMenu.h"
+#include "ui/panels/AssetBrowserPanel.h"
 #include "ui/panels/HierarchyPanel.h"
 #include "ui/panels/InspectorPanel.h"
 #include "ui/panels/InspectorSky.h"
+#include "ui/panels/LUTManagerPanel.h"
 #include "ui/panels/ViewportPanel.h"
 #include <cstdint>
 #include <string>
@@ -81,6 +84,8 @@ public:
 private:
   void drawStats(EngineContext &engine);
   void processWorldEvents();
+  void applyPostGraphPersist(EngineContext &engine);
+  void storePostGraphPersist(EngineContext &engine);
 
 private:
   EntityID m_selected = InvalidEntity;
@@ -95,6 +100,10 @@ private:
   AddMenu m_add{};
   InspectorPanel m_inspector{};
   ViewportPanel m_viewport{};
+  AssetBrowserPanel m_assetBrowser{};
+  LUTManagerPanel m_lutManager{};
+  PostGraphEditorPanel m_postGraphPanel{};
+  bool m_postGraphLoaded = false;
 
   std::string m_scenePath;
   bool m_autoSave = false;

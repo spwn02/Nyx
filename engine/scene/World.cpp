@@ -476,6 +476,14 @@ CMesh &World::ensureMesh(EntityID e) {
 CMesh &World::mesh(EntityID e) { return m_mesh.at(e); }
 const CMesh &World::mesh(EntityID e) const { return m_mesh.at(e); }
 
+void World::removeMesh(EntityID e) {
+  auto it = m_mesh.find(e);
+  if (it == m_mesh.end())
+    return;
+  m_mesh.erase(it);
+  m_events.push({WorldEventType::MeshChanged, e});
+}
+
 uint32_t World::submeshCount(EntityID e) const {
   auto it = m_mesh.find(e);
   if (it == m_mesh.end())

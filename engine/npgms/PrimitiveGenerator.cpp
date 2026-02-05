@@ -1,12 +1,15 @@
 #include "PrimitiveGenerator.h"
 #include "glm/gtc/constants.hpp"
+#include "npgms/MikkTangentBuilder.h"
 
 #include <cmath>
 #include <glm/glm.hpp>
 
-#include "MeshTangentGen.h"
-
 namespace Nyx {
+
+static void generateTangents(MeshCPU &m) {
+  m.hasTangents = Nyx::Tangents::buildTangents_Mikk(m);
+}
 
 static MeshCPU makePlanePNUt(float halfExtent) {
   MeshCPU m{};
@@ -115,8 +118,7 @@ static MeshCPU makeSpherePNUt(uint32_t segU, uint32_t segV,
                   std::sin(theta) * std::sin(phi)};
       glm::vec3 p = n * radius;
 
-      m.vertices.push_back({p, glm::normalize(n), {u, 1.0f - v},
-                             {0, 0, 0, 0}});
+      m.vertices.push_back({p, glm::normalize(n), {u, 1.0f - v}, {0, 0, 0, 0}});
     }
   }
 

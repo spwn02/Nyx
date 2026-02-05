@@ -39,9 +39,16 @@ void EditorLayer::onAttach() {
   gizmo.snapTranslate = m_persist.gizmoSnapTranslate;
   gizmo.snapRotateDeg = m_persist.gizmoSnapRotateDeg;
   gizmo.snapScale = m_persist.gizmoSnapScale;
+
+  m_assetBrowser.setRoot(std::filesystem::current_path() / "assets");
+  if (!m_persist.assetBrowserFolder.empty())
+    m_assetBrowser.setCurrentFolder(m_persist.assetBrowserFolder);
+  if (!m_persist.assetBrowserFilter.empty())
+    m_assetBrowser.setFilter(m_persist.assetBrowserFilter);
 }
 
 void EditorLayer::onDetach() {
+  m_assetBrowser.shutdown();
   m_persist.camera.position = m_cameraCtrl.position;
   m_persist.camera.yawDeg = m_cameraCtrl.yawDeg;
   m_persist.camera.pitchDeg = m_cameraCtrl.pitchDeg;
@@ -60,6 +67,9 @@ void EditorLayer::onDetach() {
   m_persist.gizmoSnapTranslate = gizmo.snapTranslate;
   m_persist.gizmoSnapRotateDeg = gizmo.snapRotateDeg;
   m_persist.gizmoSnapScale = gizmo.snapScale;
+
+  m_persist.assetBrowserFolder = m_assetBrowser.currentFolder();
+  m_persist.assetBrowserFilter = m_assetBrowser.filter();
   auto res = EditorPersist::save(editorStatePath(), m_persist);
   if (!res) {
     Log::Warn("EditorPersist save failed: {}", res.error());
@@ -155,6 +165,63 @@ void EditorLayer::defaultScene(EngineContext &engine) {
   engine.rebuildRenderables();
 }
 
+void EditorLayer::applyPostGraphPersist(EngineContext &engine) {
+  if (m_persist.postGraphFilters.empty())
+    return;
+
+  PostGraph &pg = engine.postGraph();
+  pg = PostGraph();
+
+  for (const auto &n : m_persist.postGraphFilters) {
+    const FilterTypeInfo *ti =
+        engine.filterRegistry().find(static_cast<FilterTypeId>(n.typeId));
+    if (!ti)
+      continue;
+
+    const char *label = !n.label.empty() ? n.label.c_str() : ti->name;
+    std::vector<float> params = n.params;
+    if (params.empty()) {
+      params.reserve(ti->paramCount);
+      for (uint32_t i = 0; i < ti->paramCount; ++i)
+        params.push_back(ti->params[i].defaultValue);
+    }
+
+    PGNodeID id = pg.addFilter((uint32_t)ti->id, label, params);
+    if (PGNode *node = pg.findNode(id)) {
+      node->enabled = n.enabled;
+      node->name = label;
+      node->lutPath = n.lutPath;
+    }
+  }
+
+  engine.markPostGraphDirty();
+  engine.syncFilterGraphFromPostGraph();
+  engine.updatePostFilters();
+}
+
+void EditorLayer::storePostGraphPersist(EngineContext &engine) {
+  m_persist.postGraphFilters.clear();
+
+  std::vector<PGNodeID> order;
+  const PGCompileError err = engine.postGraph().buildChainOrder(order);
+  if (!err.ok)
+    return;
+
+  for (PGNodeID id : order) {
+    PGNode *n = engine.postGraph().findNode(id);
+    if (!n || n->kind != PGNodeKind::Filter)
+      continue;
+
+    EditorPersistState::PostGraphPersistNode pn{};
+    pn.typeId = n->typeID;
+    pn.enabled = n->enabled;
+    pn.label = n->name;
+    pn.params = n->params;
+    pn.lutPath = n->lutPath;
+    m_persist.postGraphFilters.push_back(std::move(pn));
+  }
+}
+
 static void drawProjectSettings(GizmoState &g) {
   ImGui::Begin("Project Settings");
 
@@ -235,6 +302,15 @@ void EditorLayer::processWorldEvents() {
 void EditorLayer::syncWorldEvents() { processWorldEvents(); }
 
 void EditorLayer::onImGui(EngineContext &engine) {
+  m_assetBrowser.init(engine.materials().textures());
+  if (!m_postGraphLoaded) {
+    applyPostGraphPersist(engine);
+    if (m_persist.postGraphFilters.empty()) {
+      storePostGraphPersist(engine);
+    }
+    m_postGraphLoaded = true;
+  }
+
   if (ImGui::BeginMenuBar()) {
     if (ImGui::BeginMenu("File")) {
       if (ImGui::MenuItem("New Scene")) {
@@ -279,6 +355,8 @@ void EditorLayer::onImGui(EngineContext &engine) {
       ImGui::MenuItem("Stats", nullptr, &m_persist.panels.stats);
       ImGui::MenuItem("Project Settings", nullptr,
                       &m_persist.panels.projectSettings);
+      ImGui::MenuItem("Asset Browser", nullptr, &m_persist.panels.assetBrowser);
+      ImGui::MenuItem("LUT Manager", nullptr, &m_persist.panels.lutManager);
       ImGui::EndMenu();
     }
     ImGui::EndMenuBar();
@@ -375,10 +453,12 @@ void EditorLayer::onImGui(EngineContext &engine) {
 
   // Hierarchy panel
   if (m_persist.panels.hierarchy)
-    m_hierarchy.draw(*m_world, m_editorCamera, m_sel);
+    m_hierarchy.draw(*m_world, m_editorCamera, engine, m_sel);
 
   // Add menu (Shift+A)
-  const bool allowOpen = !ImGui::GetIO().WantTextInput;
+  const bool allowOpen = !ImGui::GetIO().WantTextInput &&
+                         !m_postGraphPanel.isHovered() &&
+                         !m_cameraCtrl.mouseCaptured;
   m_add.tick(*m_world, m_sel, allowOpen);
 
   // Inspector panel
@@ -387,7 +467,7 @@ void EditorLayer::onImGui(EngineContext &engine) {
 
   // Sky panel
   if (m_persist.panels.sky)
-    drawSkyPanel(*m_world);
+    drawSkyPanel(*m_world, engine);
 
   if (m_autoSave && m_sceneLoaded && !m_scenePath.empty() &&
       !m_world->events().empty()) {
@@ -397,12 +477,21 @@ void EditorLayer::onImGui(EngineContext &engine) {
 
   // Asset Browser panel
   if (m_persist.panels.assetBrowser) {
-    ImGui::Begin("Asset Browser");
-    ImGui::TextUnformatted("Asset Browser not yet implemented");
-    ImGui::End();
+    m_assetBrowser.draw(&m_persist.panels.assetBrowser);
+  }
+  if (m_persist.panels.lutManager) {
+    m_lutManager.draw(engine);
   }
 
   const auto &gizmo = m_viewport.gizmoState();
+
+  m_postGraphPanel.draw(engine.postGraph(), engine.filterRegistry(), engine);
+  if (m_postGraphPanel.consumeGraphChanged()) {
+    engine.markPostGraphDirty();
+    engine.syncFilterGraphFromPostGraph();
+    engine.updatePostFilters();
+    storePostGraphPersist(engine);
+  }
 
   m_persist.gizmoOp = gizmo.op;
   m_persist.gizmoMode = gizmo.mode;

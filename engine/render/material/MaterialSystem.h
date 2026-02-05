@@ -20,11 +20,15 @@ public:
 
   MaterialData &cpu(MaterialHandle h);
   const MaterialData &cpu(MaterialHandle h) const;
+  const GpuMaterialPacked &gpu(MaterialHandle h) const;
 
   uint32_t gpuIndex(MaterialHandle h) const; // index in SSBO array
 
   void markDirty(MaterialHandle h);
   void uploadIfDirty();
+  void processTextureUploads(uint32_t maxPerFrame = 8) {
+    m_tex.processUploads(maxPerFrame);
+  }
   void reset();
 
   uint32_t ssbo() const { return m_ssbo; }

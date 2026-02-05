@@ -58,7 +58,8 @@ void EnvironmentIBL::destroyTex(uint32_t &t) {
 
 void EnvironmentIBL::init(GLShaderUtil &shaders) {
   m_shaders = &shaders;
-  m_dirty = true;
+  // Start clean; we only build when an HDRI is assigned.
+  m_dirty = false;
   m_ready = false;
 }
 
@@ -116,6 +117,7 @@ void EnvironmentIBL::ensureBuilt() {
     return;
   if (!m_hdrEquirect) {
     Log::Warn("EnvironmentIBL: no HDRI set; skipping build");
+    m_dirty = false;
     return;
   }
   NYX_ASSERT(m_shaders != nullptr, "EnvironmentIBL::init() must be called");

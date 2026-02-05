@@ -97,6 +97,7 @@ struct CSky final {
   float intensity = 1.0f;     // Multiplier for sky/IBL
   float exposure = 0.0f;      // Stops (pow(2, exposure))
   float rotationYawDeg = 0.0f; // Rotation around Y axis
+  float ambient = 0.03f;      // Fallback ambient when no IBL
   bool enabled = true;
   bool drawBackground = true; // Sky visible in viewport
 };

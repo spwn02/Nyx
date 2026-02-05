@@ -77,6 +77,26 @@ target_include_directories(tinyfiledialogs PUBLIC
   ${CMAKE_CURRENT_LIST_DIR}/tinyfiledialogs
 )
 
+# ---- MikkTSpace
+add_library(mikktspace STATIC 
+  ${CMAKE_CURRENT_LIST_DIR}/MikkTSpace/mikktspace.c
+)
+target_include_directories(mikktspace PUBLIC
+  ${CMAKE_CURRENT_LIST_DIR}/MikkTSpace
+)
+
+# ---- ImGui Node Editor
+add_library(imgui_node_editor STATIC
+  ${CMAKE_CURRENT_LIST_DIR}/imgui-node-editor/crude_json.cpp
+  ${CMAKE_CURRENT_LIST_DIR}/imgui-node-editor/imgui_canvas.cpp
+  ${CMAKE_CURRENT_LIST_DIR}/imgui-node-editor/imgui_node_editor.cpp
+  ${CMAKE_CURRENT_LIST_DIR}/imgui-node-editor/imgui_node_editor_api.cpp
+)
+target_include_directories(imgui_node_editor PUBLIC
+  ${CMAKE_CURRENT_LIST_DIR}/imgui-node-editor
+)
+target_link_libraries(imgui_node_editor PUBLIC imgui)
+
 # Aggregate interface
 target_link_libraries(nyx_thirdparty INTERFACE
   glm::glm
@@ -90,4 +110,6 @@ target_link_libraries(nyx_thirdparty INTERFACE
   stb
   tinyfiledialogs
   nlohmann_json
+  mikktspace
+  imgui_node_editor
 )

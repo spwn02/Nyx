@@ -8,14 +8,18 @@
 
 namespace Nyx {
 
+class EngineContext;
+
 class HierarchyPanel {
 public:
   void setWorld(World *world);
   void onWorldEvent(World &world, const WorldEvent &e);
-  void draw(World &world, EntityID editorCamera, Selection &sel);
+  void draw(World &world, EntityID editorCamera, EngineContext &engine,
+            Selection &sel);
 
 private:
-  void drawEntityNode(World &world, EntityID e, Selection &sel);
+  void drawEntityNode(World &world, EntityID e, EngineContext &engine,
+                      Selection &sel);
   void rebuildRoots(World &world);
   void addRoot(EntityID e);
   void removeRoot(EntityID e);

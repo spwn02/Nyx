@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdint>
+#include <string>
 
 namespace Nyx {
 
@@ -8,8 +9,9 @@ enum class MaterialTexSlot : uint8_t {
   BaseColor = 0,
   Emissive = 1,
   Normal = 2,
-  MetalRough = 3,
-  AO = 4,
+  Metallic = 3,
+  Roughness = 4,
+  AO = 5,
   Count
 };
 
@@ -19,9 +21,10 @@ enum MaterialFlags : uint32_t {
   Mat_HasBaseColor = 1u << 0,
   Mat_HasEmissive = 1u << 1,
   Mat_HasNormal = 1u << 2,
-  Mat_HasMetalRough = 1u << 3,
-  Mat_HasAO = 1u << 4,
-  Mat_HasTangents = 1u << 5, // mesh provides tangents
+  Mat_HasMetallic = 1u << 3,
+  Mat_HasRoughness = 1u << 4,
+  Mat_HasAO = 1u << 5,
+  Mat_HasTangents = 1u << 6, // mesh provides tangents
 };
 
 inline MaterialFlags operator|(MaterialFlags a, MaterialFlags b) {
@@ -37,5 +40,34 @@ inline MaterialFlags &operator|=(MaterialFlags &a, MaterialFlags b) {
 inline bool hasFlag(uint32_t flags, MaterialFlags f) {
   return (flags & static_cast<uint32_t>(f)) != 0;
 }
+
+inline const char *materialSlotName(MaterialTexSlot s) {
+  switch (s) {
+  case MaterialTexSlot::BaseColor:
+    return "Base Color";
+  case MaterialTexSlot::Emissive:
+    return "Emissive";
+  case MaterialTexSlot::Normal:
+    return "Normal";
+  case MaterialTexSlot::Metallic:
+    return "Metallic";
+  case MaterialTexSlot::Roughness:
+    return "Roughness";
+  case MaterialTexSlot::AO:
+    return "AO";
+  default:
+    return "Slot";
+  }
+}
+
+inline bool materialSlotWantsSRGB(MaterialTexSlot s) {
+  return (s == MaterialTexSlot::BaseColor || s == MaterialTexSlot::Emissive);
+}
+
+struct MaterialSlotRef final {
+  std::string path;               // absolute or project-relative
+  uint32_t texIndex = 0xFFFFFFFF; // TextureTable index
+  bool srgb = false;              // must match materialSlotWantsSRGB(slot)
+};
 
 } // namespace Nyx

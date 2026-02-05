@@ -1,28 +1,24 @@
 #pragma once
 
-#include "render/gl/GLResources.h"
+#include "RenderPass.h"
 #include "render/gl/GLShaderUtil.h"
-#include "render/passes/RenderPass.h"
 
 namespace Nyx {
-
-class GLFullscreenTriangle;
 
 class PassPostFilters final : public RenderPass {
 public:
   ~PassPostFilters() override;
 
-  void configure(GLShaderUtil &shaders, GLResources &res,
-                 GLFullscreenTriangle &fsTri);
+  void configure(GLShaderUtil &shaders);
+  void setSSBO(uint32_t ssbo) { m_filterSSBO = ssbo; }
 
   void setup(RenderGraph &graph, const RenderPassContext &ctx,
              const RenderableRegistry &registry, EngineContext &engine,
              bool editorVisible) override;
 
 private:
-  uint32_t m_fbo = 0;
-  GLResources *m_res = nullptr;
-  GLFullscreenTriangle *m_fsTri = nullptr;
+  uint32_t m_prog = 0;
+  uint32_t m_filterSSBO = 0;
 };
 
 } // namespace Nyx

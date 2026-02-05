@@ -56,7 +56,7 @@ void LightSystem::updateFromWorld(const World &world) {
     const glm::vec3 forward = glm::normalize(-glm::vec3(W[2]));
 
     GpuLight g{};
-    g.color = glm::vec4(L.color, 0.0f);
+    g.color = glm::vec4(L.color, L.exposure);
     g.params.y = L.intensity;
 
     if (L.type == LightType::Directional) {
