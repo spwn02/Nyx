@@ -34,8 +34,16 @@ static void applyCameraFields(const World &world, EntityID e, Renderable &r) {
   r.isCamera = world.hasCamera(e);
 }
 
+static bool isEntityDisabledForRender(const World &world, EntityID e) {
+  const auto &tr = world.transform(e);
+  return tr.hidden || tr.hiddenEditor || tr.disabledAnim;
+}
+
 void RenderableRegistry::clear() {
   m_items.clear();
+  m_opaque.clear();
+  m_transparent.clear();
+  m_transparentSorted.clear();
   m_pickToIndex.clear();
   m_entityToIndices.clear();
 }
@@ -70,6 +78,8 @@ void RenderableRegistry::rebuildAll(const World &world) {
   std::sort(ents.begin(), ents.end());
 
   for (EntityID e : ents) {
+    if (isEntityDisabledForRender(world, e))
+      continue;
     if (!world.hasMesh(e))
       continue;
 
@@ -182,6 +192,10 @@ void RenderableRegistry::removeEntity(EntityID e) {
 }
 
 void RenderableRegistry::updateEntityTransform(const World &world, EntityID e) {
+  if (isEntityDisabledForRender(world, e)) {
+    removeEntity(e);
+    return;
+  }
   auto it = m_entityToIndices.find(e);
   if (it == m_entityToIndices.end())
     return;
@@ -198,6 +212,9 @@ void RenderableRegistry::updateEntityTransform(const World &world, EntityID e) {
 
 void RenderableRegistry::rebuildEntity(const World &world, EntityID e) {
   removeEntity(e);
+
+  if (isEntityDisabledForRender(world, e))
+    return;
 
   if (!world.isAlive(e))
     return;
@@ -302,6 +319,41 @@ void RenderableRegistry::applyEvents(const World &world,
       continue;
     updateEntityTransform(world, e);
   }
+}
+
+void RenderableRegistry::buildRoutedLists(const glm::vec3 &camPos,
+                                          const glm::vec3 &viewForward) {
+  (void)viewForward;
+  m_opaque.clear();
+  m_transparent.clear();
+  m_transparentSorted.clear();
+
+  m_opaque.reserve(m_items.size());
+  m_transparent.reserve(m_items.size());
+
+  for (const auto &r : m_items) {
+    if (r.alphaMode == MatAlphaMode::Blend) {
+      Renderable t = r;
+      const glm::vec3 worldPos = glm::vec3(r.model[3]);
+      const glm::vec3 d = worldPos - camPos;
+      t.sortKey = glm::dot(d, d);
+      m_transparent.push_back(t);
+    } else {
+      m_opaque.push_back(r);
+    }
+  }
+
+  m_transparentSorted = m_transparent;
+  std::sort(m_transparentSorted.begin(), m_transparentSorted.end(),
+            [](const Renderable &a, const Renderable &b) {
+              if (a.sortKey != b.sortKey)
+                return a.sortKey > b.sortKey;
+              if (a.materialGpuIndex != b.materialGpuIndex)
+                return a.materialGpuIndex < b.materialGpuIndex;
+              if (a.pickID != b.pickID)
+                return a.pickID < b.pickID;
+              return a.submesh < b.submesh;
+            });
 }
 
 } // namespace Nyx

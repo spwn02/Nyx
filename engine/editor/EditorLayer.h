@@ -3,6 +3,7 @@
 #include "Selection.h"
 #include "ViewportState.h"
 #include "editor/ui/panels/PostGraphEditorPanel.h"
+#include "editor/ui/panels/SequencerPanel.h"
 #include "layers/Layer.h"
 #include "scene/EntityID.h"
 #include "scene/World.h"
@@ -13,10 +14,14 @@
 #include "ui/panels/AddMenu.h"
 #include "ui/panels/AssetBrowserPanel.h"
 #include "ui/panels/HierarchyPanel.h"
+#include "ui/panels/HistoryPanel.h"
 #include "ui/panels/InspectorPanel.h"
 #include "ui/panels/InspectorSky.h"
 #include "ui/panels/LUTManagerPanel.h"
+#include "ui/panels/MaterialGraphPanel.h"
+#include "ui/panels/ProjectSettingsPanel.h"
 #include "ui/panels/ViewportPanel.h"
+#include "editor/EditorHistory.h"
 #include <cstdint>
 #include <string>
 
@@ -33,7 +38,7 @@ public:
   void setViewportTexture(uint32_t tex) { m_viewport.setViewportTexture(tex); }
   ViewportState &viewport() { return m_viewport.viewport(); }
 
-  void syncWorldEvents();
+  void syncWorldEvents(EngineContext &engine);
 
   EntityID selectedEntity() const { return m_selected; }
   void setSelectedEntity(EntityID id) { m_selected = id; }
@@ -45,6 +50,9 @@ public:
   void setScenePath(const std::string &path) { m_scenePath = path; }
   const std::string &scenePath() const { return m_scenePath; }
 
+  void setProjectFps(float fps) { m_projectFps = fps; }
+  float projectFps() const { return m_projectFps; }
+
   void setAutoSave(bool enabled) { m_autoSave = enabled; }
   bool autoSave() const { return m_autoSave; }
 
@@ -52,6 +60,12 @@ public:
   bool sceneLoaded() const { return m_sceneLoaded; }
 
   void defaultScene(EngineContext &engine);
+  bool requestSaveScene(EngineContext &engine);
+  void requestSaveSceneAs();
+  bool undo(EngineContext &engine);
+  bool redo(EngineContext &engine);
+  void beginGizmoHistoryBatch();
+  void endGizmoHistoryBatch();
 
   void setViewThroughCamera(bool enabled) {
     m_viewport.setViewThroughCamera(enabled);
@@ -80,10 +94,12 @@ public:
   const LockCameraToView &lockCameraToView() const {
     return m_viewport.lockCameraToView();
   }
+  SequencerPanel &sequencerPanel() { return m_sequencerPanel; }
+  const SequencerPanel &sequencerPanel() const { return m_sequencerPanel; }
 
 private:
-  void drawStats(EngineContext &engine);
-  void processWorldEvents();
+  void drawStats(EngineContext &engine, GizmoState &g);
+  void processWorldEvents(EngineContext &engine);
   void applyPostGraphPersist(EngineContext &engine);
   void storePostGraphPersist(EngineContext &engine);
 
@@ -97,12 +113,17 @@ private:
   Selection m_sel{};
   EntityID m_editorCamera = InvalidEntity;
   HierarchyPanel m_hierarchy{};
+  HistoryPanel m_historyPanel{};
+  EditorHistory m_history{};
   AddMenu m_add{};
   InspectorPanel m_inspector{};
   ViewportPanel m_viewport{};
   AssetBrowserPanel m_assetBrowser{};
   LUTManagerPanel m_lutManager{};
+  MaterialGraphPanel m_materialGraphPanel{};
   PostGraphEditorPanel m_postGraphPanel{};
+  SequencerPanel m_sequencerPanel{};
+  ProjectSettingsPanel m_projectSettings{};
   bool m_postGraphLoaded = false;
 
   std::string m_scenePath;
@@ -111,6 +132,8 @@ private:
   bool m_openScenePopup = false;
   bool m_saveScenePopup = false;
   char m_scenePathBuf[512]{};
+  uint64_t m_lastAutoSaveSerial = 0;
+  float m_projectFps = 30.0f;
 };
 
 } // namespace Nyx

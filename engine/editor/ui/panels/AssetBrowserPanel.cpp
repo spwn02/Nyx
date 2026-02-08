@@ -1,10 +1,13 @@
 #include "AssetBrowserPanel.h"
 
 #include "core/Log.h"
+#include "core/Paths.h"
+#include "editor/ui/UiPayloads.h"
 #include "render/material/TextureTable.h"
 #include <imgui.h>
 
 #include <algorithm>
+#include <cmath>
 #include <cstdint>
 #include <filesystem>
 #include <utility>
@@ -107,6 +110,18 @@ static void drawFolderIcon(ImDrawList *dl, ImVec2 p, float size,
   // body
   dl->AddRectFilled(bodyMin, bodyMax, fill, 1.0f);
   dl->AddRect(bodyMin, bodyMax, border, 1.0f);
+}
+
+static void DrawAtlasIconAt(const Nyx::IconAtlas &atlas,
+                            const Nyx::AtlasRegion &r, ImVec2 p, ImVec2 size,
+                            ImU32 tint = IM_COL32(220, 220, 220, 255)) {
+  p.x = std::floor(p.x + 0.5f);
+  p.y = std::floor(p.y + 0.5f);
+  size.x = std::floor(size.x + 0.5f);
+  size.y = std::floor(size.y + 0.5f);
+  ImDrawList *dl = ImGui::GetWindowDrawList();
+  dl->AddImage(atlas.imguiTexId(), p, ImVec2(p.x + size.x, p.y + size.y), r.uv0,
+               r.uv1, tint);
 }
 } // namespace
 
@@ -449,6 +464,24 @@ void AssetBrowserPanel::draw(bool *pOpen) {
   if (!pOpen || !*pOpen)
     return;
 
+  if (!m_iconInit) {
+    m_iconInit = true;
+    const std::filesystem::path iconDir = Paths::engineRes() / "icons";
+    const std::filesystem::path jsonPath =
+        Paths::engineRes() / "icon_atlas.json";
+    const std::filesystem::path pngPath = Paths::engineRes() / "icon_atlas.png";
+    if (std::filesystem::exists(jsonPath) && std::filesystem::exists(pngPath)) {
+      m_iconReady = m_iconAtlas.loadFromJson(jsonPath.string());
+      if (m_iconReady && !m_iconAtlas.find("folder")) {
+        m_iconReady = m_iconAtlas.buildFromFolder(
+            iconDir.string(), jsonPath.string(), pngPath.string(), 64, 0);
+      }
+    } else {
+      m_iconReady = m_iconAtlas.buildFromFolder(
+          iconDir.string(), jsonPath.string(), pngPath.string(), 64, 0);
+    }
+  }
+
   if (m_needsRefresh)
     refresh();
 
@@ -576,6 +609,8 @@ void AssetBrowserPanel::draw(bool *pOpen) {
     }
 
     // Folders first
+    const AtlasRegion *folderIcon =
+        m_iconReady ? m_iconAtlas.find("folder") : nullptr;
     for (size_t f = 0; f < folders.size(); ++f) {
       const std::string &folderPath = folders[f];
       const std::string name =
@@ -584,9 +619,16 @@ void AssetBrowserPanel::draw(bool *pOpen) {
       ImGui::Button("##folder_btn", ImVec2(thumb, thumb));
       ImDrawList *dl = ImGui::GetWindowDrawList();
       ImVec2 pmin = ImGui::GetItemRectMin();
-      drawFolderIcon(dl, ImVec2(pmin.x + 8.0f, pmin.y + 10.0f), 32.0f,
-                     IM_COL32(220, 200, 120, 255),
-                     IM_COL32(80, 60, 30, 255));
+      if (folderIcon) {
+        const float icon = 32.0f;
+        const ImVec2 ip(pmin.x + (thumb - icon) * 0.5f,
+                        pmin.y + (thumb - icon) * 0.5f);
+        DrawAtlasIconAt(m_iconAtlas, *folderIcon, ip, ImVec2(icon, icon));
+      } else {
+        drawFolderIcon(dl, ImVec2(pmin.x + 8.0f, pmin.y + 10.0f), 32.0f,
+                       IM_COL32(220, 200, 120, 255),
+                       IM_COL32(80, 60, 30, 255));
+      }
       if (ImGui::IsItemHovered() &&
           ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left)) {
         m_currentFolder = folderPath;
@@ -633,7 +675,7 @@ void AssetBrowserPanel::draw(bool *pOpen) {
 
         // Drag payload: path string
         if (ImGui::BeginDragDropSource(ImGuiDragDropFlags_SourceAllowNullID)) {
-          const char *payloadType = "NYX_ASSET_PATH_TEX";
+          const char *payloadType = UiPayload::TexturePath;
           // Include null terminator
           ImGui::SetDragDropPayload(payloadType, it.absPath.c_str(),
                                     it.absPath.size() + 1);

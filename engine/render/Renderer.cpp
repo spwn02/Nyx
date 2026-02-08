@@ -43,8 +43,13 @@ Renderer::Renderer() : m_rgRes(m_res) {
   m_passHiZ.configure(m_shaders);
   m_passLightCluster.configure(m_shaders);
   m_passLightGridDebug.configure(m_shaders);
-  m_passForward.configure(m_shaders, m_res,
-                          [this](ProcMeshType t) { drawPrimitive(t); });
+  m_passForwardOpaque.configure(m_shaders, m_res,
+                                [this](ProcMeshType t) { drawPrimitive(t); });
+  m_passForwardTransparent.configure(
+      m_shaders, m_res, [this](ProcMeshType t) { drawPrimitive(t); });
+  m_passPickID.configure(m_shaders, m_res);
+  m_passTransparentOIT.configure(m_shaders, m_res);
+  m_passTransparentOITComposite.configure(m_shaders);
   m_passPreview.configure(m_shaders, m_res,
                           [this](ProcMeshType t) { drawPrimitive(t); });
   m_passSky.configure(m_shaders);
@@ -52,13 +57,17 @@ Renderer::Renderer() : m_rgRes(m_res) {
   m_passTonemap.configure(m_shaders);
   m_passPost.configure(m_shaders);
   m_passSelection.configure(m_shaders, m_res, m_fsTri);
+  m_passSelectionMaskTransparent.configure(
+      m_shaders, m_res, [this](ProcMeshType t) { drawPrimitive(t); });
   m_passPresent.configure(m_shaders, m_fsTri);
 }
 
 Renderer::~Renderer() { m_fsTri.shutdown(); }
 
-void Renderer::setSelectedPickIDs(const std::vector<uint32_t> &ids) {
-  m_passSelection.updateSelectedIDs(ids);
+void Renderer::setSelectedPickIDs(const std::vector<uint32_t> &ids,
+                                  uint32_t activePick) {
+  m_passSelection.updateSelectedIDs(ids, activePick);
+  m_passSelectionMaskTransparent.updateSelectedIDs(ids);
 }
 
 static uint32_t primIndex(ProcMeshType t) {
@@ -88,12 +97,23 @@ void Renderer::drawPrimitive(ProcMeshType t) {
   m_primMeshes[i].draw();
 }
 
+void Renderer::drawPrimitiveBaseInstance(ProcMeshType t,
+                                         uint32_t baseInstance) {
+  const uint32_t i = primIndex(t);
+  if (!m_primReady[i]) {
+    MeshCPU cpu = makePrimitivePN(t, 32);
+    m_primMeshes[i].upload(cpu);
+    m_primReady[i] = true;
+  }
+  m_primMeshes[i].drawBaseInstance(baseInstance);
+}
+
 uint32_t Renderer::renderFrame(const RenderPassContext &ctx, bool editorVisible,
                                const RenderableRegistry &registry,
                                const std::vector<uint32_t> &selectedPickIDs,
                                EngineContext &engine) {
   // Selection SSBO for outline
-  setSelectedPickIDs(selectedPickIDs);
+  setSelectedPickIDs(selectedPickIDs, engine.selectedActivePick());
 
   // Begin RG frame
   m_graph.reset();
@@ -121,8 +141,23 @@ uint32_t Renderer::renderFrame(const RenderPassContext &ctx, bool editorVisible,
       .usage = RGTexUsage::Sampled | RGTexUsage::Image,
       .extent = {RenderExtentKind::Framebuffer, 0, 0},
   };
+  const RenderTextureDesc hdrOitDesc{
+      .format = RGFormat::RGBA16F,
+      .usage = RGTexUsage::Sampled | RGTexUsage::Image,
+      .extent = {RenderExtentKind::Framebuffer, 0, 0},
+  };
   const RenderTextureDesc idDesc{
       .format = RGFormat::R32UI,
+      .usage = RGTexUsage::ColorAttach | RGTexUsage::Sampled,
+      .extent = {RenderExtentKind::Framebuffer, 0, 0},
+  };
+  const RenderTextureDesc oitAccumDesc{
+      .format = RGFormat::RGBA16F,
+      .usage = RGTexUsage::ColorAttach | RGTexUsage::Sampled,
+      .extent = {RenderExtentKind::Framebuffer, 0, 0},
+  };
+  const RenderTextureDesc oitRevealDesc{
+      .format = RGFormat::RGBA16F,
       .usage = RGTexUsage::ColorAttach | RGTexUsage::Sampled,
       .extent = {RenderExtentKind::Framebuffer, 0, 0},
   };
@@ -134,6 +169,11 @@ uint32_t Renderer::renderFrame(const RenderPassContext &ctx, bool editorVisible,
   const RenderTextureDesc ldrDesc{
       .format = RGFormat::RGBA8,
       .usage = RGTexUsage::ColorAttach | RGTexUsage::Sampled | RGTexUsage::Image,
+      .extent = {RenderExtentKind::Framebuffer, 0, 0},
+  };
+  const RenderTextureDesc maskDesc{
+      .format = RGFormat::R32UI,
+      .usage = RGTexUsage::ColorAttach | RGTexUsage::Sampled,
       .extent = {RenderExtentKind::Framebuffer, 0, 0},
   };
   const RenderTextureDesc outDesc{
@@ -167,10 +207,16 @@ uint32_t Renderer::renderFrame(const RenderPassContext &ctx, bool editorVisible,
   m_graph.declareTexture("HiZ.Depth", hizDescResolved);
   m_graph.declareTexture("HDR.Color", hdrDesc);
   m_graph.declareTexture("HDR.Debug", hdrDebugDesc);
+  m_graph.declareTexture("HDR.OIT", hdrOitDesc);
   m_graph.declareTexture("ID.Submesh", idDesc);
+  m_graph.declareTexture("ID.Pick", idDesc);
+  m_graph.declareTexture("Depth.Pick", depthDesc);
+  m_graph.declareTexture("Trans.Accum", oitAccumDesc);
+  m_graph.declareTexture("Trans.Reveal", oitRevealDesc);
   m_graph.declareTexture("Post.In", postInDesc);
   m_graph.declareTexture("LDR.Color", ldrDesc);
   m_graph.declareTexture("LDR.Temp", ldrDesc);
+  m_graph.declareTexture("Mask.SelectedTrans", maskDesc);
   m_graph.declareTexture("OUT.Color", outDesc);
   m_graph.declareTexture("Preview.Material", previewColorDesc);
   m_graph.declareTexture("Preview.MaterialDepth", previewDepthDesc);
@@ -241,6 +287,10 @@ uint32_t Renderer::renderFrame(const RenderPassContext &ctx, bool editorVisible,
                         RGBufferDesc{.byteSize = 1u,
                                      .usage = RGBufferUsage::SSBO,
                                      .dynamic = true});
+  m_graph.declareBuffer("Scene.PerDraw",
+                        RGBufferDesc{.byteSize = 1u,
+                                     .usage = RGBufferUsage::SSBO,
+                                     .dynamic = true});
   m_graph.declareBuffer("Post.Filters",
                         RGBufferDesc{.byteSize = 1u,
                                      .usage = RGBufferUsage::SSBO,
@@ -254,6 +304,14 @@ uint32_t Renderer::renderFrame(const RenderPassContext &ctx, bool editorVisible,
       external.buf = engine.lights().ssbo();
       external.byteSize = 0;
       bb.bindExternalBuffer(lightsRef, external);
+    }
+
+    const RGBufferRef perDrawRef = bb.getBuffer("Scene.PerDraw");
+    if (perDrawRef != InvalidRGBuffer) {
+      GLBuffer external{};
+      external.buf = engine.perDraw().ssbo();
+      external.byteSize = 0;
+      bb.bindExternalBuffer(perDrawRef, external);
     }
 
     const RGBufferRef filtersRef = bb.getBuffer("Post.Filters");
@@ -294,8 +352,27 @@ uint32_t Renderer::renderFrame(const RenderPassContext &ctx, bool editorVisible,
   m_passLightCluster.setLightCount(engine.lights().lightCount());
   m_passLightCluster.setup(m_graph, ctx, registry, engine, editorVisible);
   m_passLightGridDebug.setup(m_graph, ctx, registry, engine, editorVisible);
-  m_passForward.setup(m_graph, ctx, registry, engine, editorVisible);
+  m_passPickID.setup(m_graph, ctx, registry, engine, editorVisible);
+  m_passForwardOpaque.setMode(PassForwardMRT::Mode::Opaque);
+  m_passForwardOpaque.setup(m_graph, ctx, registry, engine, editorVisible);
+
+  const bool useOIT =
+      (engine.transparencyMode() == TransparencyMode::OIT);
+
   m_passSky.setup(m_graph, ctx, registry, engine, editorVisible);
+
+  if (useOIT) {
+    m_passTransparentOIT.setup(m_graph, ctx, registry, engine, editorVisible);
+    m_passTransparentOITComposite.setup(m_graph, ctx, registry, engine,
+                                        editorVisible);
+  } else {
+    m_passForwardTransparent.setMode(PassForwardMRT::Mode::Transparent);
+    m_passForwardTransparent.setup(m_graph, ctx, registry, engine,
+                                   editorVisible);
+  }
+
+  m_passSelectionMaskTransparent.setup(m_graph, ctx, registry, engine,
+                                       editorVisible);
   m_passShadowDebug.setMode(engine.shadowDebugMode());
   m_passShadowDebug.setOverlayAlpha(engine.shadowDebugAlpha());
   m_passShadowDebug.setup(m_graph, ctx, registry, engine, editorVisible);
@@ -310,6 +387,7 @@ uint32_t Renderer::renderFrame(const RenderPassContext &ctx, bool editorVisible,
   auto &bb = m_graph.blackboard();
   m_out.hdr = bb.textureHandle(bb.getTexture("HDR.Debug"));
   m_out.id = bb.textureHandle(bb.getTexture("ID.Submesh"));
+  m_out.pick = bb.textureHandle(bb.getTexture("ID.Pick"));
   m_out.depth = bb.textureHandle(bb.getTexture("Depth.Pre"));
   m_out.ldr = bb.textureHandle(bb.getTexture("LDR.Color"));
   m_out.outlined = bb.textureHandle(bb.getTexture("OUT.Color"));
@@ -327,7 +405,7 @@ uint32_t Renderer::previewTexture() const {
 
 uint32_t Renderer::readPickID(uint32_t px, uint32_t py,
                               uint32_t fbHeight) const {
-  if (m_out.id == InvalidRG)
+  if (m_out.pick == InvalidRG && m_out.id == InvalidRG)
     return 0u;
   if (fbHeight == 0u)
     return 0u;
@@ -335,7 +413,8 @@ uint32_t Renderer::readPickID(uint32_t px, uint32_t py,
   const uint32_t glY = (fbHeight - 1u) > py ? (fbHeight - 1u - py) : 0u;
 
   uint32_t id = 0;
-  const auto &idT = m_rgRes.tex(m_out.id);
+  const auto &idT =
+      (m_out.pick != InvalidRG) ? m_rgRes.tex(m_out.pick) : m_rgRes.tex(m_out.id);
 
   static uint32_t s_readFbo = 0;
   if (s_readFbo == 0)
@@ -346,6 +425,14 @@ uint32_t Renderer::readPickID(uint32_t px, uint32_t py,
   glReadBuffer(GL_COLOR_ATTACHMENT0);
 
   glReadPixels((int)px, (int)glY, 1, 1, GL_RED_INTEGER, GL_UNSIGNED_INT, &id);
+
+  if (id == 0u && m_out.id != InvalidRG && m_out.pick != m_out.id) {
+    const auto &fallback = m_rgRes.tex(m_out.id);
+    glNamedFramebufferTexture(s_readFbo, GL_COLOR_ATTACHMENT0, fallback.tex, 0);
+    glBindFramebuffer(GL_FRAMEBUFFER, s_readFbo);
+    glReadBuffer(GL_COLOR_ATTACHMENT0);
+    glReadPixels((int)px, (int)glY, 1, 1, GL_RED_INTEGER, GL_UNSIGNED_INT, &id);
+  }
 
   glBindFramebuffer(GL_FRAMEBUFFER, 0);
   return id;

@@ -111,6 +111,8 @@ public:
   void setParent(EntityID child, EntityID newParent);
   void setParentKeepWorld(EntityID child, EntityID newParent);
   EntityID cloneSubtree(EntityID root, EntityID newParent);
+  EntityID duplicateSubtree(EntityID root, EntityID newParent,
+                            class MaterialSystem *materials = nullptr);
 
   // ---- UUID ----
   EntityUUID uuid(EntityID e) const;
@@ -148,6 +150,7 @@ public:
   CCamera &ensureCamera(EntityID e);
   CCamera &camera(EntityID e);
   const CCamera &camera(EntityID e) const;
+  void removeCamera(EntityID e);
 
   CCameraMatrices &cameraMatrices(EntityID e);
   const CCameraMatrices &cameraMatrices(EntityID e) const;
@@ -157,6 +160,7 @@ public:
   CLight &ensureLight(EntityID e);
   CLight &light(EntityID e);
   const CLight &light(EntityID e) const;
+  void removeLight(EntityID e);
 
   // ---- Sky ----
   bool hasSky(EntityID e) const;
@@ -175,6 +179,23 @@ public:
   void setActiveCamera(EntityID cam);
   EntityUUID activeCameraUUID() const { return uuid(m_activeCamera); }
   void setActiveCameraUUID(EntityUUID id);
+
+  // Categories (editor-only grouping)
+  struct Category {
+    std::string name;
+    int32_t parent = -1;
+    std::vector<uint32_t> children;
+    std::vector<EntityID> entities;
+  };
+  const std::vector<Category> &categories() const { return m_categories; }
+  uint32_t addCategory(const std::string &name);
+  void removeCategory(uint32_t idx);
+  void renameCategory(uint32_t idx, const std::string &name);
+  void addEntityCategory(EntityID e, int32_t idx);
+  void removeEntityCategory(EntityID e, int32_t idx);
+  void clearEntityCategories(EntityID e);
+  const std::vector<uint32_t> *entityCategories(EntityID e) const;
+  void setCategoryParent(uint32_t idx, int32_t parentIdx);
 
 private:
   // Entity storage (simple SoA-by-map for now; you can swap to sparse sets
@@ -203,6 +224,11 @@ private:
 
   // World meta
   EntityID m_activeCamera = InvalidEntity;
+
+  // Categories
+  std::vector<Category> m_categories;
+  std::unordered_map<EntityID, std::vector<uint32_t>, EntityHash>
+      m_entityCategories;
 
   // Events
   WorldEvents m_events;

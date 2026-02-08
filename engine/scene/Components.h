@@ -32,6 +32,9 @@ struct CTransform final {
   glm::vec3 scale{1.0f};
 
   bool dirty = true;
+  bool hidden = false;       // user-controlled
+  bool hiddenEditor = false; // editor-only (not serialized)
+  bool disabledAnim = false; // auto via animation
 };
 
 struct CWorldTransform final {
@@ -50,6 +53,7 @@ enum class ProcMeshType : uint8_t {
 struct MeshSubmesh final {
   std::string name{"Submesh 0"};
   ProcMeshType type = ProcMeshType::Cube;
+  std::string materialAssetPath; // asset ref (e.g. "/Game/Materials/M_Wood")
   MaterialHandle material = InvalidMaterial;
 };
 

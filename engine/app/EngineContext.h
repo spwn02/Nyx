@@ -1,5 +1,7 @@
 #pragma once
 
+#include "animation/AnimationSystem.h"
+#include "animation/AnimationTypes.h"
 #include "env/EnvironmentIBL.h"
 #include "imgui.h"
 #include "post/FilterGraph.h"
@@ -9,7 +11,9 @@
 #include "render/Renderer.h"
 #include "render/ShadowDebugMode.h"
 #include "render/SkyConstants.h"
+#include "render/TransparencyMode.h"
 #include "render/ViewMode.h"
+#include "render/draw/PerDrawSSBO.h"
 #include "render/filters/FilterStackSSBO.h"
 #include "render/gl/GLShaderUtil.h"
 #include "render/material/MaterialSystem.h"
@@ -20,6 +24,7 @@
 #include "scene/World.h"
 #include <cstdint>
 #include <unordered_map>
+#include <unordered_set>
 #include <vector>
 
 namespace Nyx {
@@ -43,15 +48,26 @@ public:
   }
   uint32_t lastPickedID() const { return m_lastPickedID; }
   void setSelection(const std::vector<EntityID> &ids) { m_selected = ids; }
-  void setSelectionPickIDs(const std::vector<uint32_t> &ids) {
+  void setSelectionPickIDs(const std::vector<uint32_t> &ids,
+                           uint32_t activePick = 0) {
     m_selectedPickIDs = ids;
+    m_selectedActivePick = activePick;
   }
   const std::vector<uint32_t> &selectedPickIDs() const {
     return m_selectedPickIDs;
   }
+  uint32_t selectedActivePick() const { return m_selectedActivePick; }
   void setHiddenEntity(EntityID e) { m_hiddenEntity = e; }
+  void setHiddenEntities(const std::vector<EntityID> &ents);
   bool isEntityHidden(EntityID e) const {
-    return (m_hiddenEntity != InvalidEntity && m_hiddenEntity == e);
+    if (m_world.isAlive(e)) {
+      const auto &tr = m_world.transform(e);
+      if (tr.hidden || tr.hiddenEditor || tr.disabledAnim)
+        return true;
+    }
+    if (m_hiddenEntity != InvalidEntity && m_hiddenEntity == e)
+      return true;
+    return m_hiddenEntities.find(e) != m_hiddenEntities.end();
   }
 
   uint32_t render(uint32_t windowWidth, uint32_t windowHeight,
@@ -70,6 +86,9 @@ public:
   void setShadowDebugMode(ShadowDebugMode mode) { m_shadowDebugMode = mode; }
   float shadowDebugAlpha() const { return m_shadowDebugAlpha; }
   void setShadowDebugAlpha(float alpha) { m_shadowDebugAlpha = alpha; }
+
+  TransparencyMode transparencyMode() const { return m_transparencyMode; }
+  void setTransparencyMode(TransparencyMode mode) { m_transparencyMode = mode; }
 
   void setRenderCameraOverride(EntityID cam) { m_renderCameraOverride = cam; }
   void setShadowDirViewProj(const glm::mat4 &m) { m_shadowDirViewProj = m; }
@@ -91,6 +110,10 @@ public:
   void setDockspaceID(ImGuiID id) { m_dockspaceID = id; }
   ImGuiID dockspaceID() const { return m_dockspaceID; }
 
+  void resetUiFrameFlags() { m_uiBlockGlobalShortcuts = false; }
+  void requestUiBlockGlobalShortcuts() { m_uiBlockGlobalShortcuts = true; }
+  bool uiBlockGlobalShortcuts() const { return m_uiBlockGlobalShortcuts; }
+
   LightSystem &lights() { return m_lights; }
   const LightSystem &lights() const { return m_lights; }
 
@@ -99,6 +122,8 @@ public:
 
   void setPreviewMaterial(MaterialHandle h) { m_previewMaterial = h; }
   MaterialHandle previewMaterial() const { return m_previewMaterial; }
+  void requestMaterialPreview(MaterialHandle h, uint32_t targetTex);
+  uint32_t lastPreviewCaptureTex() const { return m_lastPreviewCaptureTex; }
   glm::vec3 &previewLightDir() { return m_previewLightDir; }
   const glm::vec3 &previewLightDir() const { return m_previewLightDir; }
   glm::vec3 &previewLightColor() { return m_previewLightColor; }
@@ -152,6 +177,25 @@ public:
   void syncFilterGraphFromPostGraph();
   void markPostGraphDirty() { m_postGraphDirty = true; }
 
+  // Per-draw SSBO exposure for passes.
+  const PerDrawSSBO &perDraw() const { return m_perDraw; }
+  PerDrawSSBO &perDraw() { return m_perDraw; }
+  uint32_t perDrawOpaqueOffset() const { return m_perDrawOpaqueOffset; }
+  uint32_t perDrawTransparentOffset() const {
+    return m_perDrawTransparentOffset;
+  }
+  uint32_t perDrawOpaqueCount() const { return m_perDrawOpaqueCount; }
+  uint32_t perDrawTransparentCount() const { return m_perDrawTransparentCount; }
+
+  // Centralized draw point for baseInstance draws.
+  void rendererDrawPrimitive(uint32_t meshHandle, uint32_t baseInstance);
+
+  AnimationSystem &animation() { return m_animation; }
+  const AnimationSystem &animation() const { return m_animation; }
+
+  AnimationClip &activeClip() { return m_animationClip; }
+  const AnimationClip &activeClip() const { return m_animationClip; }
+
 private:
   void buildRenderables();
   void handleWorldEvent(const WorldEvent &e);
@@ -181,6 +225,7 @@ private:
   RenderableRegistry m_renderables{};
   std::vector<EntityID> m_selected{};
   std::vector<uint32_t> m_selectedPickIDs{};
+  uint32_t m_selectedActivePick = 0;
   PostGraph m_postGraph{};
   FilterRegistry m_filterRegistry{};
   FilterGraph m_filterGraph{};
@@ -196,6 +241,7 @@ private:
   uint32_t m_lastFbHeight = 0;
   EntityID m_renderCameraOverride = InvalidEntity;
   EntityID m_hiddenEntity = InvalidEntity;
+  std::unordered_set<EntityID, EntityHash> m_hiddenEntities;
   glm::mat4 m_shadowDirViewProj{1.0f};
   CSMResult m_cachedCSM{};
   glm::mat4 m_cachedView{1.0f};
@@ -206,13 +252,35 @@ private:
   ViewMode m_viewMode = ViewMode::Lit;
   ShadowDebugMode m_shadowDebugMode = ShadowDebugMode::None;
   float m_shadowDebugAlpha = 0.85f;
+  TransparencyMode m_transparencyMode = TransparencyMode::OIT;
   ImGuiID m_dockspaceID = 0;
   MaterialHandle m_previewMaterial = InvalidMaterial;
+  struct PreviewCapture {
+    MaterialHandle mat = InvalidMaterial;
+    uint32_t targetTex = 0;
+  };
+  std::vector<PreviewCapture> m_previewCaptureQueue;
+  PreviewCapture m_activePreviewCapture{};
+  uint32_t m_lastPreviewCaptureTex = 0;
   glm::vec3 m_previewLightDir{0.6f, 0.7f, 0.3f};
   glm::vec3 m_previewLightColor{1.0f, 1.0f, 1.0f};
-  float m_previewLightIntensity = 1.5f;
-  float m_previewLightExposure = 0.0f;
-  float m_previewAmbient = 0.03f;
+  float m_previewLightIntensity = 2.2f;
+  float m_previewLightExposure = 0.2f;
+  float m_previewAmbient = 0.08f;
+  bool m_uiBlockGlobalShortcuts = false;
+
+  PerDrawSSBO m_perDraw{};
+  uint32_t m_perDrawOpaqueOffset = 0;
+  uint32_t m_perDrawTransparentOffset = 0;
+  uint32_t m_perDrawOpaqueCount = 0;
+  uint32_t m_perDrawTransparentCount = 0;
+
+  AnimationSystem m_animation{};
+  AnimationClip m_animationClip{
+      .name = "Scene",
+      .lastFrame = 160,
+      .loop = true,
+  };
 };
 
 } // namespace Nyx

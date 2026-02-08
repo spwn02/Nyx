@@ -15,6 +15,8 @@ struct GizmoState {
   float snapTranslate = 0.5f;
   float snapRotateDeg = 15.0f;
   float snapScale = 0.1f;
+
+  bool propagateChildren = true;
 };
 
 } // namespace Nyx

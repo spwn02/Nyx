@@ -15,6 +15,7 @@ enum class Key : uint16_t {
   Q,
   E,
   X,
+  Z,
   R,
   Space,
   Delete,
@@ -24,6 +25,8 @@ enum class Key : uint16_t {
   RightCtrl,
   LeftAlt,
   RightAlt,
+  ArrowLeft,
+  ArrowRight,
   MouseLeft,
   MouseRight,
   MouseMiddle, // treat as "keys" for now

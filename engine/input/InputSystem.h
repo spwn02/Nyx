@@ -27,6 +27,7 @@ public:
   void onKey(int key, int action);
   void onMouseButton(int button, int action);
   void onCursorPos(double x, double y);
+  void onScroll(double xoffset, double yoffset);
 
 private:
   void installCallbacks();

@@ -15,6 +15,8 @@ enum class MaterialTexSlot : uint8_t {
   Count
 };
 
+enum class MatAlphaMode : uint32_t { Opaque = 0, Mask = 1, Blend = 2 };
+
 // Bitflags for GPU material features
 enum MaterialFlags : uint32_t {
   Mat_None = 0,
@@ -25,6 +27,7 @@ enum MaterialFlags : uint32_t {
   Mat_HasRoughness = 1u << 4,
   Mat_HasAO = 1u << 5,
   Mat_HasTangents = 1u << 6, // mesh provides tangents
+  Mat_TangentSpaceNormal = 1u << 7, // material expects tangent-space normals
 };
 
 inline MaterialFlags operator|(MaterialFlags a, MaterialFlags b) {

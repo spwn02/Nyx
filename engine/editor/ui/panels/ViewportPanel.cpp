@@ -7,6 +7,7 @@
 #include "editor/ui/CameraGizmosOverlay.h"
 #include "editor/ui/LightGizmosOverlay.h"
 
+#include "glm/fwd.hpp"
 #include "glm/gtc/type_ptr.hpp"
 #include "imgui.h"
 
@@ -38,16 +39,37 @@ static ImGuizmo::MODE toImGuizmoMode(GizmoMode m) {
 void ViewportPanel::draw(EngineContext &engine, EditorLayer &editor) {
   ImGui::Begin("Viewport");
 
+  // Fallback hover/focus so input still works even if the image isn't drawn yet.
+  m_viewport.hovered =
+      ImGui::IsWindowHovered(ImGuiHoveredFlags_RootAndChildWindows |
+                             ImGuiHoveredFlags_AllowWhenBlockedByActiveItem |
+                             ImGuiHoveredFlags_AllowWhenBlockedByPopup);
+  m_viewport.focused =
+      ImGui::IsWindowFocused(ImGuiFocusedFlags_RootAndChildWindows);
+
   CameraSystem cameras;
   EntityID viewCam = InvalidEntity;
+  auto cameraUsable = [&](EntityID cam) -> bool {
+    if (!editor.world())
+      return false;
+    if (cam == InvalidEntity || !editor.world()->isAlive(cam) ||
+        !editor.world()->hasCamera(cam))
+      return false;
+    const auto &tr = editor.world()->transform(cam);
+    return !tr.hidden && !tr.disabledAnim;
+  };
 
   if (editor.world()) {
+    const bool activeCamUsable = cameraUsable(editor.world()->activeCamera());
+
     const bool prevLock = m_lockCam.enabled;
     const bool prevView = m_viewThroughCamera;
     const EditorCameraState preCam{editor.cameraController().position,
                                    editor.cameraController().yawDeg,
                                    editor.cameraController().pitchDeg};
+    ImGui::BeginDisabled(!activeCamUsable);
     ImGui::Checkbox("Lock Camera to View", &m_lockCam.enabled);
+    ImGui::EndDisabled();
     if (!prevLock && m_lockCam.enabled) {
       EditorCameraState st{};
       st.position = editor.cameraController().position;
@@ -60,7 +82,18 @@ void ViewportPanel::draw(EngineContext &engine, EditorLayer &editor) {
     }
     ImGui::Separator();
 
+    if (!activeCamUsable)
+      m_viewThroughCamera = false;
+    ImGui::BeginDisabled(!activeCamUsable);
     ImGui::Checkbox("View Through Camera", &m_viewThroughCamera);
+    ImGui::EndDisabled();
+    ImGui::Separator();
+
+    float thickness = engine.renderer().outlineThicknessPx();
+    if (ImGui::SliderFloat("Outline Thickness", &thickness, 0.5f, 6.0f,
+                           "%.2f px")) {
+      engine.renderer().setOutlineThicknessPx(thickness);
+    }
     ImGui::Separator();
 
     if (!prevView && m_viewThroughCamera) {
@@ -106,7 +139,12 @@ void ViewportPanel::draw(EngineContext &engine, EditorLayer &editor) {
     m_viewport.imageMax = {ImGui::GetItemRectMax().x,
                            ImGui::GetItemRectMax().y};
 
-    m_viewport.hovered = ImGui::IsItemHovered();
+    // Prefer explicit mouse-in-image rect to avoid ImGui hover edge cases.
+    const ImVec2 mp = io.MousePos;
+    const bool inside =
+        (mp.x >= m_viewport.imageMin.x && mp.x <= m_viewport.imageMax.x &&
+         mp.y >= m_viewport.imageMin.y && mp.y <= m_viewport.imageMax.y);
+    m_viewport.hovered = inside;
     m_viewport.focused =
         ImGui::IsWindowFocused(ImGuiFocusedFlags_RootAndChildWindows);
   }
@@ -125,8 +163,14 @@ void ViewportPanel::draw(EngineContext &engine, EditorLayer &editor) {
 
     viewCam = m_viewThroughCamera ? editor.world()->activeCamera()
                                   : editor.cameraEntity();
-    if (viewCam == InvalidEntity || !editor.world()->hasCamera(viewCam))
-      viewCam = editor.world()->activeCamera();
+    if (!cameraUsable(viewCam)) {
+      if (cameraUsable(editor.cameraEntity()))
+        viewCam = editor.cameraEntity();
+      else if (cameraUsable(editor.world()->activeCamera()))
+        viewCam = editor.world()->activeCamera();
+      else
+        viewCam = InvalidEntity;
+    }
 
     if (m_viewport.hasImageRect()) {
       if (viewCam != InvalidEntity && editor.world()->hasCamera(viewCam)) {
@@ -172,6 +216,7 @@ void ViewportPanel::draw(EngineContext &engine, EditorLayer &editor) {
   const uint32_t activePick =
       sel.activePick ? sel.activePick
                      : (sel.picks.empty() ? 0u : sel.picks.front());
+  const bool prevGizmoUsing = m_gizmoUsing;
   m_gizmoUsing = false;
   m_gizmoOver = false;
 
@@ -237,12 +282,19 @@ void ViewportPanel::draw(EngineContext &engine, EditorLayer &editor) {
 
       // Allow gizmo input only when the mouse is over the viewport image.
       ImGuizmo::Enable(true);
+      // ImGuizmo::DrawGrid(glm::value_ptr(mats.view),
+      // glm::value_ptr(mats.proj), glm::value_ptr(glm::mat4(1.0f)), 100.f);
       ImGuizmo::Manipulate(glm::value_ptr(mats.view), glm::value_ptr(mats.proj),
                            op, mode, glm::value_ptr(worldM), nullptr,
                            doSnap ? snap : nullptr);
 
+      const bool wasUsing = prevGizmoUsing;
       m_gizmoUsing = ImGuizmo::IsUsing();
       m_gizmoOver = ImGuizmo::IsOver();
+
+      if (!wasUsing && m_gizmoUsing) {
+        editor.beginGizmoHistoryBatch();
+      }
 
       if (m_gizmoUsing) {
         // Convert worldM back into LOCAL transform (preserve parenting)
@@ -273,6 +325,53 @@ void ViewportPanel::draw(EngineContext &engine, EditorLayer &editor) {
         tr.dirty = true;
         world.worldTransform(e).dirty = true;
         world.events().push({WorldEventType::TransformChanged, e});
+
+        const bool propagate =
+            (m_gizmo.mode == GizmoMode::World) && m_gizmo.propagateChildren;
+        if (!propagate) {
+          const glm::mat4 delta = worldM * glm::inverse(prevWorldM);
+          const glm::mat4 invDelta = glm::inverse(delta);
+          std::unordered_set<EntityID, EntityHash> selected;
+          selected.reserve(sel.picks.size());
+          for (uint32_t pick : sel.picks) {
+            EntityID pe = sel.entityForPick(pick);
+            if (pe == InvalidEntity)
+              pe = engine.resolveEntityIndex(pickEntity(pick));
+            if (pe != InvalidEntity)
+              selected.insert(pe);
+          }
+
+          EntityID ch = world.hierarchy(e).firstChild;
+          while (ch != InvalidEntity) {
+            EntityID next = world.hierarchy(ch).nextSibling;
+            if (selected.find(ch) == selected.end()) {
+              auto &ctr = world.transform(ch);
+              glm::mat4 local(1.0f);
+              local = glm::translate(local, ctr.translation);
+              local *= glm::toMat4(ctr.rotation);
+              local = glm::scale(local, ctr.scale);
+
+              const glm::mat4 newLocal = invDelta * local;
+              glm::vec3 ct, cs, cskew;
+              glm::vec4 cpersp;
+              glm::quat cr;
+              glm::decompose(newLocal, cs, cr, ct, cskew, cpersp);
+              if (cs.x <= 0.01f)
+                cs.x = 0.01f;
+              if (cs.y <= 0.01f)
+                cs.y = 0.01f;
+              if (cs.z <= 0.01f)
+                cs.z = 0.01f;
+              ctr.translation = ct;
+              ctr.rotation = cr;
+              ctr.scale = cs;
+              ctr.dirty = true;
+              world.worldTransform(ch).dirty = true;
+              world.events().push({WorldEventType::TransformChanged, ch});
+            }
+            ch = next;
+          }
+        }
 
         if (sel.picks.size() > 1) {
           const glm::mat4 delta = worldM * glm::inverse(prevWorldM);
@@ -325,6 +424,19 @@ void ViewportPanel::draw(EngineContext &engine, EditorLayer &editor) {
             world.events().push({WorldEventType::TransformChanged, pe});
           }
         }
+      }
+
+      if (wasUsing && !m_gizmoUsing) {
+        editor.endGizmoHistoryBatch();
+        uint32_t mask = 0;
+        if (m_gizmo.op == GizmoOp::Translate)
+          mask |= SequencerPanel::EditTranslate;
+        else if (m_gizmo.op == GizmoOp::Rotate)
+          mask |= SequencerPanel::EditRotate;
+        else if (m_gizmo.op == GizmoOp::Scale)
+          mask |= SequencerPanel::EditScale;
+        if (mask != 0)
+          editor.sequencerPanel().onTransformEditEnd(e, mask);
       }
     }
   }

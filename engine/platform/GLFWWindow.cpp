@@ -108,6 +108,10 @@ bool GLFWWindow::shouldClose() const {
   return glfwWindowShouldClose(m_window) == GLFW_TRUE;
 }
 
+void GLFWWindow::requestClose() const {
+  glfwSetWindowShouldClose(m_window, GLFW_TRUE);
+}
+
 bool GLFWWindow::isFocused() const {
   return glfwGetWindowAttrib(m_window, GLFW_FOCUSED) == GLFW_TRUE;
 }
@@ -146,6 +150,14 @@ void GLFWWindow::installInputCallbacks() {
       return;
     self->m_input->onCursorPos(x, y);
   });
+
+  glfwSetScrollCallback(
+      m_window, [](GLFWwindow *w, double xoffset, double yoffset) {
+        auto *self = static_cast<GLFWWindow *>(glfwGetWindowUserPointer(w));
+        if (!self)
+          return;
+        self->m_input->onScroll(xoffset, yoffset);
+      });
 }
 
 void GLFWWindow::disableCursor(bool disabled) const {
@@ -155,5 +167,7 @@ void GLFWWindow::disableCursor(bool disabled) const {
     glfwSetInputMode(m_window, GLFW_CURSOR, GLFW_CURSOR_NORMAL);
   }
 }
+
+double GLFWWindow::getTimeSeconds() const { return glfwGetTime(); }
 
 } // namespace Nyx

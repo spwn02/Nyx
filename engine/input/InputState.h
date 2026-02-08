@@ -17,18 +17,19 @@ struct InputState {
   double mouseY = 0.0;
   double mouseDeltaX = 0.0;
   double mouseDeltaY = 0.0;
+  double scrollX = 0.0;
+  double scrollY = 0.0;
 
   void clearEdges() {
     pressed.fill(0);
     released.fill(0);
     mouseDeltaX = 0.0;
     mouseDeltaY = 0.0;
+    scrollX = 0.0;
+    scrollY = 0.0;
   }
 
-  static constexpr uint32_t idx(Key k) {
-    return static_cast<uint32_t>(k);
-  }
+  static constexpr uint32_t idx(Key k) { return static_cast<uint32_t>(k); }
 };
 
 } // namespace Nyx
-

@@ -46,7 +46,10 @@ void PassShadowPoint::setup(RenderGraph &graph, const RenderPassContext &ctx,
         for (EntityID e : engine.world().alive()) {
           if (!engine.world().isAlive(e) || !engine.world().hasLight(e))
             continue;
-          
+          const auto &tr = engine.world().transform(e);
+          if (tr.hidden || tr.hiddenEditor || tr.disabledAnim)
+            continue;
+
           const auto &L = engine.world().light(e);
           if (L.type != LightType::Point || !L.enabled || !L.castShadow)
             continue;
@@ -122,6 +125,9 @@ void PassShadowPoint::setup(RenderGraph &graph, const RenderPassContext &ctx,
             // Render scene geometry
             for (EntityID e : engine.world().alive()) {
               if (!engine.world().isAlive(e) || !engine.world().hasMesh(e))
+                continue;
+              const auto &tr = engine.world().transform(e);
+              if (tr.hidden || tr.hiddenEditor || tr.disabledAnim)
                 continue;
 
               const auto &mesh = engine.world().mesh(e);

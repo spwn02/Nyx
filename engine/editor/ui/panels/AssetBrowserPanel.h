@@ -1,5 +1,6 @@
 #pragma once
 
+#include "editor/tools/IconAtlas.h"
 #include <cstdint>
 #include <string>
 #include <vector>
@@ -92,6 +93,10 @@ private:
   std::atomic<uint64_t> m_jobGen{1};
 
   std::filesystem::path m_cacheDir;
+
+  IconAtlas m_iconAtlas{};
+  bool m_iconInit = false;
+  bool m_iconReady = false;
 
   void startWorker();
   void stopWorker();

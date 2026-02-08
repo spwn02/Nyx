@@ -5,11 +5,12 @@
 
 namespace Nyx {
 
+class EngineContext;
 class MaterialSystem;
 
 class InspectorMaterial final {
 public:
-  void draw(MaterialSystem &materials, MaterialHandle &handle);
+  void draw(EngineContext &engine, MaterialHandle &handle);
 
 private:
   // UI helpers

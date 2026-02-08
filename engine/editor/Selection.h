@@ -1,6 +1,7 @@
 #pragma once
 
 #include "../scene/EntityID.h"
+#include "material/MaterialHandle.h"
 #include <algorithm>
 #include <cstddef>
 #include <cstdint>
@@ -12,6 +13,7 @@ namespace Nyx {
 enum class SelectionKind : uint8_t {
   None = 0,
   Picks, // vector of pickIDs (submesh aware)
+  Material,
 };
 
 struct Selection {
@@ -21,6 +23,8 @@ struct Selection {
   uint32_t activePick = 0;               // last clicked pick (drives inspector)
   EntityID activeEntity = InvalidEntity; // cached convenience
   std::unordered_map<uint32_t, EntityID> pickEntity;
+  MaterialHandle activeMaterial = InvalidMaterial;
+  EntityID focusEntity = InvalidEntity;
 
   // Hierarchy cycling: "last clicked node -> next index"
   std::unordered_map<EntityID, uint32_t, EntityHash> cycleIndexByEntity;
@@ -32,9 +36,17 @@ struct Selection {
     activeEntity = InvalidEntity;
     pickEntity.clear();
     cycleIndexByEntity.clear();
+    activeMaterial = InvalidMaterial;
+    focusEntity = InvalidEntity;
   }
 
-  bool isEmpty() const { return kind == SelectionKind::None || picks.empty(); }
+  bool isEmpty() const {
+    if (kind == SelectionKind::None)
+      return true;
+    if (kind == SelectionKind::Material)
+      return activeMaterial == InvalidMaterial;
+    return picks.empty();
+  }
 
   bool hasPick(uint32_t p) const {
     for (uint32_t v : picks)
@@ -56,6 +68,7 @@ struct Selection {
     activeEntity = e;
     pickEntity.clear();
     pickEntity.emplace(p, e);
+    activeMaterial = InvalidMaterial;
   }
 
   void addPick(uint32_t p, EntityID e) {
@@ -69,6 +82,7 @@ struct Selection {
     activePick = p;
     activeEntity = e;
     pickEntity.emplace(p, e);
+    activeMaterial = InvalidMaterial;
   }
 
   void togglePick(uint32_t p, EntityID e) {
@@ -93,6 +107,16 @@ struct Selection {
     activePick = p;
     activeEntity = e;
     pickEntity.emplace(p, e);
+    activeMaterial = InvalidMaterial;
+  }
+
+  void setMaterial(MaterialHandle h) {
+    kind = SelectionKind::Material;
+    picks.clear();
+    activePick = 0;
+    activeEntity = InvalidEntity;
+    pickEntity.clear();
+    activeMaterial = h;
   }
 
   void removePicksForEntity(EntityID e) {

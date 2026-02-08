@@ -4,6 +4,7 @@
 #include "platform/FileDialogs.h"
 #include "scene/World.h"
 #include "scene/WorldEvents.h"
+#include "editor/ui/UiPayloads.h"
 #include <imgui.h>
 
 namespace {
@@ -13,7 +14,8 @@ static ImTextureID toImTex(uint32_t glTex) {
 static bool acceptHdrDrop(std::string &outAbsPath) {
   if (!ImGui::BeginDragDropTarget())
     return false;
-  const ImGuiPayload *p = ImGui::AcceptDragDropPayload("NYX_ASSET_PATH_TEX");
+  const ImGuiPayload *p =
+      ImGui::AcceptDragDropPayload(Nyx::UiPayload::TexturePath);
   if (p && p->Data && p->DataSize > 0) {
     const char *str = (const char *)p->Data;
     outAbsPath = std::string(str);

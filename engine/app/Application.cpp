@@ -3,18 +3,19 @@
 #include "AppContext.h"
 #include "EngineContext.h"
 
-#include "../core/Assert.h"
-#include "../core/Log.h"
+#include "core/Assert.h"
+#include "core/Log.h"
 
-#include "../editor/EditorLayer.h"
-#include "../editor/Selection.h"
+#include "editor/EditorLayer.h"
+#include "editor/Selection.h"
 #include "editor/tools/DockspaceLayout.h"
 #include "editor/tools/EditorStateIO.h"
 #include "editor/tools/ProjectSerializer.h"
 #include "editor/tools/ViewportPick.h"
 
-#include "../input/KeyCodes.h"
-#include "../platform/GLFWWindow.h"
+#include "input/KeyCodes.h"
+#include "input/Keybinds.h"
+#include "platform/GLFWWindow.h"
 
 #include "input/InputSystem.h"
 #include "scene/EntityID.h"
@@ -22,7 +23,6 @@
 #include "scene/World.h"
 #include "scene/WorldSerializer.h"
 
-#include <GLFW/glfw3.h>
 #include <filesystem>
 #include <glm/gtx/quaternion.hpp>
 #include <imgui.h>
@@ -34,13 +34,12 @@
 
 namespace Nyx {
 
-static float getTimeSeconds() { return static_cast<float>(glfwGetTime()); }
-
 Application::Application(std::unique_ptr<AppContext> app,
                          std::unique_ptr<EngineContext> engine)
     : m_app(std::move(app)), m_engine(std::move(engine)) {
   NYX_ASSERT(m_app != nullptr, "Application requires AppContext");
   NYX_ASSERT(m_engine != nullptr, "Application requires EngineContext");
+  setupKeybinds();
 }
 
 Application::~Application() = default;
@@ -52,6 +51,184 @@ static bool isCtrlDown(const InputSystem &in) {
   return in.isDown(Key::LeftCtrl) || in.isDown(Key::RightCtrl);
 }
 
+static void deleteSelection(World &world, Selection &sel);
+static void duplicateSelection(EngineContext &engine, Selection &sel);
+
+void Application::setupKeybinds() {
+  m_keybinds.clear();
+
+  auto canUseEditorShortcuts = [this]() -> bool {
+    if (!m_app->isEditorVisible() || !m_app->editorLayer())
+      return false;
+    ImGuiIO &io = ImGui::GetIO();
+    if (io.WantTextInput)
+      return false;
+    if (m_engine->uiBlockGlobalShortcuts())
+      return false;
+    return true;
+  };
+
+  Keybind save{};
+  save.id = "save_scene";
+  save.chord.keys = {Key::S};
+  save.chord.mods = KeyMod::Ctrl;
+  save.chord.allowExtraKeys = false;
+  save.priority = 10;
+  save.enabled = canUseEditorShortcuts;
+  save.action = [this]() {
+    if (auto *ed = m_app->editorLayer())
+      ed->requestSaveScene(*m_engine);
+  };
+  m_keybinds.add(std::move(save));
+
+  Keybind saveAs{};
+  saveAs.id = "save_scene_as";
+  saveAs.chord.keys = {Key::S};
+  saveAs.chord.mods = KeyMod::Ctrl | KeyMod::Shift;
+  saveAs.chord.allowExtraKeys = false;
+  saveAs.priority = 20;
+  saveAs.enabled = canUseEditorShortcuts;
+  saveAs.action = [this]() {
+    if (auto *ed = m_app->editorLayer())
+      ed->requestSaveSceneAs();
+  };
+  m_keybinds.add(std::move(saveAs));
+
+  Keybind quit{};
+  quit.id = "quit";
+  quit.chord.keys = {Key::Q};
+  quit.chord.mods = KeyMod::Ctrl;
+  quit.chord.allowExtraKeys = false;
+  quit.priority = 5;
+  quit.enabled = canUseEditorShortcuts;
+  quit.action = [this]() { m_app->window().requestClose(); };
+  m_keybinds.add(std::move(quit));
+
+  Keybind undo{};
+  undo.id = "undo";
+  undo.chord.keys = {Key::Z};
+  undo.chord.mods = KeyMod::Ctrl;
+  undo.chord.allowExtraKeys = false;
+  undo.priority = 15;
+  undo.enabled = canUseEditorShortcuts;
+  undo.action = [this]() {
+    if (auto *ed = m_app->editorLayer())
+      ed->undo(*m_engine);
+  };
+  m_keybinds.add(std::move(undo));
+
+  Keybind redo{};
+  redo.id = "redo";
+  redo.chord.keys = {Key::Z};
+  redo.chord.mods = KeyMod::Ctrl | KeyMod::Shift;
+  redo.chord.allowExtraKeys = false;
+  redo.priority = 25;
+  redo.enabled = canUseEditorShortcuts;
+  redo.action = [this]() {
+    if (auto *ed = m_app->editorLayer())
+      ed->redo(*m_engine);
+  };
+  m_keybinds.add(std::move(redo));
+
+  Keybind duplicate{};
+  duplicate.id = "duplicate_selection";
+  duplicate.chord.keys = {Key::D};
+  duplicate.chord.mods = KeyMod::Shift;
+  duplicate.chord.allowExtraKeys = true;
+  duplicate.priority = 5;
+  duplicate.enabled = canUseEditorShortcuts;
+  duplicate.action = [this]() {
+    if (auto *ed = m_app->editorLayer())
+      duplicateSelection(*m_engine, ed->selection());
+  };
+  m_keybinds.add(std::move(duplicate));
+
+  Keybind deleteKey{};
+  deleteKey.id = "delete_selection";
+  deleteKey.chord.keys = {Key::Delete};
+  deleteKey.chord.allowExtraKeys = true;
+  deleteKey.priority = 5;
+  deleteKey.enabled = canUseEditorShortcuts;
+  deleteKey.action = [this]() {
+    if (auto *ed = m_app->editorLayer())
+      deleteSelection(m_engine->world(), ed->selection());
+  };
+  m_keybinds.add(std::move(deleteKey));
+
+  Keybind deleteX{};
+  deleteX.id = "delete_selection_x";
+  deleteX.chord.keys = {Key::X};
+  deleteX.chord.allowExtraKeys = true;
+  deleteX.priority = 5;
+  deleteX.enabled = canUseEditorShortcuts;
+  deleteX.action = [this]() {
+    if (auto *ed = m_app->editorLayer())
+      deleteSelection(m_engine->world(), ed->selection());
+  };
+  m_keybinds.add(std::move(deleteX));
+
+  auto canUseGizmoShortcuts = [this, canUseEditorShortcuts]() -> bool {
+    if (!canUseEditorShortcuts())
+      return false;
+    if (auto *ed = m_app->editorLayer()) {
+      if (ed->cameraController().mouseCaptured)
+        return false;
+    }
+    return true;
+  };
+
+  Keybind gizmoTranslate{};
+  gizmoTranslate.id = "gizmo_translate";
+  gizmoTranslate.chord.keys = {Key::W};
+  gizmoTranslate.chord.allowExtraKeys = true;
+  gizmoTranslate.priority = 3;
+  gizmoTranslate.enabled = canUseGizmoShortcuts;
+  gizmoTranslate.action = [this]() {
+    if (auto *ed = m_app->editorLayer())
+      ed->gizmo().op = GizmoOp::Translate;
+  };
+  m_keybinds.add(std::move(gizmoTranslate));
+
+  Keybind gizmoRotate{};
+  gizmoRotate.id = "gizmo_rotate";
+  gizmoRotate.chord.keys = {Key::E};
+  gizmoRotate.chord.allowExtraKeys = true;
+  gizmoRotate.priority = 3;
+  gizmoRotate.enabled = canUseGizmoShortcuts;
+  gizmoRotate.action = [this]() {
+    if (auto *ed = m_app->editorLayer())
+      ed->gizmo().op = GizmoOp::Rotate;
+  };
+  m_keybinds.add(std::move(gizmoRotate));
+
+  Keybind gizmoScale{};
+  gizmoScale.id = "gizmo_scale";
+  gizmoScale.chord.keys = {Key::R};
+  gizmoScale.chord.allowExtraKeys = true;
+  gizmoScale.priority = 3;
+  gizmoScale.enabled = canUseGizmoShortcuts;
+  gizmoScale.action = [this]() {
+    if (auto *ed = m_app->editorLayer())
+      ed->gizmo().op = GizmoOp::Scale;
+  };
+  m_keybinds.add(std::move(gizmoScale));
+
+  Keybind gizmoToggleMode{};
+  gizmoToggleMode.id = "gizmo_toggle_mode";
+  gizmoToggleMode.chord.keys = {Key::Q};
+  gizmoToggleMode.chord.allowExtraKeys = true;
+  gizmoToggleMode.priority = 3;
+  gizmoToggleMode.enabled = canUseGizmoShortcuts;
+  gizmoToggleMode.action = [this]() {
+    if (auto *ed = m_app->editorLayer()) {
+      auto &gizmo = ed->gizmo();
+      gizmo.mode =
+          (gizmo.mode == GizmoMode::Local) ? GizmoMode::World : GizmoMode::Local;
+    }
+  };
+  m_keybinds.add(std::move(gizmoToggleMode));
+}
+
 static EntityID resolvePickEntity(EngineContext &engine, const Selection &sel,
                                   uint32_t pid) {
   EntityID e = sel.entityForPick(pid);
@@ -59,6 +236,16 @@ static EntityID resolvePickEntity(EngineContext &engine, const Selection &sel,
     return e;
   const uint32_t slotIndex = pickEntity(pid);
   return engine.resolveEntityIndex(slotIndex);
+}
+
+static uint32_t cycleNextSubmeshPick(World &w, Selection &sel, EntityID e) {
+  const uint32_t n = w.hasMesh(e) ? w.submeshCount(e) : 1u;
+  uint32_t &idx = sel.cycleIndexByEntity[e];
+  if (n == 0)
+    idx = 0;
+  else
+    idx = (idx + 1u) % n;
+  return packPick(e, idx);
 }
 
 static void applyViewportPickToSelection(EngineContext &engine, uint32_t pid,
@@ -74,9 +261,20 @@ static void applyViewportPickToSelection(EngineContext &engine, uint32_t pid,
   if (ctrl) {
     sel.togglePick(pid, e);
   } else if (shift) {
-    sel.addPick(pid, e);
+    const uint32_t ps = pickSubmesh(pid);
+    if (sel.kind == SelectionKind::Picks && sel.activeEntity == e) {
+      if (sel.activePick != 0u)
+        sel.cycleIndexByEntity[e] = pickSubmesh(sel.activePick);
+      const uint32_t next = cycleNextSubmeshPick(engine.world(), sel, e);
+      sel.setSinglePick(next, e);
+    } else {
+      sel.setSinglePick(pid, e);
+      sel.activeEntity = e;
+      sel.cycleIndexByEntity[e] = ps;
+    }
   } else {
     sel.setSinglePick(pid, e);
+    sel.cycleIndexByEntity[e] = pickSubmesh(pid);
   }
 
   sel.activeEntity = e;
@@ -134,30 +332,6 @@ static bool ancestorIsInSet(World &world, EntityID e,
   return false;
 }
 
-static void duplicateMaterialsForSubtree(World &world,
-                                         MaterialSystem &materials,
-                                         EntityID root) {
-  if (!world.isAlive(root))
-    return;
-
-  if (world.hasMesh(root)) {
-    auto &mc = world.ensureMesh(root);
-    for (auto &sm : mc.submeshes) {
-      if (sm.material != InvalidMaterial && materials.isAlive(sm.material)) {
-        MaterialData copy = materials.cpu(sm.material);
-        sm.material = materials.create(copy);
-      }
-    }
-  }
-
-  EntityID c = world.hierarchy(root).firstChild;
-  while (c != InvalidEntity) {
-    EntityID next = world.hierarchy(c).nextSibling;
-    duplicateMaterialsForSubtree(world, materials, c);
-    c = next;
-  }
-}
-
 static void duplicateSelection(EngineContext &engine, Selection &sel) {
   World &world = engine.world();
   if (sel.kind != SelectionKind::Picks || sel.picks.empty())
@@ -189,11 +363,9 @@ static void duplicateSelection(EngineContext &engine, Selection &sel) {
   std::vector<uint32_t> newPicks;
   std::vector<EntityID> newEntities;
   for (EntityID e : top) {
-    EntityID dup = world.cloneSubtree(e, InvalidEntity);
+    EntityID dup = world.duplicateSubtree(e, InvalidEntity, &engine.materials());
     if (dup == InvalidEntity)
       continue;
-
-    duplicateMaterialsForSubtree(world, engine.materials(), dup);
 
     // pick submesh0 of cloned entity if it exists, else packPick(dup,0)
     const uint32_t pid = packPick(dup, 0);
@@ -261,8 +433,135 @@ static void applyEditorState(EditorState &st, EditorLayer &ed,
   ed.gizmo().mode = st.gizmoMode;
   ed.setAutoSave(st.autoSave);
   ed.setScenePath(st.lastScenePath);
+  ed.setProjectFps(st.projectFps);
+  engine.animation().setFps(st.projectFps);
 
   engine.setViewMode(st.viewport.viewMode);
+  engine.renderer().setOutlineThicknessPx(st.viewport.outlineThicknessPx);
+}
+
+static void captureAnimationClipState(EditorState &st, EngineContext &engine) {
+  const auto &world = engine.world();
+  const auto &clip = engine.activeClip();
+  auto &dst = st.animationClip;
+  dst.valid = true;
+  dst.name = clip.name;
+  dst.lastFrame = std::max<AnimFrame>(0, clip.lastFrame);
+  dst.loop = clip.loop;
+  dst.tracks.clear();
+  dst.ranges.clear();
+  dst.tracks.reserve(clip.tracks.size());
+  dst.ranges.reserve(clip.entityRanges.size());
+  dst.nextBlockId = std::max<uint32_t>(1u, clip.nextBlockId);
+
+  for (const auto &t : clip.tracks) {
+    if (!world.isAlive(t.entity))
+      continue;
+    const EntityUUID u = world.uuid(t.entity);
+    if (!u)
+      continue;
+    PersistedAnimTrack pt{};
+    pt.entity = u;
+    pt.blockId = t.blockId;
+    pt.channel = t.channel;
+    pt.curve = t.curve;
+    dst.tracks.push_back(std::move(pt));
+  }
+
+  for (const auto &r : clip.entityRanges) {
+    if (!world.isAlive(r.entity))
+      continue;
+    const EntityUUID u = world.uuid(r.entity);
+    if (!u)
+      continue;
+    PersistedAnimRange pr{};
+    pr.entity = u;
+    pr.blockId = r.blockId;
+    pr.start = r.start;
+    pr.end = r.end;
+    if (pr.end < pr.start)
+      std::swap(pr.start, pr.end);
+    dst.ranges.push_back(std::move(pr));
+  }
+}
+
+static void restoreAnimationClipState(const EditorState &st,
+                                      EngineContext &engine) {
+  auto &clip = engine.activeClip();
+  if (st.animationClip.valid) {
+    clip.name = st.animationClip.name;
+    clip.lastFrame = std::max<AnimFrame>(0, st.animationClip.lastFrame);
+    clip.loop = st.animationClip.loop;
+    clip.tracks.clear();
+    clip.entityRanges.clear();
+    clip.nextBlockId = std::max<uint32_t>(1u, st.animationClip.nextBlockId);
+    clip.tracks.reserve(st.animationClip.tracks.size());
+    clip.entityRanges.reserve(st.animationClip.ranges.size());
+
+    auto &world = engine.world();
+    for (const auto &t : st.animationClip.tracks) {
+      if (!t.entity)
+        continue;
+      EntityID e = world.findByUUID(t.entity);
+      if (e == InvalidEntity || !world.isAlive(e))
+        continue;
+      AnimTrack rt{};
+      rt.entity = e;
+      rt.blockId = t.blockId;
+      rt.channel = t.channel;
+      rt.curve = t.curve;
+      clip.tracks.push_back(std::move(rt));
+    }
+
+    for (const auto &r : st.animationClip.ranges) {
+      if (!r.entity)
+        continue;
+      EntityID e = world.findByUUID(r.entity);
+      if (e == InvalidEntity || !world.isAlive(e))
+        continue;
+      AnimEntityRange rr{};
+      rr.entity = e;
+      rr.blockId = r.blockId;
+      rr.start = r.start;
+      rr.end = std::max<AnimFrame>(rr.start, r.end);
+      clip.entityRanges.push_back(rr);
+    }
+    uint32_t maxBlock = 0;
+    for (auto &r : clip.entityRanges)
+      maxBlock = std::max(maxBlock, r.blockId);
+    for (auto &t : clip.tracks)
+      maxBlock = std::max(maxBlock, t.blockId);
+    for (auto &r : clip.entityRanges) {
+      if (r.blockId == 0)
+        r.blockId = ++maxBlock;
+    }
+    for (auto &t : clip.tracks) {
+      if (t.blockId != 0)
+        continue;
+      uint32_t fallback = 0;
+      for (const auto &r : clip.entityRanges) {
+        if (r.entity == t.entity) {
+          fallback = r.blockId;
+          break;
+        }
+      }
+      if (fallback == 0)
+        fallback = ++maxBlock;
+      t.blockId = fallback;
+    }
+    clip.nextBlockId = std::max<uint32_t>(maxBlock + 1, clip.nextBlockId);
+  } else {
+    clip.loop = st.animationLoop;
+    clip.lastFrame = std::max<AnimFrame>(0, st.animationLastFrame);
+  }
+
+  const int32_t clampedFrame =
+      std::clamp<int32_t>(st.animationFrame, 0, clip.lastFrame);
+  engine.animation().setFrame(clampedFrame);
+  if (st.animationPlaying)
+    engine.animation().play();
+  else
+    engine.animation().pause();
 }
 
 static void captureEditorState(EditorState &st, EditorLayer &ed,
@@ -280,14 +579,73 @@ static void captureEditorState(EditorState &st, EditorLayer &ed,
   st.lastScenePath = ed.scenePath();
 
   st.viewport.viewMode = engine.viewMode();
+  st.viewport.outlineThicknessPx = engine.renderer().outlineThicknessPx();
 
   const EntityID active = engine.world().activeCamera();
   st.activeCamera = engine.world().uuid(active);
   st.uuidSeed = engine.world().uuidSeed();
+  st.projectFps = ed.projectFps();
+  st.animationFrame = engine.animation().frame();
+  st.animationPlaying = engine.animation().playing();
+  st.animationLoop = engine.activeClip().loop;
+  st.animationLastFrame = std::max<int32_t>(0, engine.activeClip().lastFrame);
+  captureAnimationClipState(st, engine);
+  ed.sequencerPanel().capturePersistState(st.sequencer);
+}
+
+static uint64_t hashMix64(uint64_t h, uint64_t v) {
+  h ^= v + 0x9e3779b97f4a7c15ULL + (h << 6) + (h >> 2);
+  return h;
+}
+
+static uint64_t animationPersistFingerprint(const EngineContext &engine) {
+  const auto &anim = engine.animation();
+  const auto &clip = engine.activeClip();
+  uint64_t h = 0xcbf29ce484222325ULL;
+  h = hashMix64(h, (uint64_t)anim.frame());
+  h = hashMix64(h, (uint64_t)(anim.playing() ? 1 : 0));
+  h = hashMix64(h, (uint64_t)std::llround(anim.fps() * 1000.0f));
+  h = hashMix64(h, (uint64_t)clip.lastFrame);
+  h = hashMix64(h, (uint64_t)(clip.loop ? 1 : 0));
+  h = hashMix64(h, (uint64_t)clip.name.size());
+  for (char c : clip.name)
+    h = hashMix64(h, (uint64_t)(uint8_t)c);
+  h = hashMix64(h, (uint64_t)clip.tracks.size());
+  for (const auto &t : clip.tracks) {
+    h = hashMix64(h, ((uint64_t)t.entity.index << 32) | t.entity.generation);
+    h = hashMix64(h, (uint64_t)t.blockId);
+    h = hashMix64(h, (uint64_t)(int)t.channel);
+    h = hashMix64(h, (uint64_t)(int)t.curve.interp);
+    h = hashMix64(h, (uint64_t)t.curve.keys.size());
+    for (const auto &k : t.curve.keys) {
+      h = hashMix64(h, (uint64_t)k.frame);
+      const uint32_t *pv = reinterpret_cast<const uint32_t *>(&k.value);
+      const uint32_t *pinDx = reinterpret_cast<const uint32_t *>(&k.in.dx);
+      const uint32_t *pinDy = reinterpret_cast<const uint32_t *>(&k.in.dy);
+      const uint32_t *poutDx = reinterpret_cast<const uint32_t *>(&k.out.dx);
+      const uint32_t *poutDy = reinterpret_cast<const uint32_t *>(&k.out.dy);
+      h = hashMix64(h, (uint64_t)*pv);
+      h = hashMix64(h, (uint64_t)*pinDx);
+      h = hashMix64(h, (uint64_t)*pinDy);
+      h = hashMix64(h, (uint64_t)*poutDx);
+      h = hashMix64(h, (uint64_t)*poutDy);
+      h = hashMix64(h, (uint64_t)(int)k.easeOut);
+    }
+  }
+  h = hashMix64(h, (uint64_t)clip.entityRanges.size());
+  for (const auto &r : clip.entityRanges) {
+    h = hashMix64(h, ((uint64_t)r.entity.index << 32) | r.entity.generation);
+    h = hashMix64(h, (uint64_t)r.blockId);
+    h = hashMix64(h, (uint64_t)r.start);
+    h = hashMix64(h, (uint64_t)r.end);
+  }
+  h = hashMix64(h, (uint64_t)clip.nextBlockId);
+  return h;
 }
 
 int Application::run() {
-  float lastT = getTimeSeconds();
+  float lastT = static_cast<float>(m_app->window().getTimeSeconds());
+  float projectSaveTimer = 0.0f;
 
   const std::string projPath = projectStatePath();
   m_editorState.lastProjectPath = projPath;
@@ -301,21 +659,17 @@ int Application::run() {
   }
 
   bool loadedScene = false;
-  Log::Info("Last scene path: '{}'", m_editorState.lastScenePath);
-  
+
   if (!m_editorState.lastScenePath.empty()) {
-    const std::string resolvedPath = resolveScenePath(m_editorState.lastScenePath, projPath);
-    Log::Info("Resolved scene path: '{}'", resolvedPath);
-    
+    const std::string resolvedPath =
+        resolveScenePath(m_editorState.lastScenePath, projPath);
+
     if (std::filesystem::exists(resolvedPath)) {
-      Log::Info("Scene file exists, attempting to load...");
       m_engine->resetMaterials();
-      loadedScene = WorldSerializer::loadFromFile(m_engine->world(),
-                                                  m_engine->materials(),
-                                                  resolvedPath);
-      
+      loadedScene = WorldSerializer::loadFromFile(
+          m_engine->world(), m_engine->materials(), resolvedPath);
+
       if (loadedScene) {
-        Log::Info("Scene loaded successfully");
         EditorStateIO::onSceneOpened(m_editorState, resolvedPath);
         if (m_app->editorLayer()) {
           m_app->editorLayer()->setScenePath(resolvedPath);
@@ -354,10 +708,21 @@ int Application::run() {
     }
   }
 
+  restoreAnimationClipState(m_editorState, *m_engine);
+  if (m_app->editorLayer()) {
+    auto *ed = m_app->editorLayer();
+    ed->sequencerPanel().setWorld(ed->world());
+    ed->sequencerPanel().setAnimationSystem(&m_engine->animation());
+    ed->sequencerPanel().setAnimationClip(&m_engine->activeClip());
+    ed->sequencerPanel().applyPersistState(m_editorState.sequencer);
+  }
+  uint64_t lastProjectFingerprint = animationPersistFingerprint(*m_engine);
+
   while (!m_app->window().shouldClose()) {
-    const float nowT = getTimeSeconds();
+    const float nowT = static_cast<float>(m_app->window().getTimeSeconds());
     const float dt = std::max(0.0f, nowT - lastT);
     lastT = nowT;
+    projectSaveTimer += dt;
 
     // ------------------------------------------------------------
     // Begin frame
@@ -366,10 +731,11 @@ int Application::run() {
     auto &input = win.input();
     input.beginFrame();
     if (win.isMinimized() || !win.isVisible()) {
-      // Keep pumping events while minimized/hidden to avoid OS "not responding".
+      // Keep pumping events while minimized/hidden to avoid OS "not
+      // responding".
       win.waitEventsTimeout(0.1);
       input.endFrame();
-      lastT = getTimeSeconds();
+      lastT = static_cast<float>(m_app->window().getTimeSeconds());
       continue;
     }
     m_app->beginFrame();
@@ -385,13 +751,13 @@ int Application::run() {
 
       // When hiding editor, release capture so it doesn't "go insane"
       if (wasVisible && !m_app->isEditorVisible()) {
-        m_app->editorLayer()->cameraController().captureMouse(false, win);
+        // m_app->editorLayer()->cameraController().captureMouse(false, win);
       }
 
       // When showing editor again, also ensure capture is released
       // (user should RMB-capture explicitly inside viewport).
       if (!wasVisible && m_app->isEditorVisible()) {
-        m_app->editorLayer()->cameraController().captureMouse(false, win);
+        // m_app->editorLayer()->cameraController().captureMouse(false, win);
 
         if (m_app->editorLayer())
           m_app->editorLayer()->setWorld(&m_engine->world());
@@ -400,7 +766,7 @@ int Application::run() {
 
     if (input.isPressed(Key::Escape)) {
       // ESC always releases mouse capture
-      m_app->editorLayer()->cameraController().captureMouse(false, win);
+      // m_app->editorLayer()->cameraController().captureMouse(false, win);
     }
 
     // ------------------------------------------------------------
@@ -446,12 +812,31 @@ int Application::run() {
         if (!scenePath.empty() && scenePath != m_editorState.lastScenePath) {
           m_editorState.lastScenePath = scenePath;
           m_editorState.pushRecentScene(scenePath);
+          // Scene changed (e.g. Open Scene): apply persisted clip to the
+          // newly loaded world before capturing/saving state again.
+          restoreAnimationClipState(m_editorState, *m_engine);
+          captureEditorState(m_editorState, *ed, *m_engine);
           ProjectSerializer::saveToFile(m_editorState,
                                         m_editorState.lastProjectPath);
+          lastProjectFingerprint = animationPersistFingerprint(*m_engine);
         }
         m_editorState.autoSave = ed->autoSave();
         if (!ed->sceneLoaded()) {
           m_editorState.lastScenePath.clear();
+        }
+
+        // Persist project-level editor/animation state even if the scene path
+        // is unchanged (e.g. keyframe edits in sequencer).
+        if (projectSaveTimer >= 0.75f) {
+          projectSaveTimer = 0.0f;
+          const uint64_t nowFp = animationPersistFingerprint(*m_engine);
+          if (nowFp != lastProjectFingerprint) {
+            captureEditorState(m_editorState, *ed, *m_engine);
+            EditorStateIO::sanitizeBeforeSave(m_editorState);
+            ProjectSerializer::saveToFile(m_editorState,
+                                          m_editorState.lastProjectPath);
+            lastProjectFingerprint = nowFp;
+          }
         }
       }
 
@@ -485,17 +870,19 @@ int Application::run() {
         viewportHovered && (!m_app->isEditorVisible() || !imguiWantsText) &&
         !gizmoWantsMouse;
 
-    if (allowRmbCapture && input.isPressed(Key::MouseRight)) {
-      m_app->editorLayer()->cameraController().captureMouse(true, win);
-    }
-    if (input.isReleased(Key::MouseRight)) {
-      m_app->editorLayer()->cameraController().captureMouse(false, win);
-    }
+    // if (allowRmbCapture && input.isPressed(Key::MouseRight)) {
+    //   m_app->editorLayer()->cameraController().captureMouse(true, win);
+    // }
+    // if (input.isReleased(Key::MouseRight)) {
+    //   m_app->editorLayer()->cameraController().captureMouse(false, win);
+    // }
 
     // ------------------------------------------------------------
     // Camera movement
     // ------------------------------------------------------------
-    m_app->editorLayer()->cameraController().tick(*m_engine, *m_app, dt);
+    if ((viewportHovered) && m_app->editorLayer()) {
+      m_app->editorLayer()->cameraController().tick(*m_engine, *m_app, dt);
+    }
 
     // ------------------------------------------------------------
     // Keybinds (editor only; ignore when typing)
@@ -503,38 +890,26 @@ int Application::run() {
     if (m_app->isEditorVisible() && m_app->editorLayer()) {
       ImGuiIO &io = ImGui::GetIO();
       if (!io.WantTextInput) {
-        auto &sel = m_app->editorLayer()->selection();
-        auto &gizmo = m_app->editorLayer()->gizmo();
-        const bool rmbCaptured =
-            m_app->editorLayer()->cameraController().mouseCaptured;
-
-        // Clear selection
-        if (input.isPressed(Key::Space)) {
-          sel.clear();
-          m_engine->setSelectionPickIDs({});
+        if (!m_engine->uiBlockGlobalShortcuts()) {
+          m_keybinds.process(input);
         }
-
-        // Duplicate: Shift + D
-        if (isShiftDown(input) && input.isPressed(Key::D)) {
-          duplicateSelection(*m_engine, sel);
+        if (auto *ed = m_app->editorLayer()) {
+          const bool seqHot = ed->sequencerPanel().timelineHot();
+          if (seqHot)
+            ed->sequencerPanel().handleStepRepeat(input, dt);
+          if (input.isPressed(Key::Space)) {
+            if (seqHot)
+              ed->sequencerPanel().togglePlay();
+            else
+              m_engine->animation().toggle();
+          }
         }
-
-        // Delete: X or Delete
-        if (input.isPressed(Key::X) || input.isPressed(Key::Delete)) {
-          deleteSelection(m_engine->world(), sel);
-        }
-
-        if (!rmbCaptured) {
-          if (input.isPressed(Key::W))
-            gizmo.op = GizmoOp::Translate;
-          if (input.isPressed(Key::E))
-            gizmo.op = GizmoOp::Rotate;
-          if (input.isPressed(Key::R))
-            gizmo.op = GizmoOp::Scale;
-          if (input.isPressed(Key::Q))
-            gizmo.mode = (gizmo.mode == GizmoMode::Local) ? GizmoMode::World
-                                                          : GizmoMode::Local;
-        }
+      }
+    } else {
+      // Fullscreen/game view fallback: keep Space playback toggle available
+      // even when editor UI/keybind routing is not active.
+      if (input.isPressed(Key::Space)) {
+        m_engine->animation().toggle();
       }
     }
 
@@ -577,12 +952,27 @@ int Application::run() {
     }
 
     if (m_app->isEditorVisible() && m_app->editorLayer()) {
-      m_app->editorLayer()->syncWorldEvents();
+      m_app->editorLayer()->syncWorldEvents(*m_engine);
     }
 
     // ------------------------------------------------------------
     // Engine tick
     // ------------------------------------------------------------
+    if (!m_app->isEditorVisible() && m_app->editorLayer()) {
+      auto *ed = m_app->editorLayer();
+      ed->sequencerPanel().setWorld(ed->world());
+      ed->sequencerPanel().setAnimationSystem(&m_engine->animation());
+      ed->sequencerPanel().setAnimationClip(&m_engine->activeClip());
+      if (ed->world()) {
+        std::vector<EntityID> exclude;
+        exclude.push_back(ed->cameraEntity());
+        exclude.push_back(ed->world()->activeCamera());
+        ed->sequencerPanel().setHiddenExclusions(exclude);
+        ed->sequencerPanel().setTrackExclusions(exclude);
+      }
+      ed->sequencerPanel().updateHiddenEntities();
+      m_engine->setHiddenEntities(ed->sequencerPanel().hiddenEntities());
+    }
     m_engine->tick(dt);
     ;
     // ------------------------------------------------------------
@@ -638,7 +1028,12 @@ int Application::run() {
         buildSelectedPicksForOutline(sel, selPick);
       }
 
-      m_engine->setSelectionPickIDs(selPick);
+      uint32_t activePick = 0u;
+      if (m_app->isEditorVisible() && m_app->editorLayer()) {
+        const auto &sel = m_app->editorLayer()->selection();
+        activePick = sel.activePick;
+      }
+      m_engine->setSelectionPickIDs(selPick, activePick);
       const uint32_t windowW = win.width();
       const uint32_t windowH = win.height();
       uint32_t viewportW = w;

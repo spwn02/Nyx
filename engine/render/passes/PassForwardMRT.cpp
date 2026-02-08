@@ -4,6 +4,7 @@
 #include "core/Assert.h"
 #include "scene/World.h"
 #include "render/material/GpuMaterial.h"
+#include "render/material/MaterialGraph.h"
 
 #include <array>
 #include <glad/glad.h>
@@ -13,6 +14,7 @@ namespace Nyx {
 
 static constexpr uint32_t kMaterialsBinding = 14;
 static constexpr uint32_t kLightsBinding = 20;
+static constexpr uint32_t kPerDrawBinding = 13;
 
 PassForwardMRT::~PassForwardMRT() {
   if (m_fbo != 0 && m_res) {
@@ -40,8 +42,11 @@ void PassForwardMRT::setup(RenderGraph &graph, const RenderPassContext &ctx,
   (void)ctx;
   (void)editorVisible;
 
+  const char *passName =
+      (m_mode == Mode::Transparent) ? "ForwardMRT_Transparent"
+                                    : "ForwardMRT_Opaque";
   graph.addPass(
-      "ForwardMRT",
+      passName,
       [&](RenderPassBuilder &b) {
         b.writeTexture("HDR.Color", RenderAccess::ColorWrite);
         b.writeTexture("ID.Submesh", RenderAccess::ColorWrite);
@@ -51,6 +56,7 @@ void PassForwardMRT::setup(RenderGraph &graph, const RenderPassContext &ctx,
         b.readTexture("Shadow.DirAtlas", RenderAccess::SampledRead);
         b.readTexture("Shadow.PointArray", RenderAccess::SampledRead);
         b.readBuffer("Scene.Lights", RenderAccess::SSBORead);
+        b.readBuffer("Scene.PerDraw", RenderAccess::SSBORead);
         b.readBuffer("LightGrid.Meta", RenderAccess::UBORead);
         b.readBuffer("LightGrid.Header", RenderAccess::SSBORead);
         b.readBuffer("LightGrid.Indices", RenderAccess::SSBORead);
@@ -67,9 +73,17 @@ void PassForwardMRT::setup(RenderGraph &graph, const RenderPassContext &ctx,
         glNamedFramebufferTexture(m_fbo, GL_COLOR_ATTACHMENT1, idT.tex, 0);
         glNamedFramebufferTexture(m_fbo, GL_DEPTH_ATTACHMENT, depT.tex, 0);
 
-        const std::array<GLenum, 2> bufs{GL_COLOR_ATTACHMENT0,
-                                         GL_COLOR_ATTACHMENT1};
-        glNamedFramebufferDrawBuffers(m_fbo, (GLsizei)bufs.size(), bufs.data());
+        if (m_mode == Mode::Transparent) {
+          const GLenum bufs[1] = {GL_COLOR_ATTACHMENT0};
+          glNamedFramebufferDrawBuffers(m_fbo, 1, bufs);
+          glColorMaski(1, GL_FALSE, GL_FALSE, GL_FALSE, GL_FALSE);
+        } else {
+          const std::array<GLenum, 2> bufs{GL_COLOR_ATTACHMENT0,
+                                           GL_COLOR_ATTACHMENT1};
+          glNamedFramebufferDrawBuffers(m_fbo, (GLsizei)bufs.size(),
+                                        bufs.data());
+          glColorMaski(1, GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
+        }
 
         NYX_ASSERT(glCheckNamedFramebufferStatus(m_fbo, GL_FRAMEBUFFER) ==
                        GL_FRAMEBUFFER_COMPLETE,
@@ -77,17 +91,30 @@ void PassForwardMRT::setup(RenderGraph &graph, const RenderPassContext &ctx,
 
         glViewport(0, 0, (int)rc.fbWidth, (int)rc.fbHeight);
         glEnable(GL_DEPTH_TEST);
-        glDepthFunc(GL_EQUAL);
         glDepthMask(GL_FALSE);
+        if (m_mode == Mode::Transparent) {
+          glDepthFunc(GL_LEQUAL);
+          glEnable(GL_BLEND);
+          glBlendEquation(GL_FUNC_ADD);
+          glBlendFuncSeparate(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA, GL_ONE,
+                              GL_ONE_MINUS_SRC_ALPHA);
+        } else {
+          glDepthFunc(GL_EQUAL);
+          glDisable(GL_BLEND);
+        }
 
-        const float clearC[4] = {0.1f, 0.1f, 0.2f, 0.0f};
-        glClearBufferfv(GL_COLOR, 0, clearC);
+        if (m_mode == Mode::Opaque) {
+          const float clearC[4] = {0.1f, 0.1f, 0.2f, 0.0f};
+          glClearBufferfv(GL_COLOR, 0, clearC);
 
-        const uint32_t clearID[1] = {0u};
-        glClearBufferuiv(GL_COLOR, 1, clearID);
+          const uint32_t clearID[1] = {0u};
+          glClearBufferuiv(GL_COLOR, 1, clearID);
+        }
 
         glBindBufferBase(GL_SHADER_STORAGE_BUFFER, kMaterialsBinding,
                          engine.materials().ssbo());
+        glBindBufferBase(GL_SHADER_STORAGE_BUFFER, kPerDrawBinding,
+                         engine.perDraw().ssbo());
         const auto &lights = buf(bb, rg, "Scene.Lights");
         const auto &gridMeta = buf(bb, rg, "LightGrid.Meta");
         const auto &gridHeader = buf(bb, rg, "LightGrid.Header");
@@ -106,30 +133,18 @@ void PassForwardMRT::setup(RenderGraph &graph, const RenderPassContext &ctx,
 
         const int locVP = glGetUniformLocation(m_forwardProg, "u_ViewProj");
         const int locV = glGetUniformLocation(m_forwardProg, "u_View");
-        const int locM = glGetUniformLocation(m_forwardProg, "u_Model");
-        const int locPick = glGetUniformLocation(m_forwardProg, "u_PickID");
+        const int locCam = glGetUniformLocation(m_forwardProg, "u_CamPos");
         const int locVM = glGetUniformLocation(m_forwardProg, "u_ViewMode");
-        const int locMat =
-            glGetUniformLocation(m_forwardProg, "u_MaterialIndex");
         const int locTexRemapCount =
             glGetUniformLocation(m_forwardProg, "u_TexRemapCount");
-        const int locSplits =
-            glGetUniformLocation(m_forwardProg, "u_CSM_Splits");
-        const int locDirSMSize =
-            glGetUniformLocation(m_forwardProg, "u_ShadowDirSize");
-        const int locSpotSMSize =
-            glGetUniformLocation(m_forwardProg, "u_ShadowSpotSize");
-        const int locIsLight = glGetUniformLocation(m_forwardProg, "u_IsLight");
-        const int locLightColorInt =
-            glGetUniformLocation(m_forwardProg, "u_LightColorIntensity");
-        const int locLightExposure =
-            glGetUniformLocation(m_forwardProg, "u_LightExposure");
         const int locHasIBL = glGetUniformLocation(m_forwardProg, "u_HasIBL");
 
         glUniform1ui(locVM, static_cast<uint32_t>(engine.viewMode()));
         glUniformMatrix4fv(locVP, 1, GL_FALSE, &rc.viewProj[0][0]);
         if (locV >= 0)
           glUniformMatrix4fv(locV, 1, GL_FALSE, &rc.view[0][0]);
+        if (locCam >= 0)
+          glUniform3f(locCam, rc.cameraPos.x, rc.cameraPos.y, rc.cameraPos.z);
 
         const auto &csmAtlas = tex(bb, rg, "Shadow.CSMAtlas");
         const auto &spotAtlas = tex(bb, rg, "Shadow.SpotAtlas");
@@ -164,6 +179,10 @@ void PassForwardMRT::setup(RenderGraph &graph, const RenderPassContext &ctx,
 
         glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 14,
                          engine.materials().ssbo());
+        glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 16,
+                         engine.materials().graphHeadersSSBO());
+        glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 17,
+                         engine.materials().graphNodesSSBO());
 
         // Build a compact texture table for this frame (<=16).
         auto &texTable = engine.materials().textures();
@@ -183,7 +202,15 @@ void PassForwardMRT::setup(RenderGraph &graph, const RenderPassContext &ctx,
           compactOrig.push_back(origIdx);
         };
 
-        for (const auto &r : registry.all()) {
+        const auto &drawList =
+            (m_mode == Mode::Transparent) ? registry.transparentSorted()
+                                          : registry.opaque();
+        const uint32_t baseOffset =
+            (m_mode == Mode::Transparent) ? engine.perDrawTransparentOffset()
+                                          : engine.perDrawOpaqueOffset();
+        uint32_t visibleIdx = 0;
+        for (uint32_t i = 0; i < static_cast<uint32_t>(drawList.size()); ++i) {
+          const auto &r = drawList[i];
           if (engine.isEntityHidden(r.entity))
             continue;
           (void)engine.materialIndex(r);
@@ -200,6 +227,19 @@ void PassForwardMRT::setup(RenderGraph &graph, const RenderPassContext &ctx,
           tryAdd(gpu.tex0123.z);
           tryAdd(gpu.tex0123.w);
           tryAdd(gpu.tex4_pad.x);
+
+          const auto &graph = engine.materials().graph(sm.material);
+          for (const auto &node : graph.nodes) {
+            switch (node.type) {
+            case MatNodeType::Texture2D:
+            case MatNodeType::TextureMRA:
+            case MatNodeType::NormalMap:
+              tryAdd(node.u.x);
+              break;
+            default:
+              break;
+            }
+          }
         }
 
         const auto &glTex = texTable.glTextures();
@@ -229,7 +269,8 @@ void PassForwardMRT::setup(RenderGraph &graph, const RenderPassContext &ctx,
           glBindTextureUnit(10 + i, tex);
         }
 
-        for (const auto &r : registry.all()) {
+        for (uint32_t i = 0; i < static_cast<uint32_t>(drawList.size()); ++i) {
+          const auto &r = drawList[i];
           if (engine.isEntityHidden(r.entity))
             continue;
           if (r.isCamera) {
@@ -237,26 +278,20 @@ void PassForwardMRT::setup(RenderGraph &graph, const RenderPassContext &ctx,
             glDepthMask(GL_FALSE);
           } else {
             glColorMaski(0, GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
-            glDepthMask(GL_TRUE);
+            if (m_mode == Mode::Transparent)
+              glDepthMask(GL_FALSE);
+            else
+              glDepthMask(GL_TRUE);
           }
-          glUniformMatrix4fv(locM, 1, GL_FALSE, &r.model[0][0]);
-          glUniform1ui(locPick, r.pickID);
-          glUniform1ui(locMat, engine.materialIndex(r));
-          if (locIsLight >= 0)
-            glUniform1i(locIsLight, r.isLight ? 1 : 0);
-          if (r.isLight) {
-            if (locLightColorInt >= 0) {
-              glUniform4f(locLightColorInt, r.lightColor.x, r.lightColor.y,
-                          r.lightColor.z, r.lightIntensity);
-            }
-            if (locLightExposure >= 0)
-              glUniform1f(locLightExposure, r.lightExposure);
-          }
-          if (m_draw)
-            m_draw(r.mesh);
+          const uint32_t baseInstance = baseOffset + visibleIdx;
+          engine.rendererDrawPrimitive(static_cast<uint32_t>(r.mesh),
+                                       baseInstance);
+          visibleIdx++;
         }
         glColorMaski(0, GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
+        glColorMaski(1, GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
         glDepthMask(GL_TRUE);
+        glDisable(GL_BLEND);
       });
 }
 

@@ -22,6 +22,10 @@
 #include "render/passes/PassPostFilters.h"
 #include "render/passes/PassPresent.h"
 #include "render/passes/PassSelection.h"
+#include "render/passes/PassSelectionMaskTransparent.h"
+#include "render/passes/PassPickID.h"
+#include "render/passes/PassTransparentOIT.h"
+#include "render/passes/PassTransparentOITComposite.h"
 #include "render/passes/PassSkyIBL.h"
 #include "render/passes/PassTonemap.h"
 #include "render/rg/RGResource.h"
@@ -38,6 +42,7 @@ struct FrameOutputs {
   RGHandle hdr = InvalidRG;
   RGHandle ldr = InvalidRG;
   RGHandle id = InvalidRG;
+  RGHandle pick = InvalidRG;
   RGHandle outlined = InvalidRG;
   RGHandle depth = InvalidRG;
   RGHandle preview = InvalidRG;
@@ -55,8 +60,12 @@ public:
 
   uint32_t readPickID(uint32_t px, uint32_t py, uint32_t fbHeight) const;
 
-  void setSelectedPickIDs(const std::vector<uint32_t> &ids);
+  void setSelectedPickIDs(const std::vector<uint32_t> &ids,
+                          uint32_t activePick);
   void drawPrimitive(ProcMeshType type);
+  void drawPrimitiveBaseInstance(ProcMeshType type, uint32_t baseInstance);
+  void setOutlineThicknessPx(float px) { m_outlineThicknessPx = px; }
+  float outlineThicknessPx() const { return m_outlineThicknessPx; }
 
   GLShaderUtil &shaders() { return m_shaders; }
   const GLShaderUtil &shaders() const { return m_shaders; }
@@ -102,17 +111,23 @@ private:
   PassShadowSpot m_passShadowSpot;
   PassShadowDir m_passShadowDir;
   PassShadowPoint m_passShadowPoint;
-  PassForwardMRT m_passForward;
+  PassForwardMRT m_passForwardOpaque;
+  PassForwardMRT m_passForwardTransparent;
+  PassTransparentOIT m_passTransparentOIT;
+  PassTransparentOITComposite m_passTransparentOITComposite;
   PassMaterialPreview m_passPreview;
   PassSkyIBL m_passSky;
   PassShadowDebugOverlay m_passShadowDebug;
   PassTonemap m_passTonemap;
   PassPostFilters m_passPost;
   PassSelection m_passSelection;
+  PassSelectionMaskTransparent m_passSelectionMaskTransparent;
+  PassPickID m_passPickID;
   PassPresent m_passPresent;
 
   GLMesh m_primMeshes[5]{};
   bool m_primReady[5]{false, false, false, false, false};
+  float m_outlineThicknessPx = 1.5f;
 };
 
 } // namespace Nyx

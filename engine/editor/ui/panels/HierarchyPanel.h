@@ -30,6 +30,7 @@ private:
   IconAtlas m_iconAtlas{};
   bool m_iconInit = false;
   bool m_iconReady = false;
+  EntityID m_editorCamera = InvalidEntity;
 };
 
 } // namespace Nyx

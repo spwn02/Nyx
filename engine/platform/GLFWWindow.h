@@ -30,6 +30,7 @@ public:
   void swapBuffers();
 
   bool shouldClose() const;
+  void requestClose() const;
 
   bool isFocused() const;
   bool isVisible() const;
@@ -43,6 +44,8 @@ public:
 
   InputSystem &input() { return *m_input; }
   const InputSystem &input() const { return *m_input; }
+
+  double getTimeSeconds() const;
 
 private:
   void initGLFW();

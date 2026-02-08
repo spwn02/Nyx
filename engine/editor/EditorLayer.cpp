@@ -7,13 +7,43 @@
 #include "scene/WorldSerializer.h"
 #include "tools/EditorDockLayout.h"
 #include "tools/EditorPersist.h"
+#include <cmath>
 #include <filesystem>
+#include <glm/glm.hpp>
 #include <glm/glm.hpp>
 
 namespace Nyx {
 
 static std::string editorStatePath() {
   return std::filesystem::current_path() / ".nyx" / "editor_state.ini";
+}
+
+static void enableDefaultWorkspacePanels(EditorPanels &panels) {
+  panels = {};
+  panels.viewport = true;
+  panels.hierarchy = true;
+  panels.inspector = true;
+  panels.sky = true;
+  panels.assetBrowser = true;
+  panels.stats = true;
+}
+
+static void enableMaterialWorkspacePanels(EditorPanels &panels) {
+  panels = {};
+  panels.materialGraph = true;
+  panels.lutManager = true;
+  panels.hierarchy = true;
+  panels.inspector = true;
+  panels.assetBrowser = true;
+  panels.sky = true;
+}
+
+static void enablePostProcessingWorkspacePanels(EditorPanels &panels) {
+  panels = {};
+  panels.postGraph = true;
+  panels.hierarchy = true;
+  panels.inspector = true;
+  panels.assetBrowser = true;
 }
 
 void EditorLayer::onAttach() {
@@ -222,41 +252,37 @@ void EditorLayer::storePostGraphPersist(EngineContext &engine) {
   }
 }
 
-static void drawProjectSettings(GizmoState &g) {
-  ImGui::Begin("Project Settings");
-
-  ImGui::SeparatorText("Gizmos");
-  ImGui::Checkbox("Enable Snap", &g.useSnap);
-  ImGui::DragFloat("Translate Snap", &g.snapTranslate, 0.1f, 0.001f, 100.0f);
-  ImGui::DragFloat("Rotate Snap (deg)", &g.snapRotateDeg, 1.0f, 0.1f, 180.0f);
-  ImGui::DragFloat("Scale Snap", &g.snapScale, 0.1f, 0.01f, 10.0f);
-
-  ImGui::End();
-}
-
-void EditorLayer::drawStats(EngineContext &engine) {
+void EditorLayer::drawStats(EngineContext &engine, GizmoState &g) {
   ImGui::Begin("Stats");
   ImGui::Text("dt: %.3f ms", engine.dt() * 1000.0f);
   ImGui::Text("Viewport: %u x %u", m_viewport.viewport().lastRenderedSize.x,
               m_viewport.viewport().lastRenderedSize.y);
   ImGui::Text("Last Pick: 0x%08X", engine.lastPickedID());
   const char *viewModeNames[] = {
-      "Lit", "Albedo", "Normals", "Roughness", "Metallic", "AO", "Depth", "ID",
-      "LightGrid",
+      "Lit", "Albedo", "Normals", "Roughness", "Metallic",
+      "AO",  "Depth",  "ID",      "LightGrid",
   };
+
+  ImGui::SeparatorText("Gizmos");
+  ImGui::Checkbox("Enable Snap", &g.useSnap);
+  ImGui::DragFloat("Translate Snap", &g.snapTranslate, 0.1f, 0.001f, 100.0f);
+  ImGui::DragFloat("Rotate Snap (deg)", &g.snapRotateDeg, 1.0f, 0.1f, 180.0f);
+  ImGui::DragFloat("Scale Snap", &g.snapScale, 0.1f, 0.01f, 10.0f);
+  ImGui::Checkbox("Propagate To Children (World)", &g.propagateChildren);
+  
+  ImGui::SeparatorText("View");
   int vmIdx = static_cast<int>(engine.viewMode());
   ImGui::Combo("View Mode", &vmIdx, viewModeNames, IM_ARRAYSIZE(viewModeNames));
   engine.setViewMode(static_cast<ViewMode>(vmIdx));
 
+  const char *transNames[] = {"Sorted", "OIT"};
+  int tmIdx = static_cast<int>(engine.transparencyMode());
+  ImGui::Combo("Transparency", &tmIdx, transNames, IM_ARRAYSIZE(transNames));
+  engine.setTransparencyMode(static_cast<TransparencyMode>(tmIdx));
+
   const char *shadowDebugNames[] = {
-      "Off",
-      "Cascade Index",
-      "Shadow Factor",
-      "Shadow Map 0",
-      "Shadow Map 1",
-      "Shadow Map 2",
-      "Shadow Map 3",
-      "Combined",
+      "Off",          "Cascade Index", "Shadow Factor", "Shadow Map 0",
+      "Shadow Map 1", "Shadow Map 2",  "Shadow Map 3",  "Combined",
   };
   int sdIdx = static_cast<int>(engine.shadowDebugMode());
   ImGui::Combo("Shadow Debug", &sdIdx, shadowDebugNames,
@@ -284,10 +310,17 @@ void EditorLayer::drawStats(EngineContext &engine) {
   ImGui::End();
 }
 
-void EditorLayer::processWorldEvents() {
+void EditorLayer::processWorldEvents(EngineContext &engine) {
   if (!m_world)
     return;
+  m_history.setWorld(m_world, &engine.materials());
+  if (m_history.isApplying()) {
+    m_hierarchy.setWorld(m_world);
+    m_world->events().clear();
+    return;
+  }
   const auto &events = m_world->events().events();
+  m_history.processEvents(*m_world, m_world->events(), engine.materials(), m_sel);
   for (const auto &e : events) {
     m_hierarchy.onWorldEvent(*m_world, e);
     if (e.type == WorldEventType::EntityDestroyed) {
@@ -299,9 +332,73 @@ void EditorLayer::processWorldEvents() {
   }
 }
 
-void EditorLayer::syncWorldEvents() { processWorldEvents(); }
+void EditorLayer::syncWorldEvents(EngineContext &engine) {
+  processWorldEvents(engine);
+}
+
+bool EditorLayer::requestSaveScene(EngineContext &engine) {
+  if (!m_world)
+    return false;
+  if (!m_scenePath.empty()) {
+    if (!WorldSerializer::saveToFile(*m_world, m_editorCamera,
+                                     engine.materials(), m_scenePath)) {
+      Log::Warn("Failed to save scene to {}", m_scenePath);
+      return false;
+    }
+    m_lastAutoSaveSerial = engine.materials().changeSerial();
+    return true;
+  }
+  m_saveScenePopup = true;
+  std::snprintf(m_scenePathBuf, sizeof(m_scenePathBuf), "%s",
+                m_scenePath.c_str());
+  return false;
+}
+
+void EditorLayer::requestSaveSceneAs() {
+  m_saveScenePopup = true;
+  std::snprintf(m_scenePathBuf, sizeof(m_scenePathBuf), "%s",
+                m_scenePath.c_str());
+}
+
+bool EditorLayer::undo(EngineContext &engine) {
+  if (!m_world)
+    return false;
+  const bool ok = m_history.undo(*m_world, engine.materials(), m_sel);
+  if (ok) {
+    engine.rebuildEntityIndexMap();
+    engine.rebuildRenderables();
+  }
+  return ok;
+}
+
+bool EditorLayer::redo(EngineContext &engine) {
+  if (!m_world)
+    return false;
+  const bool ok = m_history.redo(*m_world, engine.materials(), m_sel);
+  if (ok) {
+    engine.rebuildEntityIndexMap();
+    engine.rebuildRenderables();
+  }
+  return ok;
+}
+
+void EditorLayer::beginGizmoHistoryBatch() {
+  if (!m_world)
+    return;
+  m_history.beginTransformBatch("Gizmo Transform", *m_world, m_sel);
+}
+
+void EditorLayer::endGizmoHistoryBatch() {
+  if (!m_world)
+    return;
+  m_history.endTransformBatch(*m_world, m_sel);
+}
 
 void EditorLayer::onImGui(EngineContext &engine) {
+  engine.resetUiFrameFlags();
+  if (m_world)
+    m_history.setWorld(m_world, &engine.materials());
+  m_history.setAnimationContext(&engine.animation(), &engine.activeClip());
   m_assetBrowser.init(engine.materials().textures());
   if (!m_postGraphLoaded) {
     applyPostGraphPersist(engine);
@@ -313,19 +410,21 @@ void EditorLayer::onImGui(EngineContext &engine) {
 
   if (ImGui::BeginMenuBar()) {
     if (ImGui::BeginMenu("File")) {
-      if (ImGui::MenuItem("New Scene")) {
+      if (ImGui::MenuItem("New Scene", "Ctrl+N")) {
         defaultScene(engine);
       }
-      if (ImGui::MenuItem("Open Scene...")) {
+      if (ImGui::MenuItem("Open Scene...", "Ctrl+O")) {
         m_openScenePopup = true;
         std::snprintf(m_scenePathBuf, sizeof(m_scenePathBuf), "%s",
                       m_scenePath.c_str());
       }
-      if (ImGui::MenuItem("Save Scene")) {
+      if (ImGui::MenuItem("Save Scene", "Ctrl+S")) {
         if (!m_scenePath.empty() && m_world) {
           if (!WorldSerializer::saveToFile(*m_world, m_editorCamera,
                                            engine.materials(), m_scenePath)) {
             Log::Warn("Failed to save scene to {}", m_scenePath);
+          } else {
+            m_lastAutoSaveSerial = engine.materials().changeSerial();
           }
         } else {
           m_saveScenePopup = true;
@@ -333,18 +432,48 @@ void EditorLayer::onImGui(EngineContext &engine) {
                         m_scenePath.c_str());
         }
       }
-      if (ImGui::MenuItem("Save Scene As...")) {
+      if (ImGui::MenuItem("Save Scene As...", "Ctrl+Shift+S")) {
         m_saveScenePopup = true;
         std::snprintf(m_scenePathBuf, sizeof(m_scenePathBuf), "%s",
                       m_scenePath.c_str());
       }
       ImGui::Separator();
-      ImGui::MenuItem("Auto Save", nullptr, &m_autoSave);
+      ImGui::MenuItem("Auto Save", "Ctrl+Alt+S", &m_autoSave);
       ImGui::EndMenu();
     }
     if (ImGui::BeginMenu("Window")) {
+      // Workspaces
+      if (ImGui::BeginMenu("Workspaces")) {
+        if (ImGui::MenuItem("Default")) {
+          m_persist.dockLayoutApplied = false; // allow rebuild
+          enableDefaultWorkspacePanels(m_persist.panels);
+          const ImGuiViewport *vp = ImGui::GetMainViewport();
+          BuildDefaultDockLayout(engine.dockspaceID(), vp->WorkSize);
+        }
+        // if (ImGui::MenuItem("Scene Editing")) {
+        //   m_persist.dockLayoutApplied = false; // allow rebuild
+        //   const ImGuiViewport *vp = ImGui::GetMainViewport();
+        //   BuildSceneEditingDockLayout(engine.dockspaceID(), vp->WorkSize);
+        // }
+        if (ImGui::MenuItem("Material Editing")) {
+          m_persist.dockLayoutApplied = false; // allow rebuild
+          enableMaterialWorkspacePanels(m_persist.panels);
+          const ImGuiViewport *vp = ImGui::GetMainViewport();
+          BuildMaterialEditingDockLayout(engine.dockspaceID(), vp->WorkSize);
+        }
+        if (ImGui::MenuItem("Post-Processing Editing")) {
+          m_persist.dockLayoutApplied = false; // allow rebuild
+          enablePostProcessingWorkspacePanels(m_persist.panels);
+          const ImGuiViewport *vp = ImGui::GetMainViewport();
+          BuildPostProcessingEditingDockLayout(engine.dockspaceID(),
+                                               vp->WorkSize);
+        }
+        ImGui::EndMenu();
+      }
+
       if (ImGui::MenuItem("Reset Layout")) {
         m_persist.dockLayoutApplied = false; // allow rebuild
+        enableDefaultWorkspacePanels(m_persist.panels);
         const ImGuiViewport *vp = ImGui::GetMainViewport();
         BuildDefaultDockLayout(engine.dockspaceID(), vp->WorkSize);
       }
@@ -357,6 +486,11 @@ void EditorLayer::onImGui(EngineContext &engine) {
                       &m_persist.panels.projectSettings);
       ImGui::MenuItem("Asset Browser", nullptr, &m_persist.panels.assetBrowser);
       ImGui::MenuItem("LUT Manager", nullptr, &m_persist.panels.lutManager);
+      ImGui::MenuItem("Material Graph", nullptr, &m_persist.panels.materialGraph);
+      ImGui::MenuItem("Post-Processing Graph", nullptr,
+                      &m_persist.panels.postGraph);
+      ImGui::MenuItem("Sequencer", nullptr, &m_persist.panels.sequencer);
+      ImGui::MenuItem("History", nullptr, &m_persist.panels.history);
       ImGui::EndMenu();
     }
     ImGui::EndMenuBar();
@@ -385,6 +519,7 @@ void EditorLayer::onImGui(EngineContext &engine) {
                                             path)) {
             m_scenePath = path;
             m_sceneLoaded = true;
+            m_lastAutoSaveSerial = engine.materials().changeSerial();
             m_sel.clear();
             m_hierarchy.setWorld(m_world);
             engine.rebuildEntityIndexMap();
@@ -418,6 +553,7 @@ void EditorLayer::onImGui(EngineContext &engine) {
                                           engine.materials(), path)) {
             m_scenePath = path;
             m_sceneLoaded = true;
+            m_lastAutoSaveSerial = engine.materials().changeSerial();
           } else {
             Log::Warn("Failed to save scene to {}", path);
           }
@@ -439,40 +575,99 @@ void EditorLayer::onImGui(EngineContext &engine) {
     return;
   }
 
+  // Keep sequencer bindings valid for inspector/gizmo auto-key even when
+  // the Sequencer panel itself is hidden.
+  m_sequencerPanel.setWorld(m_world);
+  m_sequencerPanel.setAnimationSystem(&engine.animation());
+  m_sequencerPanel.setAnimationClip(&engine.activeClip());
+  if (m_world) {
+    std::vector<EntityID> exclude;
+    exclude.push_back(m_editorCamera);
+    exclude.push_back(m_world->activeCamera());
+    m_sequencerPanel.setHiddenExclusions(exclude);
+    m_sequencerPanel.setTrackExclusions(exclude);
+  }
+
   // Viewport panel
   if (m_persist.panels.viewport)
     m_viewport.draw(engine, *this);
 
   // Stats panel
   if (m_persist.panels.stats)
-    drawStats(engine);
+    drawStats(engine, m_viewport.gizmoState());
 
-  // Project settings panel
+  // Project Settings panel
   if (m_persist.panels.projectSettings)
-    drawProjectSettings(m_viewport.gizmoState());
+    m_projectSettings.draw(*this, engine);
 
   // Hierarchy panel
   if (m_persist.panels.hierarchy)
     m_hierarchy.draw(*m_world, m_editorCamera, engine, m_sel);
 
+  // History panel
+  if (m_persist.panels.history && m_world)
+    m_historyPanel.draw(m_history, *m_world, engine.materials(), m_sel, engine);
+
+  if (m_sel.focusEntity != InvalidEntity && m_world->isAlive(m_sel.focusEntity)) {
+    const glm::mat4 &w = m_world->worldTransform(m_sel.focusEntity).world;
+    const glm::vec3 center = glm::vec3(w[3]);
+    m_cameraCtrl.center = center;
+    const float yaw = glm::radians(m_cameraCtrl.yawDeg);
+    const float pitch = glm::radians(m_cameraCtrl.pitchDeg);
+    glm::vec3 front;
+    front.x = std::cos(yaw) * std::cos(pitch);
+    front.y = std::sin(pitch);
+    front.z = std::sin(yaw) * std::cos(pitch);
+    front = glm::normalize(front);
+    const float dist = std::max(0.1f, m_cameraCtrl.distance);
+    m_cameraCtrl.position = m_cameraCtrl.center - front * dist;
+    m_sel.focusEntity = InvalidEntity;
+  }
+
   // Add menu (Shift+A)
-  const bool allowOpen = !ImGui::GetIO().WantTextInput &&
-                         !m_postGraphPanel.isHovered() &&
-                         !m_cameraCtrl.mouseCaptured;
+  const bool allowOpen =
+      !ImGui::GetIO().WantTextInput && !engine.uiBlockGlobalShortcuts() &&
+      !m_postGraphPanel.isHovered() && !m_materialGraphPanel.isHovered() &&
+      !m_cameraCtrl.mouseCaptured;
   m_add.tick(*m_world, m_sel, allowOpen);
 
   // Inspector panel
   if (m_persist.panels.inspector)
-    m_inspector.draw(*m_world, engine, m_sel);
+    m_inspector.draw(*m_world, engine, m_sel, &m_sequencerPanel);
+
+  // Material Graph panel (always present, auto-switch)  
+  if (m_persist.panels.materialGraph) {
+    MaterialHandle activeMat = InvalidMaterial;
+    if (m_sel.kind == SelectionKind::Material &&
+        m_sel.activeMaterial != InvalidMaterial) {
+      activeMat = m_sel.activeMaterial;
+    } else if (!m_sel.isEmpty()) {
+      const uint32_t activePick =
+          m_sel.activePick ? m_sel.activePick : m_sel.picks.back();
+      EntityID e = m_sel.entityForPick(activePick);
+      if (e == InvalidEntity)
+        e = engine.resolveEntityIndex(pickEntity(activePick));
+      const uint32_t sub = pickSubmesh(activePick);
+      if (e != InvalidEntity && m_world->isAlive(e) && m_world->hasMesh(e) &&
+          sub < m_world->submeshCount(e)) {
+        activeMat = m_world->submesh(e, sub).material;
+      }
+    }
+    m_materialGraphPanel.setMaterial(activeMat);
+    m_materialGraphPanel.draw(engine);
+  }
 
   // Sky panel
   if (m_persist.panels.sky)
     drawSkyPanel(*m_world, engine);
 
   if (m_autoSave && m_sceneLoaded && !m_scenePath.empty() &&
-      !m_world->events().empty()) {
-    WorldSerializer::saveToFile(*m_world, m_editorCamera, engine.materials(),
-                                m_scenePath);
+      (!m_world->events().empty() ||
+       engine.materials().changeSerial() != m_lastAutoSaveSerial)) {
+    if (WorldSerializer::saveToFile(*m_world, m_editorCamera,
+                                    engine.materials(), m_scenePath)) {
+      m_lastAutoSaveSerial = engine.materials().changeSerial();
+    }
   }
 
   // Asset Browser panel
@@ -485,12 +680,22 @@ void EditorLayer::onImGui(EngineContext &engine) {
 
   const auto &gizmo = m_viewport.gizmoState();
 
-  m_postGraphPanel.draw(engine.postGraph(), engine.filterRegistry(), engine);
-  if (m_postGraphPanel.consumeGraphChanged()) {
-    engine.markPostGraphDirty();
-    engine.syncFilterGraphFromPostGraph();
-    engine.updatePostFilters();
-    storePostGraphPersist(engine);
+  if (m_persist.panels.postGraph) {
+    m_postGraphPanel.draw(engine.postGraph(), engine.filterRegistry(), engine);
+    if (m_postGraphPanel.consumeGraphChanged()) {
+      engine.markPostGraphDirty();
+      engine.syncFilterGraphFromPostGraph();
+      engine.updatePostFilters();
+      storePostGraphPersist(engine);
+    }
+  }
+
+  // Sequencer panel
+  if (m_persist.panels.sequencer) {
+    m_sequencerPanel.draw();
+    if (m_sequencerPanel.timelineHot())
+      engine.requestUiBlockGlobalShortcuts();
+    engine.setHiddenEntities(m_sequencerPanel.hiddenEntities());
   }
 
   m_persist.gizmoOp = gizmo.op;

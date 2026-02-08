@@ -47,6 +47,9 @@ void LightSystem::updateFromWorld(const World &world) {
   for (EntityID e : world.alive()) {
     if (!world.isAlive(e) || !world.hasLight(e))
       continue;
+    const auto &tr = world.transform(e);
+    if (tr.hidden || tr.hiddenEditor || tr.disabledAnim)
+      continue;
     const auto &L = world.light(e);
     if (!L.enabled)
       continue;

@@ -11,6 +11,7 @@ public:
 
   void upload(const MeshCPU &cpu);
   void draw() const;
+  void drawBaseInstance(uint32_t baseInstance) const;
 
 private:
   uint32_t m_vao = 0;

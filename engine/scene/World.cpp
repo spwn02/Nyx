@@ -1,5 +1,7 @@
 #include "World.h"
 
+#include "render/material/MaterialSystem.h"
+
 #include <algorithm>
 #include <glm/gtc/matrix_transform.hpp>
 #include <glm/gtx/matrix_decompose.hpp>
@@ -77,6 +79,9 @@ void World::destroySubtree(EntityID root) {
   // Detach from parent
   detachFromParent(root);
 
+  // Remove from categories
+  clearEntityCategories(root);
+
   // Erase optional comps
   m_mesh.erase(root);
   m_cam.erase(root);
@@ -122,6 +127,8 @@ void World::clear() {
 
   m_uuid.clear();
   m_entityByUUID.clear();
+  m_categories.clear();
+  m_entityCategories.clear();
 
   m_activeCamera = InvalidEntity;
   m_events.clear();
@@ -375,6 +382,40 @@ EntityID World::cloneSubtree(EntityID root, EntityID newParent) {
   return dup;
 }
 
+static void duplicateMaterialsForSubtree(World &world,
+                                         MaterialSystem &materials,
+                                         EntityID root) {
+  if (!world.isAlive(root))
+    return;
+
+  if (world.hasMesh(root)) {
+    auto &mc = world.ensureMesh(root);
+    for (auto &sm : mc.submeshes) {
+      if (sm.material != InvalidMaterial && materials.isAlive(sm.material)) {
+        MaterialData copy = materials.cpu(sm.material);
+        sm.material = materials.create(copy);
+      }
+    }
+  }
+
+  EntityID c = world.hierarchy(root).firstChild;
+  while (c != InvalidEntity) {
+    EntityID next = world.hierarchy(c).nextSibling;
+    duplicateMaterialsForSubtree(world, materials, c);
+    c = next;
+  }
+}
+
+EntityID World::duplicateSubtree(EntityID root, EntityID newParent,
+                                 MaterialSystem *materials) {
+  EntityID dup = cloneSubtree(root, newParent);
+  if (dup == InvalidEntity)
+    return InvalidEntity;
+  if (materials)
+    duplicateMaterialsForSubtree(*this, *materials, dup);
+  return dup;
+}
+
 // ---------------- Name ----------------
 
 CName &World::name(EntityID e) { return m_name.at(e); }
@@ -419,40 +460,42 @@ void World::updateTransforms() {
   // Roots first; DFS propagate
   // For now we recompute if dirty flags indicate changes; still fast enough.
 
-  auto updateNode = [&](auto &&self, EntityID e,
-                        const glm::mat4 &parentW) -> void {
+  auto updateNode = [&](auto &&self, EntityID e, const glm::mat4 &parentW,
+                        bool parentDirty) -> void {
     auto &tr = m_tr.at(e);
     auto &wt = m_wtr.at(e);
 
+    bool parentChanged = false;
+    bool localChanged = false;
+    if (parentDirty)
+      wt.dirty = true;
     if (tr.dirty) {
       wt.dirty = true;
       tr.dirty = false;
-      m_events.push({WorldEventType::TransformChanged, e});
+      localChanged = true;
     }
 
     if (wt.dirty) {
       wt.world = parentW * localMatrix(e);
       wt.dirty = false;
+      parentChanged = true;
+    }
+
+    if (localChanged || parentDirty) {
+      m_events.push({WorldEventType::TransformChanged, e});
     }
 
     // Children inherit
     EntityID ch = m_hier.at(e).firstChild;
     while (ch != InvalidEntity) {
       EntityID next = m_hier.at(ch).nextSibling;
-      // if parent world updated, child must recompute
-      if (wt.dirty == false) {
-        // If parent changed this frame we already marked recursively in
-        // setParentKeepWorld, but keep it safe: if parent got recomputed, child
-        // needs recompute. (in practice parent recompute already happened
-        // above)
-      }
-      self(self, ch, wt.world);
+      self(self, ch, wt.world, parentChanged);
       ch = next;
     }
   };
 
   for (EntityID r : roots()) {
-    updateNode(updateNode, r, glm::mat4(1.0f));
+    updateNode(updateNode, r, glm::mat4(1.0f), false);
   }
 }
 
@@ -528,6 +571,20 @@ const CCameraMatrices &World::cameraMatrices(EntityID e) const {
   return m_camMat.at(e);
 }
 
+void World::removeCamera(EntityID e) {
+  auto it = m_cam.find(e);
+  if (it == m_cam.end())
+    return;
+  m_cam.erase(it);
+  m_camMat.erase(e);
+  m_events.push({WorldEventType::CameraDestroyed, e});
+  if (m_activeCamera == e) {
+    EntityID old = m_activeCamera;
+    m_activeCamera = InvalidEntity;
+    m_events.push({WorldEventType::ActiveCameraChanged, InvalidEntity, old});
+  }
+}
+
 // ---------------- Light ----------------
 
 bool World::hasLight(EntityID e) const {
@@ -552,6 +609,14 @@ CLight &World::ensureLight(EntityID e) {
 
 CLight &World::light(EntityID e) { return m_light.at(e); }
 const CLight &World::light(EntityID e) const { return m_light.at(e); }
+
+void World::removeLight(EntityID e) {
+  auto it = m_light.find(e);
+  if (it == m_light.end())
+    return;
+  m_light.erase(it);
+  m_events.push({WorldEventType::LightChanged, e});
+}
 
 // ---- Sky ----
 
@@ -579,6 +644,11 @@ void World::setActiveCamera(EntityID cam) {
     return;
   if (cam != InvalidEntity && !hasCamera(cam))
     return;
+  if (cam != InvalidEntity) {
+    const auto &tr = transform(cam);
+    if (tr.hidden || tr.hiddenEditor || tr.disabledAnim)
+      return;
+  }
 
   if (m_activeCamera == cam)
     return;
@@ -596,6 +666,139 @@ void World::setActiveCamera(EntityID cam) {
   }
 
   m_events.push({WorldEventType::ActiveCameraChanged, cam, old});
+}
+
+uint32_t World::addCategory(const std::string &name) {
+  Category c{};
+  c.name = name;
+  m_categories.push_back(std::move(c));
+  return (uint32_t)(m_categories.size() - 1u);
+}
+
+void World::removeCategory(uint32_t idx) {
+  if (idx >= m_categories.size())
+    return;
+  const int32_t parent = m_categories[idx].parent;
+  for (EntityID e : m_categories[idx].entities) {
+    auto it = m_entityCategories.find(e);
+    if (it != m_entityCategories.end()) {
+      auto &lst = it->second;
+      lst.erase(std::remove(lst.begin(), lst.end(), idx), lst.end());
+      if (lst.empty())
+        m_entityCategories.erase(it);
+    }
+  }
+  // Reparent children to our parent
+  for (uint32_t child : m_categories[idx].children) {
+    if (child < m_categories.size())
+      m_categories[child].parent = parent;
+  }
+  if (parent >= 0 && parent < (int32_t)m_categories.size()) {
+    auto &vec = m_categories[(size_t)parent].children;
+    vec.erase(std::remove(vec.begin(), vec.end(), idx), vec.end());
+    for (uint32_t child : m_categories[idx].children) {
+      if (std::find(vec.begin(), vec.end(), child) == vec.end())
+        vec.push_back(child);
+    }
+  }
+
+  m_categories.erase(m_categories.begin() + (ptrdiff_t)idx);
+  // Fix indices in map
+  for (auto &kv : m_entityCategories) {
+    for (uint32_t &v : kv.second) {
+      if (v > idx)
+        v--;
+    }
+  }
+  for (auto &c : m_categories) {
+    if (c.parent >= (int32_t)idx)
+      c.parent--;
+    for (uint32_t &ch : c.children) {
+      if (ch > idx)
+        ch--;
+    }
+  }
+}
+
+void World::renameCategory(uint32_t idx, const std::string &name) {
+  if (idx >= m_categories.size())
+    return;
+  m_categories[idx].name = name;
+}
+
+void World::addEntityCategory(EntityID e, int32_t idx) {
+  if (e == InvalidEntity)
+    return;
+  if (idx < 0 || idx >= (int32_t)m_categories.size())
+    return;
+
+  auto &dst = m_categories[(size_t)idx].entities;
+  if (std::find(dst.begin(), dst.end(), e) == dst.end())
+    dst.push_back(e);
+
+  auto &lst = m_entityCategories[e];
+  if (std::find(lst.begin(), lst.end(), (uint32_t)idx) == lst.end())
+    lst.push_back((uint32_t)idx);
+}
+
+void World::removeEntityCategory(EntityID e, int32_t idx) {
+  if (e == InvalidEntity)
+    return;
+  if (idx < 0 || idx >= (int32_t)m_categories.size())
+    return;
+  auto &vec = m_categories[(size_t)idx].entities;
+  vec.erase(std::remove(vec.begin(), vec.end(), e), vec.end());
+
+  auto it = m_entityCategories.find(e);
+  if (it != m_entityCategories.end()) {
+    auto &lst = it->second;
+    lst.erase(std::remove(lst.begin(), lst.end(), (uint32_t)idx), lst.end());
+    if (lst.empty())
+      m_entityCategories.erase(it);
+  }
+}
+
+void World::clearEntityCategories(EntityID e) {
+  if (e == InvalidEntity)
+    return;
+  auto it = m_entityCategories.find(e);
+  if (it == m_entityCategories.end())
+    return;
+  for (uint32_t idx : it->second) {
+    if (idx < m_categories.size()) {
+      auto &vec = m_categories[idx].entities;
+      vec.erase(std::remove(vec.begin(), vec.end(), e), vec.end());
+    }
+  }
+  m_entityCategories.erase(it);
+}
+
+const std::vector<uint32_t> *World::entityCategories(EntityID e) const {
+  auto it = m_entityCategories.find(e);
+  if (it == m_entityCategories.end())
+    return nullptr;
+  return &it->second;
+}
+
+void World::setCategoryParent(uint32_t idx, int32_t parentIdx) {
+  if (idx >= m_categories.size())
+    return;
+  if (parentIdx >= (int32_t)m_categories.size())
+    return;
+  if ((int32_t)idx == parentIdx)
+    return;
+
+  const int32_t old = m_categories[idx].parent;
+  if (old >= 0 && old < (int32_t)m_categories.size()) {
+    auto &vec = m_categories[(size_t)old].children;
+    vec.erase(std::remove(vec.begin(), vec.end(), idx), vec.end());
+  }
+  m_categories[idx].parent = parentIdx;
+  if (parentIdx >= 0) {
+    auto &vec = m_categories[(size_t)parentIdx].children;
+    if (std::find(vec.begin(), vec.end(), idx) == vec.end())
+      vec.push_back(idx);
+  }
 }
 
 void World::setActiveCameraUUID(EntityUUID id) {

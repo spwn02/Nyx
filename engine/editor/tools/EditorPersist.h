@@ -33,6 +33,10 @@ struct EditorPanels final {
   bool renderSettings = false;
   bool projectSettings = false;
   bool lutManager = false;
+  bool materialGraph = false;
+  bool postGraph = false;
+  bool sequencer = false;
+  bool history = false;
 };
 
 struct EditorPersistState final {

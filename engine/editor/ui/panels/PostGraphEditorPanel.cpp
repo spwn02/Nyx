@@ -2,7 +2,10 @@
 #include "app/EngineContext.h"
 #include "post/FilterRegistry.h"
 #include "post/PostGraphTypes.h"
+#include "editor/ui/UiPayloads.h"
 #include "platform/FileDialogs.h"
+
+#include "core/Log.h"
 
 #include <cstdint>
 #include <algorithm>
@@ -73,6 +76,8 @@ void PostGraphEditorPanel::draw(PostGraph &graph,
   m_isHovered = ImGui::IsWindowHovered(
       ImGuiHoveredFlags_AllowWhenBlockedByPopup |
       ImGuiHoveredFlags_AllowWhenBlockedByActiveItem);
+  if (m_isHovered)
+    engine.requestUiBlockGlobalShortcuts();
   if (ImGui::Button("Auto Layout")) {
     m_requestAutoLayout = true;
   }
@@ -97,6 +102,10 @@ void PostGraphEditorPanel::draw(PostGraph &graph,
   }
 
   ed::SetCurrentEditor(m_ctx);
+
+  auto &style = ed::GetStyle();
+  style.FlowDuration = 0.5f;
+
   ed::Begin("PostGraphCanvas");
 
   // Shift+A add menu when hovered (handled after node editor)
@@ -110,7 +119,32 @@ void PostGraphEditorPanel::draw(PostGraph &graph,
       if (nid != graph.inputNode() && nid != graph.outputNode()) {
         m_ctrlDragActive = true;
         m_ctrlDragNodeId = nid;
+
+        PGNode *n = graph.findNode(nid);
+        PGPinID prevOut = 0;
+        PGPinID nextIn = 0;
+        if (n && n->inPin != 0 && n->outPin != 0) {
+          for (const auto &l : graph.links()) {
+            if (l.toPin == n->inPin)
+              prevOut = l.fromPin;
+            if (l.fromPin == n->outPin)
+              nextIn = l.toPin;
+          }
+        }
+
         unlinkNode(graph, nid);
+
+        if (prevOut != 0 && nextIn != 0) {
+          if (prevOut != 0 && nextIn != 0 && prevOut != nextIn) {
+            PGCompileError err{};
+            if (!graph.tryAddLink(prevOut, nextIn, &err)) {
+              Log::Warn(
+                  "PostGraphEditorPanel: Failed to re-link node after ctrl-drag unlink: {}",
+                  err.message);
+            }
+          }
+        }
+
         markChanged();
       }
     }
@@ -504,7 +538,7 @@ void PostGraphEditorPanel::drawNodeContents(PostGraph &graph,
 
     if (ImGui::BeginDragDropTarget()) {
       if (const ImGuiPayload *payload =
-              ImGui::AcceptDragDropPayload("NYX_ASSET_PATH_TEX")) {
+              ImGui::AcceptDragDropPayload(UiPayload::TexturePath)) {
         const char *p = (const char *)payload->Data;
         if (p) {
           std::string path(p);

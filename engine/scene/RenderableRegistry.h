@@ -25,6 +25,14 @@ public:
 
   // Read access (renderer iterates this)
   const std::vector<Renderable> &all() const { return m_items; }
+  std::vector<Renderable> &allMutable() { return m_items; }
+  const std::vector<Renderable> &opaque() const { return m_opaque; }
+  const std::vector<Renderable> &transparentSorted() const {
+    return m_transparentSorted;
+  }
+
+  void buildRoutedLists(const glm::vec3 &camPos,
+                        const glm::vec3 &viewForward);
 
   // Helpers
   bool hasEntity(EntityID e) const;
@@ -33,6 +41,9 @@ public:
 
 private:
   std::vector<Renderable> m_items;
+  std::vector<Renderable> m_opaque;
+  std::vector<Renderable> m_transparent;
+  std::vector<Renderable> m_transparentSorted;
 
   // Fast lookups
   std::unordered_map<uint32_t, uint32_t>

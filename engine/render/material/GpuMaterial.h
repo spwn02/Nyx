@@ -18,6 +18,7 @@ struct GpuMaterialPacked final {
   glm::uvec4 tex4_pad; // roughness, ao, pad, pad
 
   glm::vec4 uvScaleOffset; // xy=scale, zw=offset
+  glm::vec4 extra;         // x=alphaCutoff, y=alphaMode, z/w=unused
 };
 
 static constexpr uint32_t kInvalidTexIndex = 0xFFFFFFFF;

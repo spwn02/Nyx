@@ -13,6 +13,7 @@ struct GpuMaterialPacked {
   uvec4 tex0123;        // base/emissive/normal/metallic
   uvec4 tex4_pad;       // roughness, ao, pad, pad
   vec4 uvScaleOffset;   // xy=scale, zw=offset
+  vec4 extra;           // x=alphaCutoff, y=alphaMode, z/w=unused
 };
 
 layout(std430, binding = 14) readonly buffer MaterialsSSBO {
@@ -39,7 +40,9 @@ in VS_OUT {
   vec3 posW;
   vec3 nrmW;
   vec2 uv;
+  vec2 uv0;
   vec4 tanW;
+  vec3 viewDirW;
 } f;
 
 const uint kInvalidTex = 0xFFFFFFFFu;

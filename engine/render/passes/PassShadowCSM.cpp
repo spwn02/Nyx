@@ -187,14 +187,21 @@ void PassShadowCSM::setup(RenderGraph &graph, const RenderPassContext &ctx,
           const uint64_t key = engine.lights().primaryDirLightKey();
           const EntityID e{(uint32_t)(key >> 32), (uint32_t)(key & 0xFFFFFFFFu)};
           if (engine.world().isAlive(e) && engine.world().hasLight(e)) {
-            const glm::mat4 W = engine.world().worldTransform(e).world;
-            const glm::vec3 fwd = glm::normalize(-glm::mat3(W) * glm::vec3(0, 0, 1));
-            lightDir = fwd;
+            const auto &tr = engine.world().transform(e);
+            if (!(tr.hidden || tr.hiddenEditor || tr.disabledAnim)) {
+              const glm::mat4 W = engine.world().worldTransform(e).world;
+              const glm::vec3 fwd =
+                  glm::normalize(-glm::mat3(W) * glm::vec3(0, 0, 1));
+              lightDir = fwd;
+            }
           }
         } else {
           float bestIntensity = -1.0f;
           for (EntityID e : engine.world().alive()) {
             if (!engine.world().isAlive(e) || !engine.world().hasLight(e))
+              continue;
+            const auto &tr = engine.world().transform(e);
+            if (tr.hidden || tr.hiddenEditor || tr.disabledAnim)
               continue;
             const auto &L = engine.world().light(e);
             if (L.type != LightType::Directional || !L.enabled)

@@ -30,7 +30,8 @@ void PassMaterialPreview::configure(GLShaderUtil &shader, GLResources &res,
                                     std::function<void(ProcMeshType)> drawFn) {
   m_res = &res;
   m_fbo = res.acquireFBO();
-  m_prog = shader.buildProgramVF("forward_mrt.vert", "preview_material.frag");
+  m_prog =
+      shader.buildProgramVF("preview_material.vert", "preview_material.frag");
   m_draw = std::move(drawFn);
 }
 

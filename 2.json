@@ -1,0 +1,2170 @@
+{
+  "materials": [
+    {
+      "graph": {
+        "links": [
+          {
+            "to": [
+              5,
+              0
+            ],
+            "from": [
+              2,
+              0
+            ],
+            "id": 1
+          },
+          {
+            "to": [
+              6,
+              0
+            ],
+            "from": [
+              5,
+              0
+            ],
+            "id": 2
+          },
+          {
+            "to": [
+              6,
+              1
+            ],
+            "from": [
+              4,
+              0
+            ],
+            "id": 3
+          },
+          {
+            "to": [
+              1,
+              0
+            ],
+            "from": [
+              6,
+              0
+            ],
+            "id": 4
+          },
+          {
+            "to": [
+              8,
+              0
+            ],
+            "from": [
+              2,
+              0
+            ],
+            "id": 5
+          },
+          {
+            "to": [
+              1,
+              1
+            ],
+            "from": [
+              8,
+              0
+            ],
+            "id": 6
+          },
+          {
+            "to": [
+              10,
+              0
+            ],
+            "from": [
+              2,
+              0
+            ],
+            "id": 7
+          },
+          {
+            "to": [
+              1,
+              2
+            ],
+            "from": [
+              10,
+              0
+            ],
+            "id": 8
+          },
+          {
+            "to": [
+              11,
+              0
+            ],
+            "from": [
+              2,
+              0
+            ],
+            "id": 9
+          },
+          {
+            "to": [
+              1,
+              3
+            ],
+            "from": [
+              11,
+              0
+            ],
+            "id": 10
+          },
+          {
+            "to": [
+              13,
+              0
+            ],
+            "from": [
+              2,
+              0
+            ],
+            "id": 11
+          },
+          {
+            "to": [
+              1,
+              4
+            ],
+            "from": [
+              13,
+              0
+            ],
+            "id": 12
+          },
+          {
+            "to": [
+              1,
+              5
+            ],
+            "from": [
+              14,
+              0
+            ],
+            "id": 13
+          },
+          {
+            "to": [
+              1,
+              6
+            ],
+            "from": [
+              15,
+              0
+            ],
+            "id": 14
+          }
+        ],
+        "nodes": [
+          {
+            "f": [
+              0,
+              0,
+              0,
+              0
+            ],
+            "posSet": true,
+            "pos": [
+              680,
+              200
+            ],
+            "path": "",
+            "label": "Surface Output",
+            "u": [
+              0,
+              0,
+              0,
+              0
+            ],
+            "type": 26,
+            "id": 1
+          },
+          {
+            "f": [
+              0,
+              0,
+              0,
+              0
+            ],
+            "posSet": true,
+            "pos": [
+              60,
+              40
+            ],
+            "path": "",
+            "label": "UV0",
+            "u": [
+              0,
+              0,
+              0,
+              0
+            ],
+            "type": 0,
+            "id": 2
+          },
+          {
+            "f": [
+              0,
+              0,
+              0,
+              0
+            ],
+            "posSet": true,
+            "pos": [
+              60,
+              260
+            ],
+            "path": "",
+            "label": "NormalWS",
+            "u": [
+              0,
+              0,
+              0,
+              0
+            ],
+            "type": 1,
+            "id": 3
+          },
+          {
+            "f": [
+              1,
+              1,
+              1,
+              1
+            ],
+            "posSet": true,
+            "pos": [
+              240,
+              40
+            ],
+            "path": "",
+            "label": "BaseColor (White)",
+            "u": [
+              0,
+              0,
+              0,
+              0
+            ],
+            "type": 6,
+            "id": 4
+          },
+          {
+            "f": [
+              0,
+              0,
+              0,
+              0
+            ],
+            "posSet": true,
+            "pos": [
+              240,
+              120
+            ],
+            "path": "/home/spawn/dev/cpp/projects/Nyx/assets/Rough_Sand_Cast_Aluminium_4K/Rough_Sand_Cast_Aluminium_basecolor_4K.png",
+            "label": "Texture2D",
+            "u": [
+              0,
+              1,
+              0,
+              0
+            ],
+            "type": 7,
+            "id": 5
+          },
+          {
+            "f": [
+              0,
+              0,
+              0,
+              0
+            ],
+            "posSet": true,
+            "pos": [
+              460,
+              80
+            ],
+            "path": "",
+            "label": "Mul",
+            "u": [
+              0,
+              0,
+              0,
+              0
+            ],
+            "type": 12,
+            "id": 6
+          },
+          {
+            "f": [
+              0,
+              0,
+              0,
+              0
+            ],
+            "posSet": true,
+            "pos": [
+              240,
+              220
+            ],
+            "path": "",
+            "label": "Metallic (Black)",
+            "u": [
+              0,
+              0,
+              0,
+              0
+            ],
+            "type": 3,
+            "id": 7
+          },
+          {
+            "f": [
+              0,
+              0,
+              0,
+              0
+            ],
+            "posSet": true,
+            "pos": [
+              240,
+              260
+            ],
+            "path": "/home/spawn/dev/cpp/projects/Nyx/assets/Rough_Sand_Cast_Aluminium_4K/Rough_Sand_Cast_Aluminium_metallic_4K.png",
+            "label": "Texture2D",
+            "u": [
+              2,
+              0,
+              0,
+              0
+            ],
+            "type": 7,
+            "id": 8
+          },
+          {
+            "f": [
+              0.5,
+              0,
+              0,
+              0
+            ],
+            "posSet": true,
+            "pos": [
+              240,
+              320
+            ],
+            "path": "",
+            "label": "Roughness (Gray)",
+            "u": [
+              0,
+              0,
+              0,
+              0
+            ],
+            "type": 3,
+            "id": 9
+          },
+          {
+            "f": [
+              0,
+              0,
+              0,
+              0
+            ],
+            "posSet": true,
+            "pos": [
+              240,
+              360
+            ],
+            "path": "/home/spawn/dev/cpp/projects/Nyx/assets/Rough_Sand_Cast_Aluminium_4K/Rough_Sand_Cast_Aluminium_roughness_4K.png",
+            "label": "Texture2D",
+            "u": [
+              3,
+              0,
+              0,
+              0
+            ],
+            "type": 7,
+            "id": 10
+          },
+          {
+            "f": [
+              0,
+              0,
+              0,
+              0
+            ],
+            "posSet": true,
+            "pos": [
+              240,
+              420
+            ],
+            "path": "/home/spawn/dev/cpp/projects/Nyx/assets/Rough_Sand_Cast_Aluminium_4K/Rough_Sand_Cast_Aluminium_normal_4K.png",
+            "label": "Normal Map",
+            "u": [
+              1,
+              0,
+              0,
+              0
+            ],
+            "type": 9,
+            "id": 11
+          },
+          {
+            "f": [
+              1,
+              0,
+              0,
+              0
+            ],
+            "posSet": true,
+            "pos": [
+              240,
+              500
+            ],
+            "path": "",
+            "label": "AO (White)",
+            "u": [
+              0,
+              0,
+              0,
+              0
+            ],
+            "type": 3,
+            "id": 12
+          },
+          {
+            "f": [
+              0,
+              0,
+              0,
+              0
+            ],
+            "posSet": true,
+            "pos": [
+              240,
+              540
+            ],
+            "path": "/home/spawn/dev/cpp/projects/Nyx/assets/Rough_Sand_Cast_Aluminium_4K/Rough_Sand_Cast_Aluminium_ambientocclusion_4K.png",
+            "label": "Texture2D",
+            "u": [
+              4,
+              0,
+              0,
+              0
+            ],
+            "type": 7,
+            "id": 13
+          },
+          {
+            "f": [
+              0,
+              0,
+              0,
+              1
+            ],
+            "posSet": true,
+            "pos": [
+              240,
+              600
+            ],
+            "path": "",
+            "label": "Emissive (Black)",
+            "u": [
+              0,
+              0,
+              0,
+              0
+            ],
+            "type": 4,
+            "id": 14
+          },
+          {
+            "f": [
+              1,
+              0,
+              0,
+              0
+            ],
+            "posSet": true,
+            "pos": [
+              240,
+              740
+            ],
+            "path": "",
+            "label": "Alpha (White)",
+            "u": [
+              0,
+              0,
+              0,
+              0
+            ],
+            "type": 3,
+            "id": 15
+          }
+        ],
+        "nextLinkId": 15,
+        "nextNodeId": 16,
+        "alphaMode": 0,
+        "alphaCutoff": 0.5,
+        "version": 3
+      },
+      "texPath": [
+        "/home/spawn/dev/cpp/projects/Nyx/assets/Rough_Sand_Cast_Aluminium_4K/Rough_Sand_Cast_Aluminium_basecolor_4K.png",
+        "",
+        "/home/spawn/dev/cpp/projects/Nyx/assets/Rough_Sand_Cast_Aluminium_4K/Rough_Sand_Cast_Aluminium_normal_4K.png",
+        "/home/spawn/dev/cpp/projects/Nyx/assets/Rough_Sand_Cast_Aluminium_4K/Rough_Sand_Cast_Aluminium_metallic_4K.png",
+        "/home/spawn/dev/cpp/projects/Nyx/assets/Rough_Sand_Cast_Aluminium_4K/Rough_Sand_Cast_Aluminium_roughness_4K.png",
+        "/home/spawn/dev/cpp/projects/Nyx/assets/Rough_Sand_Cast_Aluminium_4K/Rough_Sand_Cast_Aluminium_ambientocclusion_4K.png"
+      ],
+      "uvScale": [
+        1,
+        1
+      ],
+      "uvOffset": [
+        0,
+        0
+      ],
+      "metallic": 0,
+      "ao": 1,
+      "emissiveFactor": [
+        0,
+        0,
+        0
+      ],
+      "baseColorFactor": [
+        1,
+        1,
+        1,
+        1
+      ],
+      "roughness": 0.5,
+      "name": ""
+    },
+    {
+      "graph": {
+        "links": [
+          {
+            "to": [
+              1,
+              0
+            ],
+            "from": [
+              4,
+              0
+            ],
+            "id": 1
+          },
+          {
+            "to": [
+              1,
+              1
+            ],
+            "from": [
+              5,
+              0
+            ],
+            "id": 2
+          },
+          {
+            "to": [
+              1,
+              2
+            ],
+            "from": [
+              6,
+              0
+            ],
+            "id": 3
+          },
+          {
+            "to": [
+              1,
+              3
+            ],
+            "from": [
+              3,
+              0
+            ],
+            "id": 4
+          },
+          {
+            "to": [
+              1,
+              4
+            ],
+            "from": [
+              7,
+              0
+            ],
+            "id": 5
+          },
+          {
+            "to": [
+              1,
+              5
+            ],
+            "from": [
+              8,
+              0
+            ],
+            "id": 6
+          },
+          {
+            "to": [
+              1,
+              6
+            ],
+            "from": [
+              9,
+              0
+            ],
+            "id": 7
+          }
+        ],
+        "nodes": [
+          {
+            "f": [
+              0,
+              0,
+              0,
+              0
+            ],
+            "posSet": true,
+            "pos": [
+              680,
+              200
+            ],
+            "path": "",
+            "label": "Surface Output",
+            "u": [
+              0,
+              0,
+              0,
+              0
+            ],
+            "type": 26,
+            "id": 1
+          },
+          {
+            "f": [
+              0,
+              0,
+              0,
+              0
+            ],
+            "posSet": true,
+            "pos": [
+              60,
+              40
+            ],
+            "path": "",
+            "label": "UV0",
+            "u": [
+              0,
+              0,
+              0,
+              0
+            ],
+            "type": 0,
+            "id": 2
+          },
+          {
+            "f": [
+              0,
+              0,
+              0,
+              0
+            ],
+            "posSet": true,
+            "pos": [
+              60,
+              260
+            ],
+            "path": "",
+            "label": "NormalWS",
+            "u": [
+              0,
+              0,
+              0,
+              0
+            ],
+            "type": 1,
+            "id": 3
+          },
+          {
+            "f": [
+              1,
+              1,
+              1,
+              1
+            ],
+            "posSet": true,
+            "pos": [
+              240,
+              40
+            ],
+            "path": "",
+            "label": "BaseColor (White)",
+            "u": [
+              0,
+              0,
+              0,
+              0
+            ],
+            "type": 6,
+            "id": 4
+          },
+          {
+            "f": [
+              0,
+              0,
+              0,
+              0
+            ],
+            "posSet": true,
+            "pos": [
+              240,
+              220
+            ],
+            "path": "",
+            "label": "Metallic (Black)",
+            "u": [
+              0,
+              0,
+              0,
+              0
+            ],
+            "type": 3,
+            "id": 5
+          },
+          {
+            "f": [
+              0.5,
+              0,
+              0,
+              0
+            ],
+            "posSet": true,
+            "pos": [
+              240,
+              320
+            ],
+            "path": "",
+            "label": "Roughness (Gray)",
+            "u": [
+              0,
+              0,
+              0,
+              0
+            ],
+            "type": 3,
+            "id": 6
+          },
+          {
+            "f": [
+              1,
+              0,
+              0,
+              0
+            ],
+            "posSet": true,
+            "pos": [
+              240,
+              500
+            ],
+            "path": "",
+            "label": "AO (White)",
+            "u": [
+              0,
+              0,
+              0,
+              0
+            ],
+            "type": 3,
+            "id": 7
+          },
+          {
+            "f": [
+              0,
+              0,
+              0,
+              1
+            ],
+            "posSet": true,
+            "pos": [
+              240,
+              600
+            ],
+            "path": "",
+            "label": "Emissive (Black)",
+            "u": [
+              0,
+              0,
+              0,
+              0
+            ],
+            "type": 4,
+            "id": 8
+          },
+          {
+            "f": [
+              1,
+              0,
+              0,
+              0
+            ],
+            "posSet": true,
+            "pos": [
+              240,
+              740
+            ],
+            "path": "",
+            "label": "Alpha (White)",
+            "u": [
+              0,
+              0,
+              0,
+              0
+            ],
+            "type": 3,
+            "id": 9
+          }
+        ],
+        "nextLinkId": 8,
+        "nextNodeId": 10,
+        "alphaMode": 0,
+        "alphaCutoff": 0.5,
+        "version": 3
+      },
+      "texPath": [
+        "",
+        "",
+        "",
+        "",
+        "",
+        ""
+      ],
+      "uvScale": [
+        1,
+        1
+      ],
+      "uvOffset": [
+        0,
+        0
+      ],
+      "metallic": 0,
+      "ao": 1,
+      "emissiveFactor": [
+        0,
+        0,
+        0
+      ],
+      "baseColorFactor": [
+        1,
+        1,
+        1,
+        1
+      ],
+      "roughness": 0.5,
+      "name": ""
+    },
+    {
+      "graph": {
+        "links": [
+          {
+            "to": [
+              5,
+              0
+            ],
+            "from": [
+              2,
+              0
+            ],
+            "id": 1
+          },
+          {
+            "to": [
+              6,
+              0
+            ],
+            "from": [
+              5,
+              0
+            ],
+            "id": 2
+          },
+          {
+            "to": [
+              6,
+              1
+            ],
+            "from": [
+              4,
+              0
+            ],
+            "id": 3
+          },
+          {
+            "to": [
+              1,
+              0
+            ],
+            "from": [
+              6,
+              0
+            ],
+            "id": 4
+          },
+          {
+            "to": [
+              8,
+              0
+            ],
+            "from": [
+              2,
+              0
+            ],
+            "id": 5
+          },
+          {
+            "to": [
+              1,
+              1
+            ],
+            "from": [
+              8,
+              0
+            ],
+            "id": 6
+          },
+          {
+            "to": [
+              10,
+              0
+            ],
+            "from": [
+              2,
+              0
+            ],
+            "id": 7
+          },
+          {
+            "to": [
+              1,
+              2
+            ],
+            "from": [
+              10,
+              0
+            ],
+            "id": 8
+          },
+          {
+            "to": [
+              11,
+              0
+            ],
+            "from": [
+              2,
+              0
+            ],
+            "id": 9
+          },
+          {
+            "to": [
+              1,
+              3
+            ],
+            "from": [
+              11,
+              0
+            ],
+            "id": 10
+          },
+          {
+            "to": [
+              1,
+              4
+            ],
+            "from": [
+              12,
+              0
+            ],
+            "id": 11
+          },
+          {
+            "to": [
+              1,
+              5
+            ],
+            "from": [
+              13,
+              0
+            ],
+            "id": 12
+          },
+          {
+            "to": [
+              1,
+              6
+            ],
+            "from": [
+              14,
+              0
+            ],
+            "id": 13
+          }
+        ],
+        "nodes": [
+          {
+            "f": [
+              0,
+              0,
+              0,
+              0
+            ],
+            "posSet": true,
+            "pos": [
+              680,
+              200
+            ],
+            "path": "",
+            "label": "Surface Output",
+            "u": [
+              0,
+              0,
+              0,
+              0
+            ],
+            "type": 26,
+            "id": 1
+          },
+          {
+            "f": [
+              0,
+              0,
+              0,
+              0
+            ],
+            "posSet": true,
+            "pos": [
+              60,
+              40
+            ],
+            "path": "",
+            "label": "UV0",
+            "u": [
+              0,
+              0,
+              0,
+              0
+            ],
+            "type": 0,
+            "id": 2
+          },
+          {
+            "f": [
+              0,
+              0,
+              0,
+              0
+            ],
+            "posSet": true,
+            "pos": [
+              60,
+              260
+            ],
+            "path": "",
+            "label": "NormalWS",
+            "u": [
+              0,
+              0,
+              0,
+              0
+            ],
+            "type": 1,
+            "id": 3
+          },
+          {
+            "f": [
+              1,
+              1,
+              1,
+              1
+            ],
+            "posSet": true,
+            "pos": [
+              240,
+              40
+            ],
+            "path": "",
+            "label": "BaseColor (White)",
+            "u": [
+              0,
+              0,
+              0,
+              0
+            ],
+            "type": 6,
+            "id": 4
+          },
+          {
+            "f": [
+              0,
+              0,
+              0,
+              0
+            ],
+            "posSet": true,
+            "pos": [
+              240,
+              120
+            ],
+            "path": "/home/spawn/dev/cpp/projects/Nyx/assets/Raspberry_Red_Heavily_Damaged_Plastic_4K/Raspberry_Red_Heavily_Damaged_Plastic_basecolor_4K.png",
+            "label": "Texture2D",
+            "u": [
+              5,
+              1,
+              0,
+              0
+            ],
+            "type": 7,
+            "id": 5
+          },
+          {
+            "f": [
+              0,
+              0,
+              0,
+              0
+            ],
+            "posSet": true,
+            "pos": [
+              460,
+              80
+            ],
+            "path": "",
+            "label": "Mul",
+            "u": [
+              0,
+              0,
+              0,
+              0
+            ],
+            "type": 12,
+            "id": 6
+          },
+          {
+            "f": [
+              0,
+              0,
+              0,
+              0
+            ],
+            "posSet": true,
+            "pos": [
+              240,
+              220
+            ],
+            "path": "",
+            "label": "Metallic (Black)",
+            "u": [
+              0,
+              0,
+              0,
+              0
+            ],
+            "type": 3,
+            "id": 7
+          },
+          {
+            "f": [
+              0,
+              0,
+              0,
+              0
+            ],
+            "posSet": true,
+            "pos": [
+              240,
+              260
+            ],
+            "path": "/home/spawn/dev/cpp/projects/Nyx/assets/Raspberry_Red_Heavily_Damaged_Plastic_4K/Raspberry_Red_Heavily_Damaged_Plastic_metallic_4K.png",
+            "label": "Texture2D",
+            "u": [
+              7,
+              0,
+              0,
+              0
+            ],
+            "type": 7,
+            "id": 8
+          },
+          {
+            "f": [
+              0.5,
+              0,
+              0,
+              0
+            ],
+            "posSet": true,
+            "pos": [
+              240,
+              320
+            ],
+            "path": "",
+            "label": "Roughness (Gray)",
+            "u": [
+              0,
+              0,
+              0,
+              0
+            ],
+            "type": 3,
+            "id": 9
+          },
+          {
+            "f": [
+              0,
+              0,
+              0,
+              0
+            ],
+            "posSet": true,
+            "pos": [
+              240,
+              360
+            ],
+            "path": "/home/spawn/dev/cpp/projects/Nyx/assets/Raspberry_Red_Heavily_Damaged_Plastic_4K/Raspberry_Red_Heavily_Damaged_Plastic_roughness_4K.png",
+            "label": "Texture2D",
+            "u": [
+              8,
+              0,
+              0,
+              0
+            ],
+            "type": 7,
+            "id": 10
+          },
+          {
+            "f": [
+              0,
+              0,
+              0,
+              0
+            ],
+            "posSet": true,
+            "pos": [
+              240,
+              420
+            ],
+            "path": "/home/spawn/dev/cpp/projects/Nyx/assets/Raspberry_Red_Heavily_Damaged_Plastic_4K/Raspberry_Red_Heavily_Damaged_Plastic_normal_4K.png",
+            "label": "Normal Map",
+            "u": [
+              6,
+              0,
+              0,
+              0
+            ],
+            "type": 9,
+            "id": 11
+          },
+          {
+            "f": [
+              1,
+              0,
+              0,
+              0
+            ],
+            "posSet": true,
+            "pos": [
+              240,
+              500
+            ],
+            "path": "",
+            "label": "AO (White)",
+            "u": [
+              0,
+              0,
+              0,
+              0
+            ],
+            "type": 3,
+            "id": 12
+          },
+          {
+            "f": [
+              0,
+              0,
+              0,
+              1
+            ],
+            "posSet": true,
+            "pos": [
+              240,
+              600
+            ],
+            "path": "",
+            "label": "Emissive (Black)",
+            "u": [
+              0,
+              0,
+              0,
+              0
+            ],
+            "type": 4,
+            "id": 13
+          },
+          {
+            "f": [
+              1,
+              0,
+              0,
+              0
+            ],
+            "posSet": true,
+            "pos": [
+              240,
+              740
+            ],
+            "path": "",
+            "label": "Alpha (White)",
+            "u": [
+              0,
+              0,
+              0,
+              0
+            ],
+            "type": 3,
+            "id": 14
+          }
+        ],
+        "nextLinkId": 14,
+        "nextNodeId": 15,
+        "alphaMode": 0,
+        "alphaCutoff": 0.5,
+        "version": 3
+      },
+      "texPath": [
+        "/home/spawn/dev/cpp/projects/Nyx/assets/Raspberry_Red_Heavily_Damaged_Plastic_4K/Raspberry_Red_Heavily_Damaged_Plastic_basecolor_4K.png",
+        "",
+        "/home/spawn/dev/cpp/projects/Nyx/assets/Raspberry_Red_Heavily_Damaged_Plastic_4K/Raspberry_Red_Heavily_Damaged_Plastic_normal_4K.png",
+        "/home/spawn/dev/cpp/projects/Nyx/assets/Raspberry_Red_Heavily_Damaged_Plastic_4K/Raspberry_Red_Heavily_Damaged_Plastic_metallic_4K.png",
+        "/home/spawn/dev/cpp/projects/Nyx/assets/Raspberry_Red_Heavily_Damaged_Plastic_4K/Raspberry_Red_Heavily_Damaged_Plastic_roughness_4K.png",
+        ""
+      ],
+      "uvScale": [
+        1,
+        1
+      ],
+      "uvOffset": [
+        0,
+        0
+      ],
+      "metallic": 0,
+      "ao": 1,
+      "emissiveFactor": [
+        0,
+        0,
+        0
+      ],
+      "baseColorFactor": [
+        1,
+        1,
+        1,
+        1
+      ],
+      "roughness": 0.5,
+      "name": ""
+    },
+    {
+      "graph": {
+        "links": [
+          {
+            "to": [
+              5,
+              0
+            ],
+            "from": [
+              2,
+              0
+            ],
+            "id": 1
+          },
+          {
+            "to": [
+              6,
+              0
+            ],
+            "from": [
+              5,
+              0
+            ],
+            "id": 2
+          },
+          {
+            "to": [
+              6,
+              1
+            ],
+            "from": [
+              4,
+              0
+            ],
+            "id": 3
+          },
+          {
+            "to": [
+              1,
+              0
+            ],
+            "from": [
+              6,
+              0
+            ],
+            "id": 4
+          },
+          {
+            "to": [
+              8,
+              0
+            ],
+            "from": [
+              2,
+              0
+            ],
+            "id": 5
+          },
+          {
+            "to": [
+              1,
+              1
+            ],
+            "from": [
+              8,
+              0
+            ],
+            "id": 6
+          },
+          {
+            "to": [
+              10,
+              0
+            ],
+            "from": [
+              2,
+              0
+            ],
+            "id": 7
+          },
+          {
+            "to": [
+              1,
+              2
+            ],
+            "from": [
+              10,
+              0
+            ],
+            "id": 8
+          },
+          {
+            "to": [
+              11,
+              0
+            ],
+            "from": [
+              2,
+              0
+            ],
+            "id": 9
+          },
+          {
+            "to": [
+              1,
+              3
+            ],
+            "from": [
+              11,
+              0
+            ],
+            "id": 10
+          },
+          {
+            "to": [
+              13,
+              0
+            ],
+            "from": [
+              2,
+              0
+            ],
+            "id": 11
+          },
+          {
+            "to": [
+              1,
+              4
+            ],
+            "from": [
+              13,
+              0
+            ],
+            "id": 12
+          },
+          {
+            "to": [
+              1,
+              5
+            ],
+            "from": [
+              14,
+              0
+            ],
+            "id": 13
+          },
+          {
+            "to": [
+              1,
+              6
+            ],
+            "from": [
+              15,
+              0
+            ],
+            "id": 14
+          }
+        ],
+        "nodes": [
+          {
+            "f": [
+              0,
+              0,
+              0,
+              0
+            ],
+            "posSet": true,
+            "pos": [
+              680,
+              200
+            ],
+            "path": "",
+            "label": "Surface Output",
+            "u": [
+              0,
+              0,
+              0,
+              0
+            ],
+            "type": 26,
+            "id": 1
+          },
+          {
+            "f": [
+              0,
+              0,
+              0,
+              0
+            ],
+            "posSet": true,
+            "pos": [
+              60,
+              40
+            ],
+            "path": "",
+            "label": "UV0",
+            "u": [
+              0,
+              0,
+              0,
+              0
+            ],
+            "type": 0,
+            "id": 2
+          },
+          {
+            "f": [
+              0,
+              0,
+              0,
+              0
+            ],
+            "posSet": true,
+            "pos": [
+              60,
+              260
+            ],
+            "path": "",
+            "label": "NormalWS",
+            "u": [
+              0,
+              0,
+              0,
+              0
+            ],
+            "type": 1,
+            "id": 3
+          },
+          {
+            "f": [
+              1,
+              1,
+              1,
+              1
+            ],
+            "posSet": true,
+            "pos": [
+              240,
+              40
+            ],
+            "path": "",
+            "label": "BaseColor (White)",
+            "u": [
+              0,
+              0,
+              0,
+              0
+            ],
+            "type": 6,
+            "id": 4
+          },
+          {
+            "f": [
+              0,
+              0,
+              0,
+              0
+            ],
+            "posSet": true,
+            "pos": [
+              240,
+              120
+            ],
+            "path": "/home/spawn/dev/cpp/projects/Nyx/assets/Terracotta_Rustic_Grey_Square_Tile_4K/Terracotta_Rustic_Grey_Square_Tile_basecolor_4K.png",
+            "label": "Texture2D",
+            "u": [
+              9,
+              1,
+              0,
+              0
+            ],
+            "type": 7,
+            "id": 5
+          },
+          {
+            "f": [
+              0,
+              0,
+              0,
+              0
+            ],
+            "posSet": true,
+            "pos": [
+              460,
+              80
+            ],
+            "path": "",
+            "label": "Mul",
+            "u": [
+              0,
+              0,
+              0,
+              0
+            ],
+            "type": 12,
+            "id": 6
+          },
+          {
+            "f": [
+              0,
+              0,
+              0,
+              0
+            ],
+            "posSet": true,
+            "pos": [
+              240,
+              220
+            ],
+            "path": "",
+            "label": "Metallic (Black)",
+            "u": [
+              0,
+              0,
+              0,
+              0
+            ],
+            "type": 3,
+            "id": 7
+          },
+          {
+            "f": [
+              0,
+              0,
+              0,
+              0
+            ],
+            "posSet": true,
+            "pos": [
+              240,
+              260
+            ],
+            "path": "/home/spawn/dev/cpp/projects/Nyx/assets/Terracotta_Rustic_Grey_Square_Tile_4K/Terracotta_Rustic_Grey_Square_Tile_metallic_4K.png",
+            "label": "Texture2D",
+            "u": [
+              11,
+              0,
+              0,
+              0
+            ],
+            "type": 7,
+            "id": 8
+          },
+          {
+            "f": [
+              0.5,
+              0,
+              0,
+              0
+            ],
+            "posSet": true,
+            "pos": [
+              240,
+              320
+            ],
+            "path": "",
+            "label": "Roughness (Gray)",
+            "u": [
+              0,
+              0,
+              0,
+              0
+            ],
+            "type": 3,
+            "id": 9
+          },
+          {
+            "f": [
+              0,
+              0,
+              0,
+              0
+            ],
+            "posSet": true,
+            "pos": [
+              240,
+              360
+            ],
+            "path": "/home/spawn/dev/cpp/projects/Nyx/assets/Terracotta_Rustic_Grey_Square_Tile_4K/Terracotta_Rustic_Grey_Square_Tile_roughness_4K.png",
+            "label": "Texture2D",
+            "u": [
+              12,
+              0,
+              0,
+              0
+            ],
+            "type": 7,
+            "id": 10
+          },
+          {
+            "f": [
+              0,
+              0,
+              0,
+              0
+            ],
+            "posSet": true,
+            "pos": [
+              240,
+              420
+            ],
+            "path": "/home/spawn/dev/cpp/projects/Nyx/assets/Terracotta_Rustic_Grey_Square_Tile_4K/Terracotta_Rustic_Grey_Square_Tile_normal_4K.png",
+            "label": "Normal Map",
+            "u": [
+              10,
+              0,
+              0,
+              0
+            ],
+            "type": 9,
+            "id": 11
+          },
+          {
+            "f": [
+              1,
+              0,
+              0,
+              0
+            ],
+            "posSet": true,
+            "pos": [
+              240,
+              500
+            ],
+            "path": "",
+            "label": "AO (White)",
+            "u": [
+              0,
+              0,
+              0,
+              0
+            ],
+            "type": 3,
+            "id": 12
+          },
+          {
+            "f": [
+              0,
+              0,
+              0,
+              0
+            ],
+            "posSet": true,
+            "pos": [
+              240,
+              540
+            ],
+            "path": "/home/spawn/dev/cpp/projects/Nyx/assets/Terracotta_Rustic_Grey_Square_Tile_4K/Terracotta_Rustic_Grey_Square_Tile_ambientocclusion_4K.png",
+            "label": "Texture2D",
+            "u": [
+              13,
+              0,
+              0,
+              0
+            ],
+            "type": 7,
+            "id": 13
+          },
+          {
+            "f": [
+              0,
+              0,
+              0,
+              1
+            ],
+            "posSet": true,
+            "pos": [
+              240,
+              600
+            ],
+            "path": "",
+            "label": "Emissive (Black)",
+            "u": [
+              0,
+              0,
+              0,
+              0
+            ],
+            "type": 4,
+            "id": 14
+          },
+          {
+            "f": [
+              1,
+              0,
+              0,
+              0
+            ],
+            "posSet": true,
+            "pos": [
+              240,
+              740
+            ],
+            "path": "",
+            "label": "Alpha (White)",
+            "u": [
+              0,
+              0,
+              0,
+              0
+            ],
+            "type": 3,
+            "id": 15
+          }
+        ],
+        "nextLinkId": 15,
+        "nextNodeId": 16,
+        "alphaMode": 0,
+        "alphaCutoff": 0.5,
+        "version": 3
+      },
+      "texPath": [
+        "/home/spawn/dev/cpp/projects/Nyx/assets/Terracotta_Rustic_Grey_Square_Tile_4K/Terracotta_Rustic_Grey_Square_Tile_basecolor_4K.png",
+        "",
+        "/home/spawn/dev/cpp/projects/Nyx/assets/Terracotta_Rustic_Grey_Square_Tile_4K/Terracotta_Rustic_Grey_Square_Tile_normal_4K.png",
+        "/home/spawn/dev/cpp/projects/Nyx/assets/Terracotta_Rustic_Grey_Square_Tile_4K/Terracotta_Rustic_Grey_Square_Tile_metallic_4K.png",
+        "/home/spawn/dev/cpp/projects/Nyx/assets/Terracotta_Rustic_Grey_Square_Tile_4K/Terracotta_Rustic_Grey_Square_Tile_roughness_4K.png",
+        "/home/spawn/dev/cpp/projects/Nyx/assets/Terracotta_Rustic_Grey_Square_Tile_4K/Terracotta_Rustic_Grey_Square_Tile_ambientocclusion_4K.png"
+      ],
+      "uvScale": [
+        1,
+        1
+      ],
+      "uvOffset": [
+        0,
+        0
+      ],
+      "metallic": 0,
+      "ao": 1,
+      "emissiveFactor": [
+        0,
+        0,
+        0
+      ],
+      "baseColorFactor": [
+        1,
+        1,
+        1,
+        1
+      ],
+      "roughness": 0.5,
+      "name": ""
+    }
+  ],
+  "entities": [
+    {
+      "mesh": {
+        "submeshes": [
+          {
+            "material": [
+              0,
+              1
+            ],
+            "materialRef": "",
+            "materialIndex": 0,
+            "type": 3,
+            "name": "Submesh 0"
+          }
+        ]
+      },
+      "transform": {
+        "hidden": false,
+        "s": [
+          0.999987,
+          0.999984,
+          0.999991
+        ],
+        "r": [
+          0.83246,
+          -0.0406195,
+          -0.527048,
+          -0.166075
+        ],
+        "t": [
+          0.772078,
+          -0.618986,
+          1.2966
+        ]
+      },
+      "parent": "12381218514919333173",
+      "name": "Sphere",
+      "uuid": "646104640608722958"
+    },
+    {
+      "transform": {
+        "hidden": false,
+        "s": [
+          1,
+          1,
+          1
+        ],
+        "r": [
+          0.990166,
+          -0.139836,
+          -0.00416795,
+          -0.000588616
+        ],
+        "t": [
+          -0.0189051,
+          0.820503,
+          4.40427
+        ]
+      },
+      "parent": null,
+      "camera": {
+        "exposure": 0,
+        "farZ": 2000,
+        "fovYDeg": 60,
+        "nearZ": 0.01,
+        "orthoHeight": 10,
+        "projection": 0
+      },
+      "name": "Camera",
+      "uuid": "11854645562294134234"
+    },
+    {
+      "transform": {
+        "hidden": false,
+        "s": [
+          0.999998,
+          0.999992,
+          0.999998
+        ],
+        "r": [
+          -0.601813,
+          6.12156e-08,
+          0.798637,
+          6.12156e-08
+        ],
+        "t": [
+          8.64327e-08,
+          0.191333,
+          1.21475e-08
+        ]
+      },
+      "parent": null,
+      "name": "Entity",
+      "uuid": "12381218514919333173"
+    },
+    {
+      "light": {
+        "enabled": true,
+        "exposure": 0,
+        "radius": 8,
+        "outerDeg": 25,
+        "intensity": 80,
+        "innerDeg": 15,
+        "color": [
+          1,
+          1,
+          1
+        ],
+        "type": 1
+      },
+      "mesh": {
+        "submeshes": [
+          {
+            "material": [
+              1,
+              1
+            ],
+            "materialRef": "",
+            "materialIndex": 1,
+            "type": 3,
+            "name": "Light"
+          }
+        ]
+      },
+      "transform": {
+        "hidden": false,
+        "s": [
+          0.1,
+          0.1,
+          0.1
+        ],
+        "r": [
+          1,
+          -1.11022e-15,
+          2.91038e-10,
+          3.1225e-16
+        ],
+        "t": [
+          -5.96046e-08,
+          2.47013,
+          9.31323e-10
+        ]
+      },
+      "parent": null,
+      "name": "Point Light",
+      "uuid": "14938186630393027157"
+    },
+    {
+      "mesh": {
+        "submeshes": [
+          {
+            "material": [
+              2,
+              1
+            ],
+            "materialRef": "",
+            "materialIndex": 2,
+            "type": 3,
+            "name": "Submesh 0"
+          }
+        ]
+      },
+      "transform": {
+        "hidden": false,
+        "s": [
+          0.999989,
+          1,
+          0.999989
+        ],
+        "r": [
+          0.795975,
+          -1.20795e-12,
+          -0.605329,
+          -1.24563e-12
+        ],
+        "t": [
+          -0.267143,
+          -0.618985,
+          -0.963641
+        ]
+      },
+      "parent": "12381218514919333173",
+      "name": "Sphere",
+      "uuid": "16269375063968498738"
+    },
+    {
+      "mesh": {
+        "submeshes": [
+          {
+            "material": [
+              3,
+              1
+            ],
+            "materialRef": "",
+            "materialIndex": 3,
+            "type": 1,
+            "name": "Submesh 0"
+          }
+        ]
+      },
+      "transform": {
+        "hidden": false,
+        "s": [
+          15.5184,
+          15.5184,
+          15.5184
+        ],
+        "r": [
+          1,
+          0,
+          0,
+          0
+        ],
+        "t": [
+          0,
+          -1.22,
+          0
+        ]
+      },
+      "parent": null,
+      "name": "Plane",
+      "uuid": "16976819885923497312"
+    }
+  ],
+  "sky": {
+    "ambient": 0.03,
+    "rotationYawDeg": 0,
+    "exposure": 0,
+    "intensity": 2.641,
+    "hdriPath": "/home/spawn/dev/cpp/projects/Nyx/engine/resources/textures/studio.hdr",
+    "drawBackground": true,
+    "enabled": true
+  },
+  "categories": [
+    {
+      "entities": [],
+      "parent": -1,
+      "name": "Category"
+    }
+  ],
+  "activeCamera": "11854645562294134234",
+  "type": "NyxScene",
+  "version": 5
+}

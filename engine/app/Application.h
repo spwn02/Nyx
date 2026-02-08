@@ -2,6 +2,7 @@
 
 #include "editor/Selection.h"
 #include "editor/EditorState.h"
+#include "input/Keybinds.h"
 #include "scene/EntityID.h"
 #include <memory>
 
@@ -32,6 +33,10 @@ private:
   uint32_t m_cycleIndex = 0;
   Selection m_cycleLastSel{};
   EditorState m_editorState{};
+  KeybindManager m_keybinds{};
+
+private:
+  void setupKeybinds();
 };
 
 } // namespace Nyx

@@ -12,7 +12,8 @@ class PassSelection final : public RenderPass {
 public:
   ~PassSelection() override;
 
-  void updateSelectedIDs(const std::vector<uint32_t> &ids);
+  void updateSelectedIDs(const std::vector<uint32_t> &ids,
+                         uint32_t activePick);
 
   void configure(GLShaderUtil &shaders, GLResources &res,
                  GLFullscreenTriangle &fsTri);

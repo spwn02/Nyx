@@ -40,6 +40,8 @@ Key InputSystem::mapGLFWKey(int key) {
     return Key::E;
   case GLFW_KEY_X:
     return Key::X;
+  case GLFW_KEY_Z:
+    return Key::Z;
   case GLFW_KEY_R:
     return Key::R;
   case GLFW_KEY_DELETE:
@@ -58,6 +60,10 @@ Key InputSystem::mapGLFWKey(int key) {
     return Key::LeftAlt;
   case GLFW_KEY_RIGHT_ALT:
     return Key::RightAlt;
+  case GLFW_KEY_LEFT:
+    return Key::ArrowLeft;
+  case GLFW_KEY_RIGHT:
+    return Key::ArrowRight;
   default:
     return Key::Unknown;
   }
@@ -125,6 +131,11 @@ void InputSystem::onCursorPos(double x, double y) {
   m_state.mouseDeltaY += (y - m_lastMouseY);
   m_lastMouseX = x;
   m_lastMouseY = y;
+}
+
+void InputSystem::onScroll(double xoffset, double yoffset) {
+  m_state.scrollX += xoffset;
+  m_state.scrollY += yoffset;
 }
 
 } // namespace Nyx

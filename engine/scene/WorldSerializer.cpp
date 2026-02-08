@@ -96,6 +96,19 @@ static bool readVec4(const Value &v, float &x, float &y, float &z, float &w) {
   w = (float)a[3].asNum();
   return true;
 }
+static bool readUVec4(const Value &v, uint32_t &x, uint32_t &y, uint32_t &z,
+                      uint32_t &w) {
+  if (!v.isArray())
+    return false;
+  const auto &a = v.asArray();
+  if (a.size() != 4)
+    return false;
+  x = (uint32_t)a[0].asNum();
+  y = (uint32_t)a[1].asNum();
+  z = (uint32_t)a[2].asNum();
+  w = (uint32_t)a[3].asNum();
+  return true;
+}
 static bool readQuatWXYZ(const Value &v, float &w, float &x, float &y,
                          float &z) {
   if (!v.isArray())
@@ -157,14 +170,14 @@ static bool saveToFileImpl(const World &world, EntityID editorCamera,
   });
 
   Object root;
-  root["version"] = materials ? 4 : 3;
+  root["version"] = materials ? 5 : 3;
   root["type"] = "NyxScene";
   root["activeCamera"] = u64ToString(world.activeCameraUUID().value);
 
-  std::vector<MaterialData> materialList;
+  std::vector<MaterialHandle> materialHandles;
   std::unordered_map<uint64_t, uint32_t> materialIndex;
   if (materials) {
-    materialList.reserve(64);
+    materialHandles.reserve(64);
   }
 
   {
@@ -207,6 +220,7 @@ static bool saveToFileImpl(const World &world, EntityID editorCamera,
     jt["r"] =
         jQuatWXYZ(tr.rotation.w, tr.rotation.x, tr.rotation.y, tr.rotation.z);
     jt["s"] = jVec3(tr.scale.x, tr.scale.y, tr.scale.z);
+    jt["hidden"] = tr.hidden;
     je["transform"] = Value(std::move(jt));
 
     if (world.hasMesh(e)) {
@@ -219,6 +233,7 @@ static bool saveToFileImpl(const World &world, EntityID editorCamera,
         Object js;
         js["name"] = sm.name;
         js["type"] = (double)(int)sm.type;
+        js["materialRef"] = sm.materialAssetPath;
 
         Array mh;
         mh.emplace_back((double)sm.material.slot);
@@ -230,9 +245,8 @@ static bool saveToFileImpl(const World &world, EntityID editorCamera,
               (uint64_t(sm.material.slot) << 32) | uint64_t(sm.material.gen);
           auto it = materialIndex.find(key);
           if (it == materialIndex.end()) {
-            const MaterialData &md = materials->cpu(sm.material);
-            const uint32_t idx = (uint32_t)materialList.size();
-            materialList.push_back(md);
+            const uint32_t idx = (uint32_t)materialHandles.size();
+            materialHandles.push_back(sm.material);
             materialIndex[key] = idx;
             js["materialIndex"] = (double)idx;
           } else {
@@ -283,11 +297,41 @@ static bool saveToFileImpl(const World &world, EntityID editorCamera,
 
   root["entities"] = Value(std::move(jEntities));
 
+  // Categories (editor-only grouping)
+  if (!world.categories().empty()) {
+    Array jCats;
+    jCats.reserve(world.categories().size());
+    for (const auto &c : world.categories()) {
+      Object jc;
+      jc["name"] = c.name;
+      jc["parent"] = (double)c.parent;
+      Array jEnts;
+      for (EntityID e : c.entities) {
+        if (!world.isAlive(e))
+          continue;
+        const EntityUUID id = world.uuid(e);
+        if (!id)
+          continue;
+        jEnts.emplace_back(u64ToString(id.value));
+      }
+      jc["entities"] = Value(std::move(jEnts));
+      jCats.emplace_back(Value(std::move(jc)));
+    }
+    root["categories"] = Value(std::move(jCats));
+  }
+
   if (materials) {
     Array mats;
-    mats.reserve(materialList.size());
-    for (const auto &m : materialList) {
+    mats.reserve(materialHandles.size());
+    for (const auto &mh : materialHandles) {
+      if (!materials->isAlive(mh)) {
+        mats.emplace_back(Value(nullptr));
+        continue;
+      }
+      const MaterialData &m = materials->cpu(mh);
+      const MaterialGraph &g = materials->graph(mh);
       Object jm;
+      jm["name"] = m.name;
       jm["baseColorFactor"] =
           jVec4(m.baseColorFactor.x, m.baseColorFactor.y, m.baseColorFactor.z,
                 m.baseColorFactor.w);
@@ -303,6 +347,63 @@ static bool saveToFileImpl(const World &world, EntityID editorCamera,
       for (const auto &p : m.texPath)
         texPaths.emplace_back(p);
       jm["texPath"] = Value(std::move(texPaths));
+
+      Object jg;
+      jg["version"] = 3;
+      jg["alphaMode"] = (double)(int)g.alphaMode;
+      jg["alphaCutoff"] = (double)g.alphaCutoff;
+      jg["nextNodeId"] = (double)g.nextNodeId;
+      jg["nextLinkId"] = (double)g.nextLinkId;
+
+      Array jnodes;
+      jnodes.reserve(g.nodes.size());
+      for (const auto &n : g.nodes) {
+        Object jn;
+        jn["id"] = (double)n.id;
+        jn["type"] = (double)(int)n.type;
+        jn["label"] = n.label;
+        jn["pos"] = jVec2(n.pos.x, n.pos.y);
+        jn["posSet"] = n.posSet;
+        jn["f"] = jVec4(n.f.x, n.f.y, n.f.z, n.f.w);
+        Array ju;
+        ju.emplace_back((double)n.u.x);
+        ju.emplace_back((double)n.u.y);
+        ju.emplace_back((double)n.u.z);
+        ju.emplace_back((double)n.u.w);
+        jn["u"] = Value(std::move(ju));
+        std::string path = n.path;
+        if (path.empty() && (n.type == MatNodeType::Texture2D ||
+                             n.type == MatNodeType::TextureMRA ||
+                             n.type == MatNodeType::NormalMap)) {
+          if (materials) {
+            const auto &tt = materials->textures();
+            if (n.u.x != TextureTable::Invalid)
+              path = tt.pathByIndex(n.u.x);
+          }
+        }
+        jn["path"] = path;
+        jnodes.emplace_back(Value(std::move(jn)));
+      }
+      jg["nodes"] = Value(std::move(jnodes));
+
+      Array jlinks;
+      jlinks.reserve(g.links.size());
+      for (const auto &l : g.links) {
+        Object jl;
+        jl["id"] = (double)l.id;
+        Array jfrom;
+        jfrom.emplace_back((double)l.from.node);
+        jfrom.emplace_back((double)l.from.slot);
+        jl["from"] = Value(std::move(jfrom));
+        Array jto;
+        jto.emplace_back((double)l.to.node);
+        jto.emplace_back((double)l.to.slot);
+        jl["to"] = Value(std::move(jto));
+        jlinks.emplace_back(Value(std::move(jl)));
+      }
+      jg["links"] = Value(std::move(jlinks));
+      jm["graph"] = Value(std::move(jg));
+
       mats.emplace_back(Value(std::move(jm)));
     }
     root["materials"] = Value(std::move(mats));
@@ -363,6 +464,8 @@ static bool loadFromFileImpl(World &world, MaterialSystem *materials,
           continue;
         }
         MaterialData md{};
+        if (const Value *vn = vm.get("name"); vn && vn->isString())
+          md.name = vn->asString();
         if (const Value *vb = vm.get("baseColorFactor"); vb && vb->isArray()) {
           readVec4(*vb, md.baseColorFactor.x, md.baseColorFactor.y,
                    md.baseColorFactor.z, md.baseColorFactor.w);
@@ -399,7 +502,108 @@ static bool loadFromFileImpl(World &world, MaterialSystem *materials,
             }
           }
         }
-        loadedMaterials.push_back(materials->create(md));
+        MaterialHandle h = materials->create(md);
+        if (const Value *vg = vm.get("graph"); vg && vg->isObject()) {
+          int graphVer = 0;
+          if (const Value *vv = vg->get("version"); vv && vv->isNum())
+            graphVer = (int)vv->asNum(graphVer);
+
+          if (graphVer >= 3) {
+            const Value *vNodes = vg->get("nodes");
+            const Value *vLinks = vg->get("links");
+            if (vNodes && vNodes->isArray()) {
+              MaterialGraph g{};
+              if (const Value *va = vg->get("alphaMode"); va && va->isNum())
+                g.alphaMode = (MatAlphaMode)(int)va->asNum();
+              if (const Value *vc = vg->get("alphaCutoff"); vc && vc->isNum())
+                g.alphaCutoff = (float)vc->asNum(g.alphaCutoff);
+              if (const Value *vnid = vg->get("nextNodeId"); vnid && vnid->isNum())
+                g.nextNodeId = (uint32_t)vnid->asNum(g.nextNodeId);
+              if (const Value *vlid = vg->get("nextLinkId"); vlid && vlid->isNum())
+                g.nextLinkId = (uint64_t)vlid->asNum(g.nextLinkId);
+
+              for (const Value &vn : vNodes->asArray()) {
+                if (!vn.isObject())
+                  continue;
+                MatNode n{};
+                if (const Value *vid = vn.get("id"); vid && vid->isNum())
+                  n.id = (MatNodeID)(uint32_t)vid->asNum();
+                if (const Value *vt = vn.get("type"); vt && vt->isNum())
+                  n.type = (MatNodeType)(uint32_t)vt->asNum();
+                if (const Value *vl = vn.get("label"); vl && vl->isString())
+                  n.label = vl->asString();
+                if (const Value *vp = vn.get("pos"); vp && vp->isArray())
+                  readVec2(*vp, n.pos.x, n.pos.y);
+                if (const Value *vps = vn.get("posSet"); vps && vps->isBool())
+                  n.posSet = vps->asBool(false);
+                if (const Value *vf = vn.get("f"); vf && vf->isArray())
+                  readVec4(*vf, n.f.x, n.f.y, n.f.z, n.f.w);
+                if (const Value *vu = vn.get("u"); vu && vu->isArray())
+                  readUVec4(*vu, n.u.x, n.u.y, n.u.z, n.u.w);
+                if (const Value *vp = vn.get("path"); vp && vp->isString())
+                  n.path = vp->asString();
+                if (!n.path.empty() &&
+                    (n.type == MatNodeType::Texture2D ||
+                     n.type == MatNodeType::TextureMRA ||
+                     n.type == MatNodeType::NormalMap)) {
+                  const bool srgb = (n.type == MatNodeType::Texture2D) ? (n.u.y != 0) : false;
+                  uint32_t idx = materials->textures().getOrCreate2D(n.path, srgb);
+                  if (idx != TextureTable::Invalid)
+                    n.u.x = idx;
+                }
+                g.nodes.push_back(std::move(n));
+              }
+
+              if (vLinks && vLinks->isArray()) {
+                for (const Value &vl : vLinks->asArray()) {
+                  if (!vl.isObject())
+                    continue;
+                  MatLink l{};
+                  if (const Value *vid = vl.get("id"); vid && vid->isNum())
+                    l.id = (uint64_t)vid->asNum();
+                  if (const Value *vf = vl.get("from"); vf && vf->isArray()) {
+                    const auto &a = vf->asArray();
+                    if (a.size() >= 2) {
+                      l.from.node = (MatNodeID)(uint32_t)a[0].asNum();
+                      l.from.slot = (uint32_t)a[1].asNum();
+                    }
+                  }
+                  if (const Value *vt = vl.get("to"); vt && vt->isArray()) {
+                    const auto &a = vt->asArray();
+                    if (a.size() >= 2) {
+                      l.to.node = (MatNodeID)(uint32_t)a[0].asNum();
+                      l.to.slot = (uint32_t)a[1].asNum();
+                    }
+                  }
+                  g.links.push_back(std::move(l));
+                }
+              }
+
+              if (g.findSurfaceOutput() == 0) {
+                materials->ensureGraphFromMaterial(h, true);
+              } else {
+                materials->graph(h) = std::move(g);
+                materials->markGraphDirty(h);
+                materials->syncMaterialFromGraph(h);
+              }
+            } else {
+              materials->ensureGraphFromMaterial(h);
+            }
+          } else {
+            // Discard old graph data entirely.
+            materials->ensureGraphFromMaterial(h, true);
+          }
+        } else {
+          materials->ensureGraphFromMaterial(h);
+        }
+
+        loadedMaterials.push_back(h);
+      }
+    }
+    for (auto h : loadedMaterials) {
+      if (materials->isAlive(h)) {
+        if (materials->graph(h).nodes.empty())
+          materials->ensureGraphFromMaterial(h);
       }
     }
   }
@@ -467,17 +671,22 @@ static bool loadFromFileImpl(World &world, MaterialSystem *materials,
         const Value *jt = vt->get("t");
         const Value *jr = vt->get("r");
         const Value *js = vt->get("s");
+        const Value *jh = vt->get("hidden");
         if (jt)
           readVec3(*jt, tx, ty, tz);
         if (jr)
           readQuatWXYZ(*jr, qw, qx, qy, qz);
         if (js)
           readVec3(*js, sx, sy, sz);
+        bool hidden = false;
+        if (jh && jh->isBool())
+          hidden = jh->asBool(false);
 
         auto &tr = world.transform(e);
         tr.translation = {tx, ty, tz};
         tr.rotation = {qw, qx, qy, qz};
         tr.scale = {sx, sy, sz};
+        tr.hidden = hidden;
         tr.dirty = true;
       }
     }
@@ -498,6 +707,10 @@ static bool loadFromFileImpl(World &world, MaterialSystem *materials,
               sm.name = sn->asString();
             if (const Value *st = vs.get("type"); st && st->isNum())
               sm.type = (ProcMeshType)(int)st->asNum();
+            if (const Value *sref = vs.get("materialRef");
+                sref && sref->isString()) {
+              sm.materialAssetPath = sref->asString();
+            }
             bool setMat = false;
             if (!loadedMaterials.empty()) {
               if (const Value *vmi = vs.get("materialIndex"); vmi && vmi->isNum()) {
@@ -592,6 +805,34 @@ static bool loadFromFileImpl(World &world, MaterialSystem *materials,
         mc.submeshes.push_back(MeshSubmesh{});
       mc.submeshes[0].name = "Light";
       mc.submeshes[0].type = ProcMeshType::Sphere;
+    }
+  }
+
+  if (const Value *vCats = root.get("categories")) {
+    if (vCats->isArray()) {
+      std::vector<int32_t> catParents;
+      for (const Value &vc : vCats->asArray()) {
+        if (!vc.isObject())
+          continue;
+        const Value *vn = vc.get("name");
+        std::string name = vn && vn->isString() ? vn->asString() : "Category";
+        const uint32_t idx = world.addCategory(name);
+        const Value *vp = vc.get("parent");
+        int32_t pidx = vp && vp->isNum() ? (int32_t)vp->asNum(-1) : -1;
+        catParents.push_back(pidx);
+        const Value *ve = vc.get("entities");
+        if (ve && ve->isArray()) {
+          for (const Value &uuidVal : ve->asArray()) {
+            const uint64_t uuid = readU64(&uuidVal);
+            auto it = map.find(uuid);
+            if (it != map.end() && it->second != InvalidEntity)
+              world.addEntityCategory(it->second, (int32_t)idx);
+          }
+        }
+      }
+      for (uint32_t i = 0; i < catParents.size(); ++i) {
+        world.setCategoryParent(i, catParents[i]);
+      }
     }
   }
 

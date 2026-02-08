@@ -2,6 +2,7 @@
 
 #include "app/EngineContext.h"
 #include "platform/FileDialogs.h"
+#include "editor/ui/UiPayloads.h"
 #include <imgui.h>
 
 namespace Nyx {
@@ -59,7 +60,7 @@ void LUTManagerPanel::draw(EngineContext &engine) {
   // Drag/drop .cube from Asset Browser
   if (ImGui::BeginDragDropTarget()) {
     if (const ImGuiPayload *payload =
-            ImGui::AcceptDragDropPayload("NYX_ASSET_PATH_TEX")) {
+            ImGui::AcceptDragDropPayload(UiPayload::TexturePath)) {
       const char *p = (const char *)payload->Data;
       if (p) {
         std::string path(p);

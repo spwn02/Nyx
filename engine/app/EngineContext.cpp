@@ -1,14 +1,15 @@
 #include "EngineContext.h"
 
-#include "render/passes/PassShadowCSM.h"
+#include "render/draw/DrawData.h"
 #include "render/filters/LUT3DLoader.h"
+#include "render/passes/PassShadowCSM.h"
 #include "render/rg/RenderPassContext.h"
 #include "scene/material/MaterialData.h"
 
-#include <glad/glad.h>
 #include <algorithm>
-#include <vector>
+#include <glad/glad.h>
 #include <glm/gtc/matrix_inverse.hpp>
+#include <vector>
 
 namespace Nyx {
 
@@ -32,6 +33,9 @@ EngineContext::EngineContext() {
 
   // Post-filter graph + SSBO (requires GL)
   initPostFilters();
+
+  m_animation.setWorld(&m_world);
+  m_animation.setActiveClip(&m_animationClip);
 }
 
 EngineContext::~EngineContext() {
@@ -58,6 +62,7 @@ EngineContext::~EngineContext() {
   m_postLUTs.clear();
   m_postLUTIndex.clear();
   m_filterStack.shutdown();
+  m_perDraw.shutdown();
   m_lights.shutdownGL();
   m_materials.shutdownGL();
   m_envIBL.shutdown();
@@ -68,6 +73,14 @@ void EngineContext::tick(float dt) {
   m_dt = dt;
   m_materials.processTextureUploads(8);
   m_materials.uploadIfDirty();
+  m_animation.tick(dt);
+}
+
+void EngineContext::setHiddenEntities(const std::vector<EntityID> &ents) {
+  m_hiddenEntities.clear();
+  m_hiddenEntities.reserve(ents.size());
+  for (EntityID e : ents)
+    m_hiddenEntities.insert(e);
 }
 
 void EngineContext::buildRenderables() {
@@ -118,8 +131,20 @@ uint32_t EngineContext::render(uint32_t windowWidth, uint32_t windowHeight,
   buildRenderables();
   m_envIBL.ensureResources();
 
-  for (const auto &r : m_renderables.all()) {
-    (void)materialIndex(r);
+  for (auto &r : m_renderables.allMutable()) {
+    const uint32_t idx = materialIndex(r);
+    r.materialGpuIndex = idx;
+    if (m_world.hasMesh(r.entity) &&
+        r.submesh < m_world.mesh(r.entity).submeshes.size()) {
+      const auto &sm = m_world.mesh(r.entity).submeshes[r.submesh];
+      if (sm.material != InvalidMaterial && m_materials.isAlive(sm.material)) {
+        r.alphaMode = m_materials.alphaMode(sm.material);
+      } else {
+        r.alphaMode = MatAlphaMode::Opaque;
+      }
+    } else {
+      r.alphaMode = MatAlphaMode::Opaque;
+    }
   }
 
   EntityID camEnt = m_renderCameraOverride;
@@ -162,6 +187,45 @@ uint32_t EngineContext::render(uint32_t windowWidth, uint32_t windowHeight,
     }
   }
 
+  m_renderables.buildRoutedLists(ctx.cameraPos, ctx.cameraDir);
+
+  // Build per-draw SSBO in the same order as registry lists.
+  {
+    const auto &opaque = m_renderables.opaque();
+    const auto &transparent = m_renderables.transparentSorted();
+
+    std::vector<DrawData> draws;
+    draws.reserve(opaque.size() + transparent.size());
+
+    auto pushDraw = [&](const Renderable &r) {
+      DrawData d{};
+      d.model = r.model;
+      d.materialIndex = r.materialGpuIndex;
+      d.pickID = r.pickID;
+      d.meshHandle = static_cast<uint32_t>(r.mesh);
+      draws.push_back(d);
+    };
+
+    m_perDrawOpaqueOffset = 0;
+    for (const auto &r : opaque) {
+      if (isEntityHidden(r.entity))
+        continue;
+      pushDraw(r);
+    }
+    m_perDrawOpaqueCount = static_cast<uint32_t>(draws.size());
+
+    m_perDrawTransparentOffset = static_cast<uint32_t>(draws.size());
+    for (const auto &r : transparent) {
+      if (isEntityHidden(r.entity))
+        continue;
+      pushDraw(r);
+    }
+    m_perDrawTransparentCount =
+        static_cast<uint32_t>(draws.size() - m_perDrawTransparentOffset);
+
+    m_perDraw.upload(draws);
+  }
+
   // Old shadow system disabled - now using new atlas-based system via Renderer
   // m_shadows.render(*this, m_renderables, ctx,
   //                  [this](ProcMeshType t) { m_renderer.drawPrimitive(t); });
@@ -175,10 +239,59 @@ uint32_t EngineContext::render(uint32_t windowWidth, uint32_t windowHeight,
   updatePostFilters();
 
   // Outline: selected pickIDs come straight from editor selection
-  m_renderer.setSelectedPickIDs(m_selectedPickIDs);
+  m_renderer.setSelectedPickIDs(m_selectedPickIDs, m_selectedActivePick);
+
+  m_lastPreviewCaptureTex = 0;
+  MaterialHandle prevPreview = m_previewMaterial;
+  if (!m_previewCaptureQueue.empty()) {
+    m_activePreviewCapture = m_previewCaptureQueue.front();
+    m_previewCaptureQueue.erase(m_previewCaptureQueue.begin());
+    if (m_activePreviewCapture.mat != InvalidMaterial)
+      m_previewMaterial = m_activePreviewCapture.mat;
+  } else {
+    m_activePreviewCapture = {};
+  }
 
   uint32_t outTex = m_renderer.renderFrame(ctx, editorVisible, m_renderables,
                                            m_selectedPickIDs, *this);
+
+  if (m_activePreviewCapture.mat != InvalidMaterial &&
+      m_activePreviewCapture.targetTex != 0) {
+    const uint32_t srcTex = m_renderer.previewTexture();
+    if (srcTex != 0) {
+      int srcW = 0, srcH = 0;
+      int dstW = 0, dstH = 0;
+      glGetTextureLevelParameteriv(srcTex, 0, GL_TEXTURE_WIDTH, &srcW);
+      glGetTextureLevelParameteriv(srcTex, 0, GL_TEXTURE_HEIGHT, &srcH);
+      glGetTextureLevelParameteriv(m_activePreviewCapture.targetTex, 0,
+                                   GL_TEXTURE_WIDTH, &dstW);
+      glGetTextureLevelParameteriv(m_activePreviewCapture.targetTex, 0,
+                                   GL_TEXTURE_HEIGHT, &dstH);
+      if (srcW > 0 && srcH > 0 && dstW > 0 && dstH > 0) {
+        static GLuint s_readFbo = 0;
+        static GLuint s_drawFbo = 0;
+        if (s_readFbo == 0)
+          glCreateFramebuffers(1, &s_readFbo);
+        if (s_drawFbo == 0)
+          glCreateFramebuffers(1, &s_drawFbo);
+
+        glBindFramebuffer(GL_READ_FRAMEBUFFER, s_readFbo);
+        glNamedFramebufferTexture(s_readFbo, GL_COLOR_ATTACHMENT0, srcTex, 0);
+        glBindFramebuffer(GL_DRAW_FRAMEBUFFER, s_drawFbo);
+        glNamedFramebufferTexture(s_drawFbo, GL_COLOR_ATTACHMENT0,
+                                  m_activePreviewCapture.targetTex, 0);
+
+        glBlitFramebuffer(0, 0, srcW, srcH, 0, 0, dstW, dstH,
+                          GL_COLOR_BUFFER_BIT, GL_LINEAR);
+
+        glBindFramebuffer(GL_READ_FRAMEBUFFER, 0);
+        glBindFramebuffer(GL_DRAW_FRAMEBUFFER, 0);
+        m_lastPreviewCaptureTex = m_activePreviewCapture.targetTex;
+      }
+    }
+  }
+
+  m_previewMaterial = prevPreview;
 
   if (m_pickRequested) {
     m_lastPickedID = m_renderer.readPickID(m_pickX, m_pickY, ctx.fbHeight);
@@ -188,6 +301,13 @@ uint32_t EngineContext::render(uint32_t windowWidth, uint32_t windowHeight,
   m_world.clearEvents();
 
   return outTex;
+}
+
+void EngineContext::requestMaterialPreview(MaterialHandle h,
+                                           uint32_t targetTex) {
+  if (h == InvalidMaterial || targetTex == 0)
+    return;
+  m_previewCaptureQueue.push_back({h, targetTex});
 }
 
 ShadowCSMConfig &EngineContext::shadowCSMConfig() {
@@ -201,6 +321,14 @@ const ShadowCSMConfig &EngineContext::shadowCSMConfig() const {
 EntityID EngineContext::resolveEntityIndex(uint32_t index) const {
   auto it = m_entityByIndex.find(index);
   return (it == m_entityByIndex.end()) ? InvalidEntity : it->second;
+}
+
+void EngineContext::rendererDrawPrimitive(uint32_t meshHandle,
+                                          uint32_t baseInstance) {
+  NYX_ASSERT(meshHandle <= static_cast<uint32_t>(ProcMeshType::Monkey),
+             "rendererDrawPrimitive: invalid meshHandle");
+  const auto type = static_cast<ProcMeshType>(meshHandle);
+  m_renderer.drawPrimitiveBaseInstance(type, baseInstance);
 }
 
 void EngineContext::handleWorldEvent(const WorldEvent &e) {
@@ -291,7 +419,8 @@ void EngineContext::initPostFilters() {
   m_postLUTSizes.clear();
   m_postLUTSizes.push_back(lutSize);
 
-  // Seed default editor graph (Input -> Exposure -> Contrast -> Saturation -> Output)
+  // Seed default editor graph (Input -> Exposure -> Contrast -> Saturation ->
+  // Output)
   m_postGraph = PostGraph();
   const FilterNode exp = m_filterRegistry.makeNode(1);
   const FilterNode con = m_filterRegistry.makeNode(2);
@@ -308,9 +437,12 @@ void EngineContext::initPostFilters() {
     return out;
   };
 
-  m_postGraph.addFilter(1, exp.label.c_str(), defaultsFrom(m_filterRegistry, 1));
-  m_postGraph.addFilter(2, con.label.c_str(), defaultsFrom(m_filterRegistry, 2));
-  m_postGraph.addFilter(3, sat.label.c_str(), defaultsFrom(m_filterRegistry, 3));
+  m_postGraph.addFilter(1, exp.label.c_str(),
+                        defaultsFrom(m_filterRegistry, 1));
+  m_postGraph.addFilter(2, con.label.c_str(),
+                        defaultsFrom(m_filterRegistry, 2));
+  m_postGraph.addFilter(3, sat.label.c_str(),
+                        defaultsFrom(m_filterRegistry, 3));
 
   m_postGraphDirty = true;
   syncFilterGraphFromPostGraph();
@@ -358,11 +490,10 @@ uint32_t EngineContext::ensurePostLUT3D(const std::string &path) {
   glTextureParameteri(tex, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
   glTextureParameteri(tex, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
   glTextureParameteri(tex, GL_TEXTURE_WRAP_R, GL_CLAMP_TO_EDGE);
-  glTextureStorage3D(tex, 1, GL_RGB16F, (GLsizei)data.size,
-                     (GLsizei)data.size, (GLsizei)data.size);
-  glTextureSubImage3D(tex, 0, 0, 0, 0, (GLsizei)data.size,
-                      (GLsizei)data.size, (GLsizei)data.size, GL_RGB, GL_FLOAT,
-                      data.rgb.data());
+  glTextureStorage3D(tex, 1, GL_RGB16F, (GLsizei)data.size, (GLsizei)data.size,
+                     (GLsizei)data.size);
+  glTextureSubImage3D(tex, 0, 0, 0, 0, (GLsizei)data.size, (GLsizei)data.size,
+                      (GLsizei)data.size, GL_RGB, GL_FLOAT, data.rgb.data());
 
   const uint32_t idx = (uint32_t)m_postLUTs.size();
   m_postLUTs.push_back(tex);
@@ -401,9 +532,8 @@ bool EngineContext::reloadPostLUT3D(const std::string &path) {
                        (GLsizei)data.size, (GLsizei)data.size);
   }
 
-  glTextureSubImage3D(tex, 0, 0, 0, 0, (GLsizei)data.size,
-                      (GLsizei)data.size, (GLsizei)data.size, GL_RGB, GL_FLOAT,
-                      data.rgb.data());
+  glTextureSubImage3D(tex, 0, 0, 0, 0, (GLsizei)data.size, (GLsizei)data.size,
+                      (GLsizei)data.size, GL_RGB, GL_FLOAT, data.rgb.data());
   m_postLUTSizes[idx] = data.size;
   return true;
 }

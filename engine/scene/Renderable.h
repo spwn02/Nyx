@@ -2,6 +2,7 @@
 
 #include "EntityID.h"
 #include "scene/Components.h"
+#include "render/material/MaterialGraph.h"
 #include <glm/glm.hpp>
 
 namespace Nyx {
@@ -15,6 +16,9 @@ struct Renderable {
 
   uint32_t pickID = 0; // packed entity + submesh
   uint32_t materialGpuIndex = 0; // index into material SSBO
+
+  MatAlphaMode alphaMode = MatAlphaMode::Opaque;
+  float sortKey = 0.0f; // used for transparent sorting
 
   bool isLight = false;
   bool isCamera = false;

@@ -71,4 +71,13 @@ void GLMesh::draw() const {
                  GL_UNSIGNED_INT, nullptr);
 }
 
+void GLMesh::drawBaseInstance(uint32_t baseInstance) const {
+  if (!m_vao || m_indexCount == 0)
+    return;
+  glBindVertexArray(m_vao);
+  glDrawElementsInstancedBaseInstance(
+      GL_TRIANGLES, static_cast<GLsizei>(m_indexCount), GL_UNSIGNED_INT,
+      nullptr, 1, baseInstance);
+}
+
 } // namespace Nyx

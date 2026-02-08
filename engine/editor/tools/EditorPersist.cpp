@@ -57,6 +57,10 @@ EditorPersist::save(const std::string &path, const EditorPersistState &s) {
     put(o, "panel.renderSettings", s.panels.renderSettings);
     put(o, "panel.projectSettings", s.panels.projectSettings);
     put(o, "panel.lutManager", s.panels.lutManager);
+    put(o, "panel.materialGraph", s.panels.materialGraph);
+    put(o, "panel.postGraph", s.panels.postGraph);
+    put(o, "panel.sequencer", s.panels.sequencer);
+    put(o, "panel.history", s.panels.history);
 
     // Asset browser UI state
     put(o, "assetBrowser.folder", s.assetBrowserFolder);
@@ -148,6 +152,14 @@ std::expected<void, std::string> EditorPersist::load(const std::string &path,
         toBool(get("panel.projectSettings"), out.panels.projectSettings);
     out.panels.lutManager =
         toBool(get("panel.lutManager"), out.panels.lutManager);
+    out.panels.materialGraph =
+        toBool(get("panel.materialGraph"), out.panels.materialGraph);
+    out.panels.postGraph =
+        toBool(get("panel.postGraph"), out.panels.postGraph);
+    out.panels.sequencer =
+        toBool(get("panel.sequencer"), out.panels.sequencer);
+    out.panels.history =
+        toBool(get("panel.history"), out.panels.history);
 
     out.assetBrowserFolder = get("assetBrowser.folder");
     out.assetBrowserFilter = get("assetBrowser.filter");

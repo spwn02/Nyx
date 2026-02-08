@@ -1,5 +1,7 @@
 #include "InspectorMaterial.h"
 
+#include "app/EngineContext.h"
+#include "editor/ui/UiPayloads.h"
 #include "platform/FileDialogs.h"
 #include "render/material/MaterialSystem.h"
 #include "render/material/MaterialTexturePolicy.h"
@@ -13,11 +15,27 @@ static ImTextureID toImTex(uint32_t glTex) {
   return (ImTextureID)(intptr_t)glTex;
 }
 
+static void drawMaterialValidation(const MaterialData &m) {
+  const MaterialValidation v = validateMaterial(m);
+  if (!v.ok) {
+    ImGui::Separator();
+    ImGui::TextColored(ImVec4(1, 0.25f, 0.25f, 1), "Material Error:");
+    ImGui::TextWrapped("%s", v.message.c_str());
+    return;
+  }
+  if (v.warn && !v.message.empty()) {
+    ImGui::Separator();
+    ImGui::TextColored(ImVec4(1, 0.75f, 0.25f, 1), "Material Warning:");
+    ImGui::TextWrapped("%s", v.message.c_str());
+  }
+}
+
 bool InspectorMaterial::acceptTexturePathDrop(std::string &outAbsPath) {
   if (!ImGui::BeginDragDropTarget())
     return false;
 
-  const ImGuiPayload *p = ImGui::AcceptDragDropPayload("NYX_ASSET_PATH_TEX");
+  const ImGuiPayload *p =
+      ImGui::AcceptDragDropPayload(UiPayload::TexturePath);
   if (p && p->Data && p->DataSize > 0) {
     const char *str = (const char *)p->Data;
     outAbsPath = std::string(str);
@@ -156,7 +174,9 @@ bool InspectorMaterial::drawSlot(MaterialSystem &materials,
   return changed;
 }
 
-void InspectorMaterial::draw(MaterialSystem &materials, MaterialHandle &handle) {
+void InspectorMaterial::draw(EngineContext &engine, MaterialHandle &handle) {
+  auto &materials = engine.materials();
+
   ImGui::SeparatorText("Material");
 
   if (!materials.isAlive(handle)) {
@@ -169,8 +189,42 @@ void InspectorMaterial::draw(MaterialSystem &materials, MaterialHandle &handle) 
   }
 
   auto &mat = materials.cpu(handle);
+  auto &graph = materials.graph(handle);
 
   bool changed = false;
+
+  if (ImGui::CollapsingHeader("Material Graph",
+                              ImGuiTreeNodeFlags_DefaultOpen)) {
+    int mode = static_cast<int>(graph.alphaMode);
+    const char *items[] = {"Opaque", "Mask", "Blend"};
+    if (ImGui::Combo("Alpha Mode", &mode, items, 3)) {
+      graph.alphaMode = static_cast<MatAlphaMode>(mode);
+      mat.alphaMode = graph.alphaMode;
+      materials.markGraphDirty(handle);
+      materials.markDirty(handle);
+    }
+    if (graph.alphaMode == MatAlphaMode::Mask) {
+      if (ImGui::SliderFloat("Alpha Cutoff", &graph.alphaCutoff, 0.0f, 1.0f)) {
+        mat.alphaCutoff = graph.alphaCutoff;
+        materials.markGraphDirty(handle);
+        materials.markDirty(handle);
+      }
+    }
+    if (graph.alphaMode == MatAlphaMode::Blend) {
+      ImGui::TextColored(ImVec4(1, 0.75f, 0.25f, 1),
+                         "Blend is rendered in Transparent pass (no ID write).");
+    }
+
+    const std::string &err = materials.graphError(handle);
+    if (!err.empty()) {
+      ImGui::TextColored(ImVec4(1.0f, 0.35f, 0.35f, 1.0f), "Graph Error: %s",
+                         err.c_str());
+    } else {
+      ImGui::TextDisabled("Graph OK");
+    }
+
+    ImGui::TextDisabled("Graph is shown in the Material Graph panel.");
+  }
 
   float base[4] = {mat.baseColorFactor.x, mat.baseColorFactor.y,
                    mat.baseColorFactor.z, mat.baseColorFactor.w};
@@ -215,6 +269,11 @@ void InspectorMaterial::draw(MaterialSystem &materials, MaterialHandle &handle) 
     changed = true;
   }
 
+  if (ImGui::Checkbox("Tangent-Space Normal", &mat.tangentSpaceNormal)) {
+    materials.markDirty(handle);
+    changed = true;
+  }
+
   ImGui::Separator();
 
   changed |= drawSlot(materials, handle, MaterialTexSlot::BaseColor);
@@ -224,9 +283,28 @@ void InspectorMaterial::draw(MaterialSystem &materials, MaterialHandle &handle) 
   changed |= drawSlot(materials, handle, MaterialTexSlot::AO);
   changed |= drawSlot(materials, handle, MaterialTexSlot::Emissive);
 
+  static MaterialData s_clipboard{};
+  static bool s_hasClipboard = false;
+
+  ImGui::Separator();
+  if (ImGui::Button("Copy Material")) {
+    s_clipboard = mat;
+    s_hasClipboard = true;
+  }
+  ImGui::SameLine();
+  if (ImGui::Button("Paste Material") && s_hasClipboard) {
+    mat = s_clipboard;
+    materials.markDirty(handle);
+    changed = true;
+  }
+
+  drawMaterialValidation(mat);
+
   if (changed) {
+    materials.syncGraphFromMaterial(handle, true);
     materials.uploadIfDirty();
   }
+
 }
 
 } // namespace Nyx

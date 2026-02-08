@@ -32,7 +32,11 @@ void PassShadowDebugOverlay::setup(RenderGraph &graph,
   graph.addPass(
       "ShadowDebugOverlay",
       [&](RenderPassBuilder &b) {
-        b.readTexture("HDR.Color", RenderAccess::SampledRead);
+        if (engine.transparencyMode() == TransparencyMode::OIT) {
+          b.readTexture("HDR.OIT", RenderAccess::SampledRead);
+        } else {
+          b.readTexture("HDR.Color", RenderAccess::SampledRead);
+        }
         b.readTexture("Depth.Pre", RenderAccess::SampledRead);
         b.readTexture("Shadow.CSMAtlas", RenderAccess::SampledRead);
         b.readTexture("Shadow.SpotAtlas", RenderAccess::SampledRead);
@@ -44,7 +48,10 @@ void PassShadowDebugOverlay::setup(RenderGraph &graph,
           RGResources &rg) {
         NYX_ASSERT(m_prog != 0, "PassShadowDebugOverlay: not initialized");
 
-        const auto &hdrIn = tex(bb, rg, "HDR.Color");
+        const auto &hdrIn =
+            (engine.transparencyMode() == TransparencyMode::OIT)
+                ? tex(bb, rg, "HDR.OIT")
+                : tex(bb, rg, "HDR.Color");
         const auto &depth = tex(bb, rg, "Depth.Pre");
         const auto &outDbg = tex(bb, rg, "HDR.Debug");
         const auto &csmAtlas = tex(bb, rg, "Shadow.CSMAtlas");
