@@ -11,6 +11,10 @@
 #include "tools/EditorPersist.h"
 #include "tools/LockCameraToView.h"
 #include "ui/GizmoState.h"
+#include "editor/ProjectBrowserPanel.h"
+#include "editor/ProjectPanel.h"
+#include "editor/SceneBrowserPanel.h"
+#include "assets/AssetRegistry.h"
 #include "ui/panels/AddMenu.h"
 #include "ui/panels/AssetBrowserPanel.h"
 #include "ui/panels/HierarchyPanel.h"
@@ -28,6 +32,8 @@
 namespace Nyx {
 
 class EngineContext;
+class ProjectManager;
+class SceneManager;
 
 class EditorLayer final : public Layer {
 public:
@@ -62,6 +68,7 @@ public:
   void defaultScene(EngineContext &engine);
   bool requestSaveScene(EngineContext &engine);
   void requestSaveSceneAs();
+  void markSceneClean(EngineContext &engine);
   bool undo(EngineContext &engine);
   bool redo(EngineContext &engine);
   void beginGizmoHistoryBatch();
@@ -97,11 +104,24 @@ public:
   SequencerPanel &sequencerPanel() { return m_sequencerPanel; }
   const SequencerPanel &sequencerPanel() const { return m_sequencerPanel; }
 
+  void setProjectManager(ProjectManager *pm) { m_projectManager = pm; }
+  void setSceneManager(SceneManager *sm) { m_sceneManager = sm; }
+  ProjectBrowserPanel &projectBrowserPanel() { return m_projectBrowserPanel; }
+
 private:
   void drawStats(EngineContext &engine, GizmoState &g);
   void processWorldEvents(EngineContext &engine);
   void applyPostGraphPersist(EngineContext &engine);
   void storePostGraphPersist(EngineContext &engine);
+  void updateSceneSerialAndHistoryState(EngineContext &engine);
+  void updateSceneDirtyState(EngineContext &engine);
+  void drawMainMenuBar(EngineContext &engine);
+  void drawSceneFilePopups(EngineContext &engine);
+  void drawProjectAndSceneBrowsers(EngineContext &engine);
+  void syncAssetRegistry();
+  bool drawNoWorldFallback();
+  void configureSequencerBindings(EngineContext &engine);
+  void drawEditorPanels(EngineContext &engine);
 
 private:
   EntityID m_selected = InvalidEntity;
@@ -119,12 +139,19 @@ private:
   InspectorPanel m_inspector{};
   ViewportPanel m_viewport{};
   AssetBrowserPanel m_assetBrowser{};
+  AssetRegistry m_assets{};
   LUTManagerPanel m_lutManager{};
   MaterialGraphPanel m_materialGraphPanel{};
   PostGraphEditorPanel m_postGraphPanel{};
   SequencerPanel m_sequencerPanel{};
   ProjectSettingsPanel m_projectSettings{};
+  ProjectPanel m_projectPanel{};
+  ProjectBrowserPanel m_projectBrowserPanel{};
+  SceneBrowserPanel m_sceneBrowserPanel{};
+  ProjectManager *m_projectManager = nullptr;
+  SceneManager *m_sceneManager = nullptr;
   bool m_postGraphLoaded = false;
+  std::string m_assetProjectFileAbs;
 
   std::string m_scenePath;
   bool m_autoSave = false;
@@ -133,6 +160,13 @@ private:
   bool m_saveScenePopup = false;
   char m_scenePathBuf[512]{};
   uint64_t m_lastAutoSaveSerial = 0;
+  uint64_t m_lastCleanHistoryRevision = 0;
+  uint64_t m_lastObservedHistoryRevision = 0;
+  uint64_t m_seenSceneChangeSerial = 0;
+  uint32_t m_ignoreDirtyFramesAfterSceneLoad = 0;
+  bool m_absorbMaterialHistoryAfterSceneLoad = false;
+  uint64_t m_lastObservedMaterialSerial = 0;
+  uint32_t m_materialStableFramesAfterSceneLoad = 0;
   float m_projectFps = 30.0f;
 };
 

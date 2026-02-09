@@ -307,6 +307,29 @@ void InspectorPanel::draw(World &world, EngineContext &engine, Selection &sel,
       if (ImGui::DragFloat("Exposure", &cam.exposure, 0.05f, -20.0f, 20.0f)) {
         cam.dirty = true;
       }
+      if (ImGui::DragFloat("Aperture (f)", &cam.aperture, 0.01f, 0.1f, 64.0f)) {
+        if (cam.aperture < 0.1f)
+          cam.aperture = 0.1f;
+        cam.dirty = true;
+      }
+      if (ImGui::DragFloat("Focus Distance", &cam.focusDistance, 0.05f, 0.01f,
+                           100000.0f)) {
+        if (cam.focusDistance < 0.01f)
+          cam.focusDistance = 0.01f;
+        cam.dirty = true;
+      }
+      if (ImGui::DragFloat("Sensor Width (mm)", &cam.sensorWidth, 0.05f, 1.0f,
+                           100.0f)) {
+        if (cam.sensorWidth < 1.0f)
+          cam.sensorWidth = 1.0f;
+        cam.dirty = true;
+      }
+      if (ImGui::DragFloat("Sensor Height (mm)", &cam.sensorHeight, 0.05f, 1.0f,
+                           100.0f)) {
+        if (cam.sensorHeight < 1.0f)
+          cam.sensorHeight = 1.0f;
+        cam.dirty = true;
+      }
 
       if (world.activeCamera() != e) {
         ImGui::BeginDisabled(camDisabled);

@@ -1,9 +1,6 @@
 #pragma once
 
-#include "NyxBinaryReader.h"
-#include "NyxBinaryWriter.h"
-#include "NyxChunkIDs.h"
-#include "NyxStringTable.h"
+#include <string>
 
 namespace Nyx {
 

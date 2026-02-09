@@ -112,6 +112,10 @@ void GLFWWindow::requestClose() const {
   glfwSetWindowShouldClose(m_window, GLFW_TRUE);
 }
 
+void GLFWWindow::cancelCloseRequest() const {
+  glfwSetWindowShouldClose(m_window, GLFW_FALSE);
+}
+
 bool GLFWWindow::isFocused() const {
   return glfwGetWindowAttrib(m_window, GLFW_FOCUSED) == GLFW_TRUE;
 }

@@ -4,6 +4,7 @@
 #include "Components.h"
 #include "EntityID.h"
 #include "EntityUUID.h"
+#include "RenderableAssetComponent.h"
 #include "WorldEvents.h"
 
 #include <cstdint>
@@ -145,6 +146,13 @@ public:
   uint32_t submeshCount(EntityID e) const;
   MeshSubmesh &submesh(EntityID e, uint32_t si);
 
+  // ---- Renderable Asset Binding ----
+  bool hasRenderableAsset(EntityID e) const;
+  CRenderableAsset &ensureRenderableAsset(EntityID e);
+  CRenderableAsset &renderableAsset(EntityID e);
+  const CRenderableAsset &renderableAsset(EntityID e) const;
+  void removeRenderableAsset(EntityID e);
+
   // ---- Camera ----
   bool hasCamera(EntityID e) const;
   CCamera &ensureCamera(EntityID e);
@@ -211,6 +219,7 @@ private:
 
   // Optional components
   std::unordered_map<EntityID, CMesh, EntityHash> m_mesh;
+  std::unordered_map<EntityID, CRenderableAsset, EntityHash> m_renderableAsset;
   std::unordered_map<EntityID, CCamera, EntityHash> m_cam;
   std::unordered_map<EntityID, CCameraMatrices, EntityHash> m_camMat;
   std::unordered_map<EntityID, CLight, EntityHash> m_light;

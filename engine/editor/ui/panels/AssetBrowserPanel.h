@@ -1,5 +1,8 @@
 #pragma once
 
+#include "assets/AssetId.h"
+#include "assets/AssetRegistry.h"
+#include "assets/AssetType.h"
 #include "editor/tools/IconAtlas.h"
 #include <cstdint>
 #include <string>
@@ -20,6 +23,8 @@ class AssetBrowserPanel final {
 public:
   void init(TextureTable &texTable);
   void shutdown();
+  void setRegistry(AssetRegistry *registry);
+  const AssetRegistry *registry() const { return m_registry; }
 
   void setRoot(std::string rootAbsPath);
   const std::string &root() const { return m_root; }
@@ -35,6 +40,8 @@ public:
 
 private:
   struct Item final {
+    AssetId id = 0;
+    AssetType type = AssetType::Unknown;
     std::string absPath;
     std::string relPath;
     std::string relDir;
@@ -48,6 +55,7 @@ private:
   };
 
   TextureTable *m_tex = nullptr;
+  AssetRegistry *m_registry = nullptr;
   std::string m_root;
   std::vector<Item> m_items;
   std::string m_currentFolder;
@@ -60,8 +68,10 @@ private:
   std::unordered_map<std::string, std::vector<std::string>> m_folderChildren;
 
   bool m_needsRefresh = true;
+  bool m_showUnknown = false;
 
   void scanFolderRecursive(const std::string &rootAbs);
+  void buildFromRegistry();
   static bool isAssetExt(const std::string &pathLower);
   static std::string filenameOf(const std::string &absPath);
   static std::string toLower(std::string s);
@@ -108,6 +118,14 @@ private:
 
   void ensureThumbnail(Item &it, size_t index);
   void clearThumbnails();
+  void ensureIconAtlas();
+  void drawHeader();
+  void collectVisibleEntries(const std::string &filterLower,
+                             std::vector<std::string> &folders,
+                             std::vector<size_t> &indices) const;
+  void drawFolderEntries(const std::vector<std::string> &folders,
+                         float thumb);
+  void drawAssetEntries(const std::vector<size_t> &indices, float thumb);
 };
 
 } // namespace Nyx

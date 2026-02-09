@@ -192,6 +192,7 @@ public:
   void setRecording(bool on) { m_recording = on; }
   bool recording() const { return m_recording; }
   bool isApplying() const { return m_applying; }
+  void setAbsorbMaterialOnlyChanges(bool on) { m_absorbMaterialOnlyChanges = on; }
   void setMaxEntries(size_t maxEntries);
   size_t maxEntries() const { return m_maxEntries; }
 
@@ -214,6 +215,7 @@ public:
 
   const std::vector<HistoryEntry> &entries() const { return m_entries; }
   int cursor() const { return m_cursor; }
+  uint64_t revision() const { return m_revision; }
 
 private:
   struct EntityState {
@@ -278,6 +280,8 @@ private:
   PersistedAnimationStateHist m_lastAnimation{};
 
   bool m_loadedFromDisk = false;
+  uint64_t m_revision = 0;
+  bool m_absorbMaterialOnlyChanges = false;
   bool m_transformBatchActive = false;
   std::string m_transformBatchLabel = "Transform";
   std::unordered_map<EntityUUID, CTransform, EntityUUIDHash>

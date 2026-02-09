@@ -90,6 +90,8 @@ public:
       clearSelection();
       m_rangeUserEdited.clear();
       m_viewFirstFrame = 0;
+      markLayoutDirty();
+      invalidateTrackIndexCache();
     }
   }
 
@@ -140,12 +142,17 @@ private:
 
   // Clipboard
   std::vector<SeqKeyCopy> m_clipboard;
+  mutable std::vector<int32_t> m_frameScratch;
+  mutable std::unordered_map<int32_t, SeqKeyRef> m_frameToKeyScratch;
 
   // Cached layout
   float m_pixelsPerFrame = 12.0f;
   float m_minPixelsPerFrame = 1.0f;
   bool m_timelineHovered = false;
   bool m_timelineActive = false;
+  float m_lastDrawMs = 0.0f;
+  bool m_layoutDirty = true;
+  uint64_t m_layoutSignature = 0;
   float m_repeatDelay = 0.35f;
   float m_repeatRate = 0.06f;
   float m_repeatTimer = 0.0f;
@@ -165,6 +172,8 @@ private:
   std::vector<SeqRow> m_rows;
   std::unordered_map<uint64_t, bool> m_expandState;
   std::unordered_map<uint64_t, bool> m_stopwatchState;
+  mutable std::unordered_map<uint64_t, int> m_trackIndexCache;
+  mutable bool m_trackIndexCacheDirty = true;
   std::unordered_set<EntityID, EntityHash> m_isolated;
   char m_searchBuf[128]{};
   SeqSortMode m_sortMode = SeqSortMode::SceneOrder;
@@ -240,6 +249,12 @@ private:
   void setEntityEndFrame(EntityID e, int32_t endFrame);
   int32_t entityStartFrame(EntityID e) const;
   void setEntityStartFrame(EntityID e, int32_t startFrame);
+  void markLayoutDirty() { m_layoutDirty = true; }
+  void invalidateTrackIndexCache() { m_trackIndexCacheDirty = true; }
+  uint64_t computeLayoutSignature() const;
+  void rebuildLayoutCacheIfNeeded();
+  void rebuildTrackIndexCache() const;
+  int findTrackIndexCached(EntityID e, uint32_t blockId, AnimChannel ch) const;
 
   // Key editing helpers
   void clearSelection();
@@ -268,6 +283,9 @@ private:
   void propertyChannels(SeqProperty prop, AnimChannel out[3]) const;
   bool findPropertyKeys(EntityID e, SeqProperty prop,
                         std::vector<int32_t> &outFrames) const;
+  bool buildPropertyFrameCache(
+      EntityID e, SeqProperty prop, std::vector<int32_t> &outFrames,
+      std::unordered_map<int32_t, SeqKeyRef> *outFrameToKey) const;
   bool addOrOverwritePropertyKeys(EntityID e, SeqProperty prop,
                                   int32_t frame,
                                   const float *rotationEulerDeg = nullptr);
