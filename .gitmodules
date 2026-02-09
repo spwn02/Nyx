@@ -28,4 +28,4 @@
 	url = https://github.com/nlohmann/json
 [submodule "extern/imgui-node-editor"]
 	path = extern/imgui-node-editor
-	url = https://github.com/thedmd/imgui-node-editor
+	url = https://github.com/spwn02/imgui-node-editor.git
