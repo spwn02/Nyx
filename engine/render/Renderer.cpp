@@ -20,7 +20,7 @@ Renderer::Renderer() : m_rgRes(m_res) {
   const char *rgDump = std::getenv("NYX_RG_DUMP");
   if (rgDump && rgDump[0] != '\0' && rgDump[0] != '0') {
     std::filesystem::path path =
-        std::filesystem::current_path() / ".nyx" / "rendergraph.dot";
+        std::filesystem::current_path() / ".cache" / "rendergraph.dot";
     std::filesystem::create_directories(path.parent_path());
     m_graph.enableDebug(path.string(), /*dumpLifetimes=*/true);
   }

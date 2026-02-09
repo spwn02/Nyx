@@ -12,4 +12,9 @@ namespace Nyx::FileDialogs {
 std::optional<std::string> openFile(const char *title, const char *filterList,
                                     const char *defaultPath = nullptr);
 
+// Native save dialog.
+// Returns absolute path on success, std::nullopt on cancel/failure.
+std::optional<std::string> saveFile(const char *title, const char *filterList,
+                                    const char *defaultPath = nullptr);
+
 } // namespace Nyx::FileDialogs

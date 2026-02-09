@@ -108,7 +108,7 @@ void EnvironmentIBL::loadFromHDR(const std::string &path) {
 
     stbi_image_free(data);
   } else {
-    Log::Warn("EnvironmentIBL: Failed to load HDRI from {}", path);
+    // Log::Warn("EnvironmentIBL: Failed to load HDRI from {}", path);
   }
 }
 

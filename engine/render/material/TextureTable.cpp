@@ -47,7 +47,7 @@ void TextureTable::init(GLResources &gl) {
   m_placeholderLinear = createPlaceholder(false);
   m_placeholderSRGB = createPlaceholder(true);
 
-  m_cacheDir = std::filesystem::current_path() / ".nyx" / "texcache";
+  m_cacheDir = std::filesystem::current_path() / ".cache" / "texcache";
   std::error_code ec;
   std::filesystem::create_directories(m_cacheDir, ec);
 

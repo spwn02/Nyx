@@ -20,6 +20,12 @@ struct CCamera final {
   float nearZ = 0.01f;
   float farZ = 2000.0f;
 
+  // Film / DoF controls
+  float aperture = 2.8f;      // f-number
+  float focusDistance = 10.0f; // meters
+  float sensorWidth = 36.0f;   // mm
+  float sensorHeight = 24.0f;  // mm
+
   // Blender-ish editor control convenience (optional, but useful for later):
   float exposure = 0.0f; // EV-like; can map to tonemap later
   bool dirty = true;

@@ -31,6 +31,7 @@ public:
 
   bool shouldClose() const;
   void requestClose() const;
+  void cancelCloseRequest() const;
 
   bool isFocused() const;
   bool isVisible() const;

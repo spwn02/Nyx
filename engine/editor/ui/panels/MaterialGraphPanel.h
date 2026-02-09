@@ -47,6 +47,7 @@ private:
   MaterialGraph m_clipboard{};
 
   std::unordered_set<uint32_t> m_posInitialized{};
+  float m_lastDrawMs = 0.0f;
 };
 
 } // namespace Nyx

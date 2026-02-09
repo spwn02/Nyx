@@ -3,8 +3,11 @@
 #include "editor/Selection.h"
 #include "editor/EditorState.h"
 #include "input/Keybinds.h"
+#include "project/ProjectManager.h"
 #include "scene/EntityID.h"
+#include "scene/SceneManager.h"
 #include <memory>
+#include <vector>
 
 namespace Nyx {
 
@@ -26,17 +29,22 @@ private:
   bool m_pendingViewportPick = false;
   bool m_pendingPickCtrl = false;
   bool m_pendingPickShift = false;
-  EntityID m_lastViewportPicked = InvalidEntity;
-
-  // Cycling state (for repeated clicks without Ctrl/Shift)
-  EntityID m_cycleRoot = InvalidEntity;
-  uint32_t m_cycleIndex = 0;
-  Selection m_cycleLastSel{};
   EditorState m_editorState{};
+  ProjectManager m_projectManager{};
+  SceneManager m_sceneManager{};
+  bool m_requestClose = false;
   KeybindManager m_keybinds{};
+  std::vector<uint32_t> m_selectedPicksScratch{};
 
 private:
   void setupKeybinds();
+  void initializeProjectAndSceneBindings();
+  void tryLoadInitialScene(bool &loadedScene);
+  bool handleWindowCloseRequests(bool &openUnsavedQuitPopup);
+  void renderEditorOverlay(bool &openUnsavedQuitPopup, float &projectSaveTimer);
+  void processInteractiveUpdate(float dt);
+  void renderAndPresentFrame();
+  void finalizeAndShutdown();
 };
 
 } // namespace Nyx
