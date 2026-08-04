@@ -1,0 +1,7 @@
+build/
+imgui.ini
+vcpkg_installed/
+logs/
+legacy/
+*.log
+temp/

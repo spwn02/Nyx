@@ -1,0 +1,25 @@
+{
+  "name": "nyx",
+  "version-string": "0.1.0",
+  "dependencies": [
+    {
+      "name": "python3",
+      "host": true
+    },
+    "glm",
+    "platform-folders",
+    {
+      "name": "sdl3",
+      "features": ["vulkan"]
+    },
+    "shaderc",
+    "volk",
+    "vulkan",
+    "vulkan-memory-allocator",
+    "spdlog",
+    {
+      "name": "vulkan-loader",
+      "features": ["wayland", "xcb", "xlib"]
+    }
+  ]
+}

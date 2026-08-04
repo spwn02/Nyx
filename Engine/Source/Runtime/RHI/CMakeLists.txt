@@ -1,0 +1,31 @@
+nyx_require_package(Vulkan
+  TARGETS
+    Vulkan::Vulkan
+)
+nyx_require_package(volk
+  TARGETS
+    volk::volk
+  CONFIG
+)
+nyx_require_package(unofficial-shaderc
+  TARGETS
+    unofficial::shaderc::shaderc
+  CONFIG
+)
+nyx_require_package(VulkanMemoryAllocator
+  TARGETS
+    GPUOpen::VulkanMemoryAllocator
+  CONFIG
+)
+
+nyx_add_module(RHI
+  PUBLIC_DEPS
+    Nyx::Core
+    Nyx::Platform
+  PRIVATE_DEPS
+    Nyx::Log
+    Vulkan::Vulkan
+    volk::volk
+    unofficial::shaderc::shaderc
+    GPUOpen::VulkanMemoryAllocator
+)
