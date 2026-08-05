@@ -40,7 +40,18 @@ namespace FailingTests {
 
 } // namespace FailingTests
 
+namespace FailingProviderSubjects {
+
+[[ = test, = arg<"path">(files<"__nyx_missing_provider__/**/*.md">()) ]] auto receivesNoFiles(
+    const Path &path) -> void {
+  require(path.empty());
+}
+
+} // namespace FailingProviderSubjects
+
 namespace Tests {
+
+namespace diagnostics {
 
 auto makeDiagnosticForRendering() -> Diagnostic {
   constexpr usize highlightedColumns{4};
@@ -59,7 +70,6 @@ auto makeDiagnosticForRendering() -> Diagnostic {
 
   return diagnostic;
 }
-
 [[= test]] auto diagnostics() -> void {
   const Diagnostic diagnostic = makeDiagnosticForRendering();
   const SourceSpan &primary = diagnostic.primarySpan()->get();
@@ -109,6 +119,10 @@ auto makeDiagnosticForRendering() -> Diagnostic {
   check(coloured.contains("\x1b[0m"));
 };
 
+} // namespace diagnostics
+
+namespace environment {
+
 auto boundTo(TestEnvironment &expected) -> bool {
   const Option<Ref<TestEnvironment>> current = currentEnvironment();
   return current and std::addressof(current->get()) == std::addressof(expected);
@@ -133,6 +147,10 @@ auto boundTo(TestEnvironment &expected) -> bool {
   check(outerRestored);
   check(currentEnvironment());
 }
+
+} // namespace environment
+
+namespace assertions {
 
 [[= test]] auto checksRecordDiagnostics() -> void {
   constexpr usize expectedAssertions{2};
@@ -217,6 +235,10 @@ auto boundTo(TestEnvironment &expected) -> bool {
   check(state.diagnostics.front().details.spans.front().location.line() == location.line());
   check(state.diagnostics.front().details.spans.front().label == "requirement"_exp);
 }
+
+} // namespace assertions
+
+namespace executions {
 
 [[= test]] auto executesVoidTestsInAnEnvironment() -> void {
   const TestExecution execution = run("void", [] -> void { require(currentEnvironment()); });
@@ -346,6 +368,10 @@ auto boundTo(TestEnvironment &expected) -> bool {
   check(text.contains("finished in "));
 }
 
+} // namespace executions
+
+namespace discovery {
+
 [[= test]] auto discoversEachDeclarativeCase() -> void {
   constexpr usize expectedCases{4};
   const Vec<TestDescriptor> descriptors = discover<^^PassingTests>();
@@ -384,6 +410,10 @@ auto boundTo(TestEnvironment &expected) -> bool {
   check(executions.back().descriptor.identifier == "identityCases(3, 2)"_exp);
   check(executions.back().state.diagnostics.front().description() == "test returned false"_exp);
 }
+
+} // namespace discovery
+
+namespace expressions {
 
 auto containsHighlighted(const Vec<DiagnosticFragment> &fragments, StringView text) -> bool {
   return std::ranges::any_of(fragments, [text](const DiagnosticFragment &fragment) -> bool {
@@ -540,6 +570,10 @@ auto containsHighlighted(const Vec<DiagnosticFragment> &fragments, StringView te
   check(state.diagnostics.front().details.notes.back().message == "right: 3"_exp);
 }
 
+} // namespace expressions
+
+namespace fixtures {
+
 namespace FixtureSubjects {
 
 struct Transient final {
@@ -615,6 +649,27 @@ auto resetFixtureCounters() -> void {
   require(eq(first.instance, second.instance));
 }
 
+[[ = test,
+  = Case{11},
+  = Case{29},
+  = arg<"ctx">(context),
+  = arg<"input">(fromCase) ]] auto receivesAsyncContext(Context ctx,
+    u32 input,
+    const Transient &transientValue,           // NOLINT
+    const Shared &sharedValue) -> Task<void> { // NOLINT
+  co_await yield();
+
+  const Option<Ref<const Context>> active = currentContext();
+  const u32 expectedInput = ctx.testCase == 0 ? 11 : 29;
+
+  require(active);
+  require(ctx.name == "receivesAsyncContext"_exp);
+  require(eq(input, expectedInput));
+  require(eq(transientValue.instance, static_cast<u32>(ctx.testCase + 1)));
+  require(sharedValue.instance == 1_exp);
+  check(active->get().testCase == ctx.testCase);
+}
+
 } // namespace FixtureSubjects
 
 [[= test]] auto directRunInjectsContext() -> void {
@@ -651,19 +706,24 @@ auto resetFixtureCounters() -> void {
   const Vec<TestExecution> secondRun = runAll<^^FixtureSubjects>();
   const auto passed = [](const TestExecution &execution) -> bool { return execution.passed(); };
 
-  require(firstRun.size() == 3_exp);
-  require(secondRun.size() == 3_exp);
+  require(firstRun.size() == 5_exp);
+  require(secondRun.size() == 5_exp);
   require(std::ranges::all_of(firstRun, passed));
   require(std::ranges::all_of(secondRun, passed));
-  require(FixtureSubjects::transientCreations == 4_exp);
+  require(FixtureSubjects::transientCreations == 8_exp);
   require(FixtureSubjects::sharedCreations == 2_exp);
   require(FixtureSubjects::perTestCreations == 2_exp);
   check(firstRun.front().descriptor.name == "receivesContext"_exp);
   check(firstRun.front().descriptor.description == "injects a context and both fixture lifetimes"_exp);
   check(firstRun.front().descriptor.testCase == 0_exp);
   check(firstRun[1].descriptor.testCase == 1_exp);
-  check(firstRun.back().descriptor.name == "reusesNormalFixtureWithinOneTest"_exp);
+  check(firstRun[2].descriptor.name == "reusesNormalFixtureWithinOneTest"_exp);
+  check(firstRun[3].descriptor.name == "receivesAsyncContext"_exp);
 }
+
+} // namespace fixtures
+
+namespace providers {
 
 namespace ProviderSubjects {
 
@@ -692,11 +752,6 @@ namespace ProviderSubjects {
 
 [[ = test, = arg<"path">(files<__FILE__>()) ]] auto receivesFile(const Path &path) -> void {
   require(path == Path{__FILE__});
-}
-
-[[ = test, = arg<"path">(files<"__nyx_missing_provider__/**/*.md">()) ]] auto receivesNoFiles(
-    const Path &path) -> void {
-  require(path.empty());
 }
 
 } // namespace ProviderSubject
@@ -729,8 +784,10 @@ auto writeFile(const Path &path) -> void {
   constexpr usize expectedDescriptors{11};
   constexpr usize expectedPassed{10};
   constexpr usize expectedFailed{1};
-  const Vec<TestDescriptor> descriptors = discover<^^ProviderSubjects>();
-  const Vec<TestExecution> executions = runAll<^^ProviderSubjects>();
+  Vec<TestDescriptor> descriptors = discover<^^ProviderSubjects>();
+  discover<^^FailingProviderSubjects>(descriptors);
+  Vec<TestExecution> executions = runAll<^^ProviderSubjects>();
+  runAll<^^FailingProviderSubjects>(executions);
   const TestSummary summary = Reporter::summarize(executions);
 
   const Option<Ref<const TestExecution>> noFiles =
@@ -806,13 +863,17 @@ auto writeFile(const Path &path) -> void {
       allFiles, [](const Path &path) -> bool { return path.filename().generic_string() == "hidden.md"; }));
 }
 
+} // namespace providers
+
+namespace coroutines {
+
 auto delayedValue() -> Task<i32> {
   constexpr i32 value{69};
   co_await yield();
   co_return value;
 }
 
-[[= test]] auto asyncExecutesVoidTestsInAnEnvironment() -> void {
+[[= test]] auto executesVoidTestsInAnEnvironment() -> void {
   const TestExecution execution = run("void", [] -> void { require(currentEnvironment()); });
 
   require(execution.passed());
@@ -820,7 +881,7 @@ auto delayedValue() -> Task<i32> {
   require(currentEnvironment());
 }
 
-[[= test]] auto asyncNormalizesBooleanReturnValues() -> void {
+[[= test]] auto normalizesBooleanReturnValues() -> void {
   constexpr usize expectedAssertions{1};
   constexpr usize expectedFailures{1};
   const auto location = std::source_location::current();
@@ -842,7 +903,7 @@ auto delayedValue() -> Task<i32> {
   check(execution.state.diagnostics.front().details.spans.front().label == "test return");
 }
 
-[[= test]] auto asyncNormalizesResultReturnValues() -> void {
+[[= test]] auto normalizesResultReturnValues() -> void {
   constexpr usize expectedAssertions{1};
   constexpr usize expectedFailures{1};
   constexpr usize expectedErrors{1};
@@ -867,7 +928,7 @@ auto delayedValue() -> Task<i32> {
   check(returnedError.state.diagnostics.front().details.notes.front().message == "invalid user");
 }
 
-[[= test]] auto asyncCapturesFatalRequirementsAtTheTestBoundary() -> void {
+[[= test]] auto capturesFatalRequirementsAtTheTestBoundary() -> void {
   constexpr usize expectedAssertions{1};
   constexpr usize expectedFailures{1};
   bool continued{};
@@ -885,7 +946,7 @@ auto delayedValue() -> Task<i32> {
   check(execution.state.diagnostics.front().details.spans.front().label == "requirement");
 }
 
-[[= test]] auto asyncPreservesTaskLocalBindingsAcrossAsyncResumption() -> void {
+[[= test]] auto preservesTaskLocalBindingsAcrossAsyncResumption() -> void {
   constexpr usize expectedAssertions{4};
   bool completed{};
   const TestExecution execution = run("asyncBindings", [&completed] -> Task<void> { // NOLINT
@@ -976,7 +1037,7 @@ auto delayedValue() -> Task<i32> {
   check(execution.state.diagnostics.front().details.notes.front().message == "exception: broken async test");
 }
 
-[[= test]] auto asyncCapturesUnhandledExceptions() -> void {
+[[= test]] auto capturesUnhandledExceptions() -> void {
   constexpr usize expectedErrors{1};
   const TestExecution execution = run("throws", [] -> void { throw std::runtime_error{"broken test"}; });
 
@@ -988,7 +1049,7 @@ auto delayedValue() -> Task<i32> {
   check(execution.state.diagnostics.front().details.notes.front().message == "exception: broken test");
 }
 
-[[= test]] auto asyncReportsAggregateResults() -> void {
+[[= test]] auto reportsAggregateResults() -> void {
   constexpr usize progressBarWidth{80};
   constexpr usize expectedTests{3};
   constexpr usize expectedPassed{1};
@@ -1030,6 +1091,8 @@ auto delayedValue() -> Task<i32> {
   check(text.contains("test result: FAILED"));
   check(text.contains("finished in "));
 }
+
+} // namespace coroutines
 
 } // namespace Tests
 

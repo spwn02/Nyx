@@ -285,19 +285,43 @@ auto appendExecutions(Vec<TestExecution> &executions, FixtureScope<Namespace> &s
 
 } // namespace detail
 
+/// Appends one descriptor per Case/provider combination in declaration order.
+template <std::meta::info Namespace>
+auto discover(Vec<TestDescriptor> &descriptors) -> void {
+  template for (constexpr std::meta::info member :
+      meta::members<Namespace, meta::AccessContext::unchecked()>) {
+    if constexpr (std::meta::is_function(member) and detail::isTest<member>())
+      detail::appendDescriptors<member>(descriptors);
+    else if constexpr (std::meta::is_namespace(member))
+      discover<member>(descriptors);
+  }
+}
+
 /// Returns one descriptor per Case/provider combination in declaration order.
 template <std::meta::info Namespace>
 [[nodiscard]]
 auto discover() -> Vec<TestDescriptor> {
   Vec<TestDescriptor> descriptors{};
 
+  discover<Namespace>(descriptors);
+
+  return descriptors;
+}
+
+/// Appends all reflected tests and their declarative Case/provider annotations.
+template <std::meta::info Namespace>
+auto runAll(Vec<TestExecution> &executions) -> void {
+  static_assert(detail::fixtureDeclarationsAreValid<Namespace>());
+
+  FixtureScope<Namespace> suiteFixtures{};
+
   template for (constexpr std::meta::info member :
       meta::members<Namespace, meta::AccessContext::unchecked()>) {
     if constexpr (std::meta::is_function(member) and detail::isTest<member>())
-      detail::appendDescriptors<member>(descriptors);
+      detail::appendExecutions<Namespace, member>(executions, suiteFixtures);
+    else if constexpr (std::meta::is_namespace(member))
+      runAll<member>(executions);
   }
-
-  return descriptors;
 }
 
 /// Executes all reflected tests and their declarative Case/provider annotations.
@@ -307,13 +331,8 @@ auto runAll() -> Vec<TestExecution> {
   static_assert(detail::fixtureDeclarationsAreValid<Namespace>());
 
   Vec<TestExecution> executions{};
-  FixtureScope<Namespace> suiteFixtures{};
 
-  template for (constexpr std::meta::info member :
-      meta::members<Namespace, meta::AccessContext::unchecked()>) {
-    if constexpr (std::meta::is_function(member) and detail::isTest<member>())
-      detail::appendExecutions<Namespace, member>(executions, suiteFixtures);
-  }
+  runAll<Namespace>(executions);
 
   return executions;
 }
