@@ -5,6 +5,11 @@ import :Types;
 
 export namespace Nyx {
 
+struct ErrorDisplayOptions {
+  bool colours{};
+  bool locations{};
+};
+
 struct Error {
   struct Message {
     String message;
@@ -45,17 +50,24 @@ struct Error {
   auto operator=(Error &&other) noexcept -> Error &;
 
   [[nodiscard]]
-  auto display(bool locations = false, bool colours = false) const -> String;
+  /// Renders Error into cout.
+  auto display(ErrorDisplayOptions options = {}) const -> String;
+  /// Renders Error into a String, that can later be displayed into cout.
+  auto display(std::ostream &output, ErrorDisplayOptions options = {}) const -> void;
 
+  /// Appends Error with another message (identical to `<<` operator).
   auto with(Message other) -> Error &;
 
+  /// Transfers the ownership of the Error, nullifying previous instance.
+  /// Similar to `std::move()`, uses `std::exchange` under the hood.
   auto release() noexcept -> Error;
+
   operator String() const;
   explicit operator bool() const;
 
   auto operator==(const Error &other) const -> bool;
   auto operator==(StringView other) const -> bool;
-  auto operator<<(Message other) noexcept -> void;
+  auto operator<<(Message other) -> void;
 
   Vec<Message> messages;
 };
@@ -64,7 +76,7 @@ template <typename T>
 using Result = std::expected<T, Error>;
 
 using bail = std::unexpected<Error>;
-auto todo(std::source_location loc = std::source_location::current()) noexcept -> bail;
+auto todo(std::source_location loc = std::source_location::current()) -> bail;
 
 } // namespace Nyx
 

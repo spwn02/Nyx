@@ -34,7 +34,7 @@ auto Error::operator==(const Error &other) const -> bool {
 auto Error::operator==(StringView other) const -> bool {
   return display() == other;
 }
-auto Error::operator<<(Message other) noexcept -> void {
+auto Error::operator<<(Message other) -> void {
   messages.push_back(std::move(other));
 }
 
@@ -47,8 +47,8 @@ static constexpr auto embed(const Error::Message &message) -> String {
       message.message);
 }
 
-static constexpr auto generateStyle(bool locations, bool colours) noexcept {
-  return [locations, colours](const Pair<usize, Error::Message> &pair) constexpr noexcept -> String {
+static constexpr auto generateStyle(bool locations, bool colours) -> decltype(auto) {
+  return [locations, colours](const Pair<usize, Error::Message> &pair) constexpr -> String {
     const auto &[idx, msg] = pair;
     String res{};
 
@@ -71,18 +71,25 @@ static constexpr auto generateStyle(bool locations, bool colours) noexcept {
   };
 }
 
-auto Error::display(bool locations, bool colours) const -> String {
+auto Error::display(std::ostream &output, ErrorDisplayOptions options) const -> void {
   if (messages.size() == 1) {
     const Message &first = messages.front();
-    return std::format("Error: {}", locations ? embed(first) : first.message);
+    output << std::format("Error: {}\n", options.locations ? embed(first) : first.message);
+    return;
   }
 
-  return messages | std::views::reverse | std::views::enumerate |
-         std::views::transform(generateStyle(locations, colours)) |
-         std::views::join_with('\n') | std::ranges::to<String>();
+  output << (messages | std::views::reverse | std::views::enumerate |
+             std::views::transform(generateStyle(options.locations, options.colours)) |
+             std::views::join_with('\n') | std::ranges::to<String>());
 }
 
-auto todo(std::source_location loc) noexcept -> bail {
+auto Error::display(ErrorDisplayOptions options) const -> String {
+  std::stringstream output;
+  display(output, options);
+  return output.str();
+}
+
+auto todo(std::source_location loc) -> bail {
   Error::Message message{loc};
   message.message = "TODO";
   return bail(message);

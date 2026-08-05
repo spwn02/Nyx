@@ -18,10 +18,10 @@ using f32 = float;
 using f64 = double;
 using usize = std::size_t;
 
-using Byte = u8;
 using String = std::string;
 using StringView = std::string_view;
 
+using Byte = u8;
 using Path = std::filesystem::path;
 
 template <class T, usize N>

@@ -733,19 +733,6 @@ auto writeFile(const Path &path) -> void {
   const Vec<TestExecution> executions = runAll<^^ProviderSubjects>();
   const TestSummary summary = Reporter::summarize(executions);
 
-  // Reporter{
-  //     ReporterOptions{
-  //         .renderer =
-  //             RendererOptions{
-  //                 .color = ColorMode::Always,
-  //                 .terminal = true,
-  //                 .showSource = true,
-  //             },
-  //         .showPassedTests = true,
-  //     },
-  // }
-  //     .report(executions, std::cout);
-
   const Option<Ref<const TestExecution>> noFiles =
       executionNamed(executions, "receivesNoFiles(path=<no values>)");
   const Option<Ref<const TestExecution>> firstContext =
@@ -772,7 +759,7 @@ auto writeFile(const Path &path) -> void {
   check(secondContext->get().descriptor.testCase == 1_exp);
 }
 
-[[ = test, = trace ]] auto matchesAndFiltersFiles() -> void {
+[[= test]] auto matchesAndFiltersFiles() -> void {
   const Path root = temporaryDirectory();
   const auto cleanup = std::scope_exit([&root] -> void {
     std::error_code error;
@@ -821,7 +808,20 @@ auto writeFile(const Path &path) -> void {
 
 } // namespace Tests
 
+constexpr auto foo() -> Result<void> {
+  return bail({"foo(): Invalid query."});
+}
+
+constexpr auto bar() -> Result<void> {
+  return foo().transform_error([](Error error) -> Error {
+    error << "bar(): foo() failed, aborting...";
+    return error;
+  });
+}
+
 auto main() -> int { // NOLINT
+  std::println("{}", bar().error().display());
+
   const Vec<TestExecution> executions = runAll<^^Tests>();
   Reporter reporter{
       ReporterOptions{
