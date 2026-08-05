@@ -35,7 +35,7 @@ struct Error {
   Error(Message message, const Args &...args) {
     message.message = std::vformat(message.message, std::make_format_args(args...));
 
-    messages.push_back({message});
+    messages.insert({message});
   }
   ~Error() noexcept = default;
 
@@ -69,7 +69,7 @@ struct Error {
   auto operator==(StringView other) const -> bool;
   auto operator<<(Message other) -> void;
 
-  Vec<Message> messages;
+  Hive<Message> messages;
 };
 
 template <typename T>

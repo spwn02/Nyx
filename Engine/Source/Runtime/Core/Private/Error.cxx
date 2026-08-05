@@ -14,7 +14,7 @@ Error::Error(Error &&other) noexcept = default;
 auto Error::operator=(Error &&other) noexcept -> Error & = default;
 
 auto Error::with(Message other) -> Error & {
-  messages.push_back(std::move(other));
+  messages.insert(std::move(other));
   return *this;
 }
 
@@ -35,7 +35,7 @@ auto Error::operator==(StringView other) const -> bool {
   return display() == other;
 }
 auto Error::operator<<(Message other) -> void {
-  messages.push_back(std::move(other));
+  messages.insert(std::move(other));
 }
 
 static constexpr auto embed(const Error::Message &message) -> String {
@@ -73,7 +73,7 @@ static constexpr auto generateStyle(bool locations, bool colours) -> decltype(au
 
 auto Error::display(std::ostream &output, ErrorDisplayOptions options) const -> void {
   if (messages.size() == 1) {
-    const Message &first = messages.front();
+    const Message &first = *messages.begin();
     output << std::format("Error: {}\n", options.locations ? embed(first) : first.message);
     return;
   }

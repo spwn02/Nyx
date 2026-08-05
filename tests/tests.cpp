@@ -808,20 +808,7 @@ auto writeFile(const Path &path) -> void {
 
 } // namespace Tests
 
-constexpr auto foo() -> Result<void> {
-  return bail({"foo(): Invalid query."});
-}
-
-constexpr auto bar() -> Result<void> {
-  return foo().transform_error([](Error error) -> Error {
-    error << "bar(): foo() failed, aborting...";
-    return error;
-  });
-}
-
 auto main() -> int { // NOLINT
-  std::println("{}", bar().error().display());
-
   const Vec<TestExecution> executions = runAll<^^Tests>();
   Reporter reporter{
       ReporterOptions{
