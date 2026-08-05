@@ -5,6 +5,7 @@ import Nyx.Core;
 import :Annotations;
 import :Context;
 import :Providers;
+import :Task;
 
 export namespace Nyx::Test {
 
@@ -25,6 +26,23 @@ consteval auto isOnce() -> bool {
 }
 
 // NOLINTBEGIN(readability-identifier-naming)
+template <class>
+inline constexpr bool is_task_return_v{};
+
+template <class Value>
+inline constexpr bool is_task_return_v<Task<Value>>{true};
+
+template <class>
+struct TaskValue;
+
+template <class Value>
+struct TaskValue<Task<Value>> final {
+  using Type = Value;
+};
+
+template <class Type>
+using TaskValueType = typename TaskValue<std::remove_cvref_t<Type>>::Type;
+
 template <class Type>
 inline constexpr bool is_value_or_const_reference_v =
     not std::is_reference_v<Type> or
@@ -321,6 +339,44 @@ constexpr auto invokeTest(const Context &context,
         return [:Function:](bindArgument<Namespace, Function, Indices>(
             context, testFixtures, suiteFixtures, caseValues, providerValues)...);
       });
+}
+
+/// Invokes a coroutine test while retaining every injected value through its final suspension point. In
+/// particular, const-reference fixture parameters must remain valid after the test's first co_await.
+template <std::meta::info Namespace, std::meta::info Function, class CaseValues, class ProviderValues>
+auto invokeAsyncTest(const Context &context, // NOLINT(cppcoreguidelines-avoid-reference-coroutine-parameters)
+    FixtureScope<Namespace> &suiteFixtures,  // NOLINT(cppcoreguidelines-avoid-reference-coroutine-parameters)
+    CaseValues caseValues,
+    ProviderValues providerValues) -> Task<TaskValueType<meta::ReturnObject<Function>>> {
+  FixtureScope<Namespace> testFixtures{};
+
+  if constexpr (std::same_as<TaskValueType<meta::ReturnObject<Function>>, void>) {
+    co_await invokeTest<Namespace, Function>(
+        context, testFixtures, suiteFixtures, caseValues, providerValues);
+    co_return;
+  } else {
+    co_return co_await invokeTest<Namespace, Function>(
+        context, testFixtures, suiteFixtures, caseValues, providerValues);
+  }
+}
+
+/// Keeps synchronous invocation allocation-free, while delegating coroutine tests to invokeAsyncTest so their
+/// injected references remain valid.
+template <std::meta::info Namespace, std::meta::info Function, class CaseValues, class ProviderValues>
+auto invokeWithFixtures(const Context &context,
+    FixtureScope<Namespace> &suiteFixtures,
+    const CaseValues &caseValues,
+    const ProviderValues &providerValues) -> decltype(auto) {
+  using Return = meta::ReturnObject<Function>;
+
+  if constexpr (is_task_return_v<std::remove_cvref_t<Return>>) {
+    static_assert(not std::is_lvalue_reference_v<Return>,
+        "Nyx::Test asynchronous test functions must return Task<T> by value.");
+    return invokeAsyncTest<Namespace, Function>(context, suiteFixtures, caseValues, providerValues);
+  } else {
+    FixtureScope<Namespace> testFixtures{};
+    return invokeTest<Namespace, Function>(context, testFixtures, suiteFixtures, caseValues, providerValues);
+  }
 }
 
 } // namespace detail

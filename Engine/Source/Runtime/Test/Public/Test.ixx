@@ -5,6 +5,7 @@ export import :Diagnostics;
 export import :Render;
 export import :Environment;
 export import :Context;
+export import :Task;
 export import :Expressions;
 export import :Assertions;
 export import :Policies;

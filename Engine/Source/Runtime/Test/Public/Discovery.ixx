@@ -18,8 +18,9 @@ namespace detail {
 
 template <std::meta::info Function>
 consteval auto isTest() -> bool {
-  return Nyx::meta::has_annotation<Test, Function>();
+  return std::meta::is_function(Function) and Nyx::meta::has_annotation<Test, Function>();
 }
+
 consteval auto isCase(std::meta::info annotation) -> bool {
   using namespace std::meta;
 
@@ -160,13 +161,13 @@ auto makeTestDescriptor(usize testCase, StringView caseDescription = {}, StringV
 }
 
 template <std::meta::info Function>
-auto appendProviderDescriptors(Vec<TestDescriptor> &descriptor,
+auto appendProviderDescriptors(Vec<TestDescriptor> &descriptors,
     StringView caseDescription,
     usize &testCaseIndex) -> void {
   const usize providerCount = detail::forEachProviderCombination<Function>(
-      [&descriptor, caseDescription, &testCaseIndex](const auto &...providerValues) -> void {
+      [&descriptors, caseDescription, &testCaseIndex](const auto &...providerValues) -> void {
         const String providerDescription = detail::providerDescription<Function>(providerValues...);
-        descriptor.push_back(
+        descriptors.push_back(
             makeTestDescriptor<Function>(testCaseIndex, caseDescription, StringView{providerDescription}));
         ++testCaseIndex;
       });
@@ -175,13 +176,13 @@ auto appendProviderDescriptors(Vec<TestDescriptor> &descriptor,
     return;
 
   const String providerDescription = detail::missingProviderDescription<Function>();
-  descriptor.push_back(
+  descriptors.push_back(
       makeTestDescriptor<Function>(testCaseIndex, caseDescription, StringView{providerDescription}));
   ++testCaseIndex;
 }
 
 template <std::meta::info Function, std::meta::info Annotation>
-auto appendCaseDescriptions(Vec<TestDescriptor> &descriptors, usize &testCaseIndex) -> void {
+auto appendCaseDescriptors(Vec<TestDescriptor> &descriptors, usize &testCaseIndex) -> void {
   using Ann = meta::TypeObject<Annotation>;
   constexpr Ann testCase = std::meta::extract<Ann>(Annotation);
   const String caseDescription = testCase.describe();
@@ -200,7 +201,7 @@ auto appendDescriptors(Vec<TestDescriptor> &descriptors) -> void {
 
   template for (constexpr std::meta::info annotation : meta::annotations<Function>) {
     if constexpr (isCase(annotation))
-      appendCaseDescriptions<Function, annotation>(descriptors, testCaseIndex);
+      appendCaseDescriptors<Function, annotation>(descriptors, testCaseIndex);
   }
 }
 
@@ -238,9 +239,8 @@ auto appendProviderExecutions(Vec<TestExecution> &executions,
         executions.push_back(
             run(makeTestDescriptor<Function>(testCaseIndex, caseDescription, StringView{providerDescription}),
                 [caseValues, providerTuple, &suiteFixtures](const Context &context) -> decltype(auto) {
-                  FixtureScope<Namespace> testFixtures{};
-                  return detail::invokeTest<Namespace, Function>(
-                      context, testFixtures, suiteFixtures, caseValues, providerTuple);
+                  return detail::invokeWithFixtures<Namespace, Function>(
+                      context, suiteFixtures, caseValues, providerTuple);
                 }));
         ++testCaseIndex;
       });
@@ -300,9 +300,10 @@ auto discover() -> Vec<TestDescriptor> {
   return descriptors;
 }
 
-/// Executes all reflected tests and their respective declarative Case annotations.
+/// Executes all reflected tests and their declarative Case/provider annotations.
 template <std::meta::info Namespace>
-[[nodiscard]] auto runAll() -> Vec<TestExecution> {
+[[nodiscard]]
+auto runAll() -> Vec<TestExecution> {
   static_assert(detail::fixtureDeclarationsAreValid<Namespace>());
 
   Vec<TestExecution> executions{};

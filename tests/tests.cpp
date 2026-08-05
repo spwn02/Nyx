@@ -806,6 +806,231 @@ auto writeFile(const Path &path) -> void {
       allFiles, [](const Path &path) -> bool { return path.filename().generic_string() == "hidden.md"; }));
 }
 
+auto delayedValue() -> Task<i32> {
+  constexpr i32 value{69};
+  co_await yield();
+  co_return value;
+}
+
+[[= test]] auto asyncExecutesVoidTestsInAnEnvironment() -> void {
+  const TestExecution execution = run("void", [] -> void { require(currentEnvironment()); });
+
+  require(execution.passed());
+  require(execution.state.assertions == 1);
+  require(currentEnvironment());
+}
+
+[[= test]] auto asyncNormalizesBooleanReturnValues() -> void {
+  constexpr usize expectedAssertions{1};
+  constexpr usize expectedFailures{1};
+  const auto location = std::source_location::current();
+  const TestExecution execution = run(
+      TestDescriptor{
+          .identifier = "returnsFalse",
+          .location = location,
+      },
+      [] -> bool { return false; });
+
+  require(execution.failed());
+  require(execution.state.assertions == expectedAssertions);
+  require(execution.state.failedAssertions == expectedFailures);
+  require(execution.state.errors == 0);
+  require(execution.state.diagnostics.size() == expectedFailures);
+  check(execution.state.diagnostics.front().header.code == DiagnosticCode::AssertionFailed);
+  check(execution.state.diagnostics.front().description() == "test returned false");
+  check(execution.state.diagnostics.front().details.spans.front().location.line() == location.line());
+  check(execution.state.diagnostics.front().details.spans.front().label == "test return");
+}
+
+[[= test]] auto asyncNormalizesResultReturnValues() -> void {
+  constexpr usize expectedAssertions{1};
+  constexpr usize expectedFailures{1};
+  constexpr usize expectedErrors{1};
+  const TestExecution returnedTrue = run("resultTrue", [] -> Result<bool> { return true; });
+  const TestExecution returnedFalse = run("resultFalse", [] -> Result<bool> { return false; });
+  const TestExecution returnedVoid = run("resultVoid", [] -> Result<void> { return {}; });
+  const TestExecution returnedError =
+      run("resultError", [] -> Result<void> { return bail{Error{"invalid user"}}; });
+
+  require(returnedTrue.passed());
+  require(returnedTrue.state.assertions == expectedAssertions);
+  require(returnedFalse.failed());
+  require(returnedFalse.state.assertions == expectedAssertions);
+  require(returnedFalse.state.failedAssertions == expectedFailures);
+  require(returnedVoid.passed());
+  require(returnedVoid.state.assertions == 0);
+  require(returnedError.failed());
+  require(returnedError.state.errors == expectedErrors);
+  require(returnedError.state.assertions == 0);
+  require(returnedError.state.diagnostics.size() == expectedErrors);
+  check(returnedError.state.diagnostics.front().header.code == DiagnosticCode::TestReturnedError);
+  check(returnedError.state.diagnostics.front().details.notes.front().message == "invalid user");
+}
+
+[[= test]] auto asyncCapturesFatalRequirementsAtTheTestBoundary() -> void {
+  constexpr usize expectedAssertions{1};
+  constexpr usize expectedFailures{1};
+  bool continued{};
+  const TestExecution execution = run("requires", [&continued] -> void {
+    require(false);
+    continued = true;
+  });
+
+  require(not continued);
+  require(execution.failed());
+  require(execution.state.aborted);
+  require(execution.state.assertions == expectedAssertions);
+  require(execution.state.failedAssertions == expectedFailures);
+  require(execution.state.errors == 0);
+  check(execution.state.diagnostics.front().details.spans.front().label == "requirement");
+}
+
+[[= test]] auto asyncPreservesTaskLocalBindingsAcrossAsyncResumption() -> void {
+  constexpr usize expectedAssertions{4};
+  bool completed{};
+  const TestExecution execution = run("asyncBindings", [&completed] -> Task<void> { // NOLINT
+    require(currentEnvironment());
+    require(currentContext());
+
+    co_await yield();
+
+    require(currentEnvironment());
+    require(currentContext());
+    completed = true;
+  });
+
+  require(completed);
+  require(execution.passed());
+  require(execution.state.assertions == expectedAssertions);
+}
+
+[[= test]] auto awaitsNestedAsyncTasks() -> void {
+  constexpr usize expectedAssertions{1};
+  const TestExecution execution = run("nestedAsync", [] -> Task<bool> {
+    constexpr i32 expectedValue{69};
+    const i32 value = co_await delayedValue();
+    co_return value == expectedValue;
+  });
+
+  require(execution.passed());
+  require(execution.state.assertions == expectedAssertions);
+  require(execution.state.diagnostics.empty());
+}
+
+[[= test]] auto normalizesAsyncReturnValues() -> void {
+  constexpr usize expectedAssertions{1};
+  constexpr usize expectedErrors{1};
+  const TestExecution returnedTrue = run("asyncTrue", [] -> Task<bool> {
+    co_await yield();
+    co_return true;
+  });
+  const TestExecution returnedResult = run("asyncResult", [] -> Task<Result<bool>> {
+    co_await yield();
+    co_return Result<bool>{true};
+  });
+  const TestExecution returnedError = run("asyncError", [] -> Task<Result<void>> {
+    co_await yield();
+    Result<void> result = bail{Error{"async failure"}};
+    co_return result;
+  });
+
+  require(returnedTrue.passed());
+  require(returnedTrue.state.assertions == expectedAssertions);
+  require(returnedResult.passed());
+  require(returnedResult.state.assertions == expectedAssertions);
+  require(returnedError.failed());
+  require(returnedError.state.errors == expectedErrors);
+  check(returnedError.state.diagnostics.front().header.code == DiagnosticCode::TestReturnedError);
+  check(returnedError.state.diagnostics.front().details.notes.front().message == "async failure");
+}
+
+[[= test]] auto capturesAsyncFatalRequirementsAtTheTestBoundary() -> void {
+  constexpr usize expectedAssertions{1};
+  constexpr usize expectedFailures{1};
+  bool continued{};
+  const TestExecution execution = run("asyncRequire", [&continued] -> Task<void> { // NOLINT
+    co_await yield();
+    require(false);
+    continued = true;
+  });
+
+  require(not continued);
+  require(execution.failed());
+  require(execution.state.aborted);
+  require(execution.state.assertions == expectedAssertions);
+  require(execution.state.failedAssertions == expectedFailures);
+  require(execution.state.errors == 0);
+  check(execution.state.diagnostics.front().details.spans.front().label == "requirement");
+}
+
+[[= test]] auto capturesAsyncExceptionsAtTheTestBoundary() -> void {
+  constexpr usize expectedErrors{1};
+  const TestExecution execution = run("asyncThrows", [] -> Task<void> {
+    co_await yield();
+    throw std::runtime_error{"broken async test"};
+  });
+
+  require(execution.failed());
+  require(execution.state.errors == expectedErrors);
+  check(execution.state.diagnostics.front().header.code == DiagnosticCode::UnhandledException);
+  check(execution.state.diagnostics.front().details.notes.front().message == "exception: broken async test");
+}
+
+[[= test]] auto asyncCapturesUnhandledExceptions() -> void {
+  constexpr usize expectedErrors{1};
+  const TestExecution execution = run("throws", [] -> void { throw std::runtime_error{"broken test"}; });
+
+  require(execution.failed());
+  require(execution.state.errors == expectedErrors);
+  require(execution.state.assertions == 0);
+  require(execution.state.diagnostics.size() == expectedErrors);
+  check(execution.state.diagnostics.front().header.code == DiagnosticCode::UnhandledException);
+  check(execution.state.diagnostics.front().details.notes.front().message == "exception: broken test");
+}
+
+[[= test]] auto asyncReportsAggregateResults() -> void {
+  constexpr usize progressBarWidth{80};
+  constexpr usize expectedTests{3};
+  constexpr usize expectedPassed{1};
+  constexpr usize expectedFailed{2};
+  constexpr usize expectedAssertions{2};
+  constexpr usize expectedFailedAssertions{1};
+  constexpr usize expectedErrors{1};
+  const Vec<TestExecution> executions{
+      run("passes", [] -> bool { return true; }),
+      run("fails", [] -> bool { return false; }),
+      run("errors", [] -> Result<void> { return bail{Error{"invalid query"}}; }),
+  };
+  Reporter reporter{
+      ReporterOptions{
+          .renderer =
+              RendererOptions{
+                  .color = ColorMode::Never,
+                  .terminal = false,
+                  .showSource = false,
+              },
+      },
+  };
+  std::ostringstream output{};
+  const TestSummary summary = reporter.report(executions, output);
+  const String text = output.str();
+
+  require(summary.testCount == expectedTests);
+  require(summary.passedCount == expectedPassed);
+  require(summary.failedCount == expectedFailed);
+  require(summary.assertionCount == expectedAssertions);
+  require(summary.failedAssertionCount == expectedFailedAssertions);
+  require(summary.errorCount == expectedErrors);
+  require(summary.failed());
+  check(text.contains("test fails ... FAILED"));
+  check(text.contains("error[NYX001]: test returned false"));
+  check(text.contains("error[NYX011]: test returned an error"));
+  check(text.contains("= note: test: errors"));
+  check(text.contains(String(progressBarWidth, '=')));
+  check(text.contains("test result: FAILED"));
+  check(text.contains("finished in "));
+}
+
 } // namespace Tests
 
 auto main() -> int { // NOLINT

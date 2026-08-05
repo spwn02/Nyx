@@ -8,6 +8,7 @@ import :Diagnostics;
 import :Environment;
 import :Expressions;
 import :Policies;
+import :Task;
 
 export namespace Nyx::Test {
 
@@ -40,7 +41,10 @@ template <class Value>
 inline constexpr bool is_result_return_v<Result<Value>>{true};
 
 template <class>
-inline constexpr bool dependent_false_v{};
+inline constexpr bool is_task_return_v{};
+
+template <class Value>
+inline constexpr bool is_task_return_v<Task<Value>>{true};
 // NOLINTEND(readability-identifier-naming)
 
 template <class Function>
@@ -61,17 +65,32 @@ auto applyPolicy(const TestPolicy &policy,
     std::source_location location) -> void;
 
 template <class Value>
-auto normalizeResult(const Result<Value> &result, TestEnvironment &environment, std::source_location location)
-    -> void;
+auto normalizeResult(const Result<Value> &result,
+    TestEnvironment &environment,
+    const Context &context,
+    std::source_location location) -> void;
+
+template <class Value>
+auto normalizeTask(Task<Value> &&task,
+    TestEnvironment &environment,
+    const Context &context,
+    std::source_location location) -> void;
 
 template <class Return>
-auto normalizeReturn(Return &&returned, TestEnvironment &environment, std::source_location location) -> void {
+auto normalizeReturn(Return &&returned,
+    TestEnvironment &environment,
+    const Context &context,
+    std::source_location location) -> void {
   using Type = std::remove_cvref_t<Return>;
 
-  if constexpr (std::same_as<Type, Expression>) {
+  if constexpr (is_task_return_v<Type>) {
+    static_assert(not std::is_lvalue_reference_v<Return>,
+        "Nyx::Test asynchronous test functions must return Task<T> by value.");
+    normalizeTask(std::forward<Return>(returned), environment, context, location);
+  } else if constexpr (std::same_as<Type, Expression>) {
     static_cast<void>(check(std::forward<Return>(returned), location));
   } else if constexpr (is_result_return_v<Type>) {
-    normalizeResult(returned, environment, location);
+    normalizeResult(returned, environment, context, location);
   } else if constexpr (BoolTestable<Return>) {
     if (static_cast<bool>(std::forward<Return>(returned))) {
       environment.recordPass();
@@ -83,14 +102,34 @@ auto normalizeReturn(Return &&returned, TestEnvironment &environment, std::sourc
     diagnostic.details.spans.front().label = "test return";
     environment.recordFailure(std::move(diagnostic));
   } else {
-    static_assert(dependent_false_v<Type>,
-        "Nyx::Test functions must return void, a bool-testable value, or Result<T>.");
+    static_assert(meta::always_false_v<Type>,
+        "Nyx::Test functions must return void, a bool-testable value, or Result<T>, or Task<T>.");
   }
 }
 
 template <class Value>
-auto normalizeResult(const Result<Value> &result, TestEnvironment &environment, std::source_location location)
-    -> void {
+auto normalizeTask(Task<Value> &&task,
+    TestEnvironment &environment,
+    const Context &context,
+    std::source_location location) -> void {
+  detail::drive(task, [&environment, &context](std::coroutine_handle<> handle) -> void {
+    EnvironmentBinding environmentBinding{environment};
+    ContextBinding contextBinding{context};
+    handle.resume();
+  });
+
+  if constexpr (std::same_as<Value, void>) {
+    std::move(task).takeResult();
+  } else {
+    normalizeReturn(std::move(task).takeResult(), environment, context, location);
+  }
+}
+
+template <class Value>
+auto normalizeResult(const Result<Value> &result,
+    TestEnvironment &environment,
+    const Context &context,
+    std::source_location location) -> void {
   if (not result) {
     environment.recordError(returnedErrorDiagnostic(result.error(), location));
     return;
@@ -99,7 +138,7 @@ auto normalizeResult(const Result<Value> &result, TestEnvironment &environment, 
   if constexpr (std::is_same_v<Value, void>)
     return;
   else
-    normalizeReturn(*result, environment, location);
+    normalizeReturn(*result, environment, context, location);
 }
 
 template <class Function>
@@ -116,7 +155,7 @@ auto invokeTest(Function &&function, const Context &context) -> decltype(auto) {
 ///
 /// A TestAbort records a fatal requirement failure but is not itself an error.
 /// Other exceptions are converted into UnhandledException diagnostics.
-template <class Function>
+template <detail::TestInvocable Function>
 [[nodiscard]]
 auto run(TestDescriptor descriptor, Function &&function) -> TestExecution {
   TestEnvironment environment{};
@@ -139,24 +178,38 @@ auto run(TestDescriptor descriptor, Function &&function) -> TestExecution {
         [&execution, started] -> void { execution.duration = std::chrono::steady_clock::now() - started; });
 
     {
-      EnvironmentBinding binding{environment};
       const Context context{
           .name = StringView{execution.descriptor.name},
           .description = StringView{execution.descriptor.description},
           .testCase = execution.descriptor.testCase,
           .location = execution.descriptor.location,
       };
-      ContextBinding contextBinding{context};
 
       try {
         using Return = decltype(detail::invokeTest(std::forward<Function>(function), context));
+        using ReturnType = std::remove_cvref_t<Return>;
 
-        if constexpr (std::same_as<Return, void>)
+        if constexpr (std::same_as<Return, void>) {
+          EnvironmentBinding binding{environment};
+          ContextBinding contextBinding{context};
           detail::invokeTest(std::forward<Function>(function), context);
-        else
+        } else if constexpr (detail::is_task_return_v<ReturnType>) {
+          static_assert(not std::is_lvalue_reference_v<ReturnType>,
+              "Nyx::Test asynchronous test functions must return Task<T> by value.");
+          const auto invokeTask = [&] -> ReturnType {
+            EnvironmentBinding binding{environment};
+            ContextBinding contextBinding{context};
+            return detail::invokeTest(std::forward<Function>(function), context);
+          };
+          detail::normalizeReturn(invokeTask(), environment, context, execution.descriptor.location);
+        } else {
+          EnvironmentBinding binding{environment};
+          ContextBinding contextBinding{context};
           detail::normalizeReturn(detail::invokeTest(std::forward<Function>(function), context),
               environment,
+              context,
               execution.descriptor.location);
+        }
       } catch (const TestAbort &) { // NOLINT
         // require() already recorded the fatal assertion and marked the test aborted.
         // nothing to do here.
