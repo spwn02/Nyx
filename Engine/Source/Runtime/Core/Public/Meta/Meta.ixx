@@ -68,18 +68,18 @@ consteval auto has_annotation() -> bool {
 template <usize N>
 class StaticString final {
 public:
-  Array<char, N> string{};
+  const char *ptr_{};
 
   consteval StaticString(const char (&str)[N]) // NOLINT
-      : string(std::to_array(str)) {
+      : ptr_(std::define_static_string(StringView{str, N - 1})) {
   }
 
   [[nodiscard]] constexpr auto apply() const -> StringView {
-    return StringView{std::define_static_string(StringView{string.data(), N - 1}), N - 1};
+    return StringView{ptr_, N - 1};
   }
 
   [[nodiscard]] constexpr operator const char *() const {
-    return string.data();
+    return ptr_;
   }
 };
 

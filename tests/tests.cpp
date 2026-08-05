@@ -49,6 +49,39 @@ namespace FailingProviderSubjects {
 
 } // namespace FailingProviderSubjects
 
+namespace ParallelTests {
+
+// NOLINTNEXTLINE(cppcoreguidelines-avoid-non-const-global-variables)
+inline std::atomic<usize> active{};
+
+// NOLINTNEXTLINE(cppcoreguidelines-avoid-non-const-global-variables)
+inline std::atomic<usize> peak{};
+
+auto reset() -> void {
+  active.store(0, std::memory_order_relaxed);
+  peak.store(0, std::memory_order_relaxed);
+}
+
+auto observePeak(usize value) -> void {
+  usize observed = peak.load(std::memory_order_relaxed);
+  while (observed < value and not peak.compare_exchange_weak(observed, value, std::memory_order_relaxed)) {
+    // pass
+  }
+}
+
+[[ = test, = Case{1}, = Case{2}, = Case{3}, = Case{4} ]] auto runsConcurrently(u32 /*ignored*/)
+    -> Task<void> {
+  const usize current = active.fetch_add(1, std::memory_order_relaxed) + 1;
+  observePeak(current);
+  const auto cleanup = std::scope_exit([] -> void { active.fetch_sub(1, std::memory_order_relaxed); });
+
+  co_await yield();
+  std::this_thread::sleep_for(std::chrono::milliseconds{10});
+  require(current <= 2_exp);
+}
+
+} // namespace ParallelTests
+
 namespace Tests {
 
 namespace diagnostics {
@@ -409,6 +442,22 @@ namespace discovery {
   require(executions.back().failed());
   check(executions.back().descriptor.identifier == "identityCases(3, 2)"_exp);
   check(executions.back().state.diagnostics.front().description() == "test returned false"_exp);
+}
+
+[[= test]] auto dispatchesIndependentCasesInParallel() -> void {
+  constexpr usize workerCount{2};
+  constexpr usize expectedCases{4};
+  ParallelTests::reset();
+  const Vec<TestExecution> executions = runAll<^^ParallelTests>(RunOptions{
+      .jobs = workerCount,
+  });
+  const TestSummary summary = Reporter::summarize(executions);
+
+  require(executions.size() == expectedCases);
+  require(summary.passedCount == expectedCases);
+  check(ParallelTests::peak.load(std::memory_order_relaxed) >= workerCount);
+  check(executions.front().descriptor.identifier == "runsConcurrently(1)");
+  check(executions.back().descriptor.identifier == "runsConcurrently(4)");
 }
 
 } // namespace discovery
@@ -786,8 +835,10 @@ auto writeFile(const Path &path) -> void {
   constexpr usize expectedFailed{1};
   Vec<TestDescriptor> descriptors = discover<^^ProviderSubjects>();
   discover<^^FailingProviderSubjects>(descriptors);
-  Vec<TestExecution> executions = runAll<^^ProviderSubjects>();
-  runAll<^^FailingProviderSubjects>(executions);
+  Vec<detail::WorkItem> workItems{};
+  runAll<^^ProviderSubjects>(workItems);
+  runAll<^^FailingProviderSubjects>(workItems);
+  Vec<TestExecution> executions = detail::executeWorkItems(std::move(workItems), {});
   const TestSummary summary = Reporter::summarize(executions);
 
   const Option<Ref<const TestExecution>> noFiles =

@@ -12,5 +12,6 @@ export import :Policies;
 export import :Providers;
 export import :Execution;
 export import :Fixtures;
+export import :Runner;
 export import :Reporting;
 export import :Discovery;

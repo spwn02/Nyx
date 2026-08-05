@@ -13,7 +13,7 @@ auto main() -> int {
 
   Result<Kernel> kernel = Kernel::create();
   if (not kernel) {
-    NLogger::error("{}", kernel.error().display(false, true));
+    NLogger::error("{}", kernel.error().display({.colours = true}));
     return build::exitFailure;
   }
 
@@ -22,7 +22,7 @@ auto main() -> int {
   {
     Result<void> result = kernel->run();
     if (not result) {
-      NLogger::error("{}", result.error().display(false, true));
+      NLogger::error("{}", result.error().display({.colours = true}));
       return build::exitFailure;
     }
   }

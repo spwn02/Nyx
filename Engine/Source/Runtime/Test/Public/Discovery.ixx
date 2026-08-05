@@ -10,6 +10,7 @@ import :Execution;
 import :Fixtures;
 import :Policies;
 import :Providers;
+import :Runner;
 
 // NOLINTBEGIN(bugprone-reserved-identifier)
 export namespace Nyx::Test {
@@ -226,22 +227,26 @@ auto noProviderExecution(TestDescriptor descriptor) -> TestExecution {
 }
 
 template <std::meta::info Namespace, std::meta::info Function, class CaseValues>
-auto appendProviderExecutions(Vec<TestExecution> &executions,
-    FixtureScope<Namespace> &suiteFixtures,
+auto appendProviderWorkItems(Vec<detail::WorkItem> &workItems,
+    std::shared_ptr<FixtureScope<Namespace>> suiteFixtures,
     const CaseValues &caseValues,
     StringView caseDescription,
     usize &testCaseIndex) -> void {
   const usize providerCount = detail::forEachProviderCombination<Function>(
-      [&executions, &suiteFixtures, &caseValues, caseDescription, &testCaseIndex](
+      [&workItems, suiteFixtures, &caseValues, &caseDescription, &testCaseIndex](
           const auto &...providerValues) -> void {
         const String providerDescription = detail::providerDescription<Function>(providerValues...);
         const auto providerTuple = std::make_tuple(providerValues...);
-        executions.push_back(
-            run(makeTestDescriptor<Function>(testCaseIndex, caseDescription, StringView{providerDescription}),
-                [caseValues, providerTuple, &suiteFixtures](const Context &context) -> decltype(auto) {
-                  return detail::invokeWithFixtures<Namespace, Function>(
-                      context, suiteFixtures, caseValues, providerTuple);
-                }));
+        const TestDescriptor descriptor =
+            makeTestDescriptor<Function>(testCaseIndex, caseDescription, StringView{providerDescription});
+        workItems.push_back(detail::WorkItem{
+            .execute = [descriptor, caseValues, providerTuple, suiteFixtures] -> TestExecution {
+              return run(descriptor,
+                  [caseValues, providerTuple, suiteFixtures](const Context &context) -> decltype(auto) {
+                    return detail::invokeWithFixtures<Namespace, Function>(
+                        context, *suiteFixtures, caseValues, providerTuple);
+                  });
+            }});
         ++testCaseIndex;
       });
 
@@ -249,37 +254,39 @@ auto appendProviderExecutions(Vec<TestExecution> &executions,
     return;
 
   const String providerDescription = detail::missingProviderDescription<Function>();
-  executions.push_back(noProviderExecution<Function>(
-      makeTestDescriptor<Function>(testCaseIndex, caseDescription, StringView{providerDescription})));
+  const TestDescriptor descriptor =
+      makeTestDescriptor<Function>(testCaseIndex, caseDescription, StringView{providerDescription});
+  workItems.push_back(detail::WorkItem{
+      .execute = [descriptor] -> TestExecution { return noProviderExecution<Function>(descriptor); }});
   ++testCaseIndex;
 }
 
 template <std::meta::info Namespace, std::meta::info Function, std::meta::info Annotation>
-auto appendCaseExecutions(Vec<TestExecution> &executions,
-    FixtureScope<Namespace> &suiteFixtures,
+auto appendCaseWorkItems(Vec<detail::WorkItem> &workItems,
+    std::shared_ptr<FixtureScope<Namespace>> suiteFixtures,
     usize &testCaseIndex) -> void {
   using Ann = meta::TypeObject<Annotation>;
   constexpr Ann testCase = std::meta::extract<Ann>(Annotation);
   const String caseDescription = testCase.describe();
   const auto caseValueTuple = caseValues(testCase);
 
-  appendProviderExecutions<Namespace, Function>(
-      executions, suiteFixtures, caseValueTuple, caseDescription, testCaseIndex);
+  appendProviderWorkItems<Namespace, Function>(
+      workItems, suiteFixtures, caseValueTuple, caseDescription, testCaseIndex);
 }
 
 template <std::meta::info Namespace, std::meta::info Function>
-auto appendExecutions(Vec<TestExecution> &executions, FixtureScope<Namespace> &suiteFixtures) -> void {
+auto appendWorkItems(Vec<detail::WorkItem> &workItems, std::shared_ptr<FixtureScope<Namespace>> suiteFixtures) -> void {
   usize testCaseIndex{};
 
   if constexpr (caseCount<Function>() == 0) {
     const Tuple<> caseValues{};
-    appendProviderExecutions<Namespace, Function>(executions, suiteFixtures, caseValues, {}, testCaseIndex);
+    appendProviderWorkItems<Namespace, Function>(workItems, suiteFixtures, caseValues, {}, testCaseIndex);
     return;
   }
 
   template for (constexpr std::meta::info annotation : meta::annotations<Function>) {
     if constexpr (isCase(annotation))
-      appendCaseExecutions<Namespace, Function, annotation>(executions, suiteFixtures, testCaseIndex);
+      appendCaseWorkItems<Namespace, Function, annotation>(workItems, suiteFixtures, testCaseIndex);
   }
 }
 
@@ -310,31 +317,31 @@ auto discover() -> Vec<TestDescriptor> {
 
 /// Appends all reflected tests and their declarative Case/provider annotations.
 template <std::meta::info Namespace>
-auto runAll(Vec<TestExecution> &executions) -> void {
+auto runAll(Vec<detail::WorkItem> &workItems) -> void {
   static_assert(detail::fixtureDeclarationsAreValid<Namespace>());
 
-  FixtureScope<Namespace> suiteFixtures{};
+  auto suiteFixtures = std::make_shared<FixtureScope<Namespace>>();
 
   template for (constexpr std::meta::info member :
       meta::members<Namespace, meta::AccessContext::unchecked()>) {
     if constexpr (std::meta::is_function(member) and detail::isTest<member>())
-      detail::appendExecutions<Namespace, member>(executions, suiteFixtures);
+      detail::appendWorkItems<Namespace, member>(workItems, suiteFixtures);
     else if constexpr (std::meta::is_namespace(member))
-      runAll<member>(executions);
+      runAll<member>(workItems);
   }
 }
 
 /// Executes all reflected tests and their declarative Case/provider annotations.
 template <std::meta::info Namespace>
 [[nodiscard]]
-auto runAll() -> Vec<TestExecution> {
+auto runAll(RunOptions options = {}) -> Vec<TestExecution> {
   static_assert(detail::fixtureDeclarationsAreValid<Namespace>());
 
-  Vec<TestExecution> executions{};
+  Vec<detail::WorkItem> workItems{};
 
-  runAll<Namespace>(executions);
+  runAll<Namespace>(workItems);
 
-  return executions;
+  return detail::executeWorkItems(std::move(workItems), options);
 }
 
 } // namespace Nyx::Test
