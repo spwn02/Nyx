@@ -11,14 +11,23 @@ class Task;
 
 namespace detail {
 
+/// Internal control flow used when a run loop has requested cancellation.
+/// The test boundary turns this into the timeout diagnostic after cleanup.
+class TaskCancelled final {};
+
 class RunLoop final {
 public:
+  explicit RunLoop(std::stop_token stopToken = {}) noexcept;
+
   auto enqueue(std::coroutine_handle<> handle) -> void;
 
   [[nodiscard]] auto dequeue() -> Option<std::coroutine_handle<>>;
 
+  [[nodiscard]] auto stopRequested() const noexcept -> bool;
+
 private:
   std::deque<std::coroutine_handle<>> ready_;
+  std::stop_token stopToken_;
 };
 
 /// Dynamically binds the deterministic coroutine queue while a task resumes. It is analogous to
@@ -45,15 +54,22 @@ private:
 
 auto schedule(std::coroutine_handle<> handle) -> void;
 
+[[nodiscard]] auto stopRequested() noexcept -> bool;
+
 template <class Value, class Resume>
 auto drive(Task<Value> &task, Resume &&resume) -> void;
+
+template <class Value, class Resume, class BeforeResume>
+auto drive(Task<Value> &task, Resume &&resume, BeforeResume &&beforeResume, std::stop_token stopToken = {})
+    -> void;
 
 } // namespace detail
 
 /// Cooperative suspension point for a Nyx::Test Task.
 ///
 /// The active deterministic run loop re-enqueues the current coroutine. A future executor can replace the
-/// queue without changing Task<T> call sites.
+/// queue without changing Task<T> call sites. After a timeout requests cancellation, a later yield() stops a
+/// coroutine that did not finish during its cancellation-aware resume.
 struct YieldAwaiter final {
   [[nodiscard]] constexpr auto await_ready() const noexcept -> bool { // NOLINT
     return false;
@@ -248,8 +264,11 @@ public:
   }
 
 private:
-  template <class OtherValue, class Resume>
-  friend auto detail::drive(Task<OtherValue> &task, Resume &&resume) -> void;
+  template <class OtherValue, class Resume, class BeforeResume>
+  friend auto detail::drive(Task<OtherValue> &task,
+      Resume &&resume,
+      BeforeResume &&beforeResume,
+      std::stop_token stopToken) -> void;
 
   explicit Task(Handle handle) noexcept
       : handle_(handle) {
@@ -433,8 +452,11 @@ public:
   }
 
 private:
-  template <class OtherValue, class Resume>
-  friend auto detail::drive(Task<OtherValue> &task, Resume &&resume) -> void;
+  template <class OtherValue, class Resume, class BeforeResume>
+  friend auto detail::drive(Task<OtherValue> &task,
+      Resume &&resume,
+      BeforeResume &&beforeResume,
+      std::stop_token stopToken) -> void;
 
   explicit Task(Handle handle) noexcept
       : handle_(handle) {
@@ -452,16 +474,18 @@ private:
 
 namespace detail {
 
-template <class Value, class Resume>
-auto drive(Task<Value> &task, Resume &&resume) -> void {
+template <class Value, class Resume, class BeforeResume>
+auto drive(Task<Value> &task, Resume &&resume, BeforeResume &&beforeResume, std::stop_token stopToken)
+    -> void {
   if (not task.valid())
     throw std::logic_error{"Nyx::Test cannot execute an empty Task<T>"};
 
-  RunLoop runLoop{};
+  RunLoop runLoop{std::move(stopToken)};
   runLoop.enqueue(task.handle_);
 
   while (const Option<std::coroutine_handle<>> handle = runLoop.dequeue()) {
     RunLoopBinding binding{runLoop};
+    std::invoke(std::forward<BeforeResume>(beforeResume));
     std::invoke(std::forward<Resume>(resume), *handle);
   }
 
@@ -469,6 +493,11 @@ auto drive(Task<Value> &task, Resume &&resume) -> void {
     throw std::logic_error{
         "Nyx::Test Task<T> suspended without scheduling a continuation; use Nyx::Test::yield()."};
   }
+}
+
+template <class Value, class Resume>
+auto drive(Task<Value> &task, Resume &&resume) -> void {
+  drive(task, std::forward<Resume>(resume), []() noexcept -> void {});
 }
 
 } // namespace detail

@@ -281,13 +281,14 @@ template <meta::StaticString Name>
 inline constexpr bool is_should_panic_v<ShouldPanic<Name>>{true};
 
 struct Timeout final {
-  std::chrono::nanoseconds duration{};
+  // std::chrono::duration is not a structural type, so store the raw count.
+  long long nanoseconds{};
 };
 
 template <class Rep, class Period>
 consteval auto timeout(std::chrono::duration<Rep, Period> duration) -> Timeout {
   return Timeout{
-      .duration = std::chrono::duration_cast<std::chrono::nanoseconds>(duration),
+      .nanoseconds = std::chrono::duration_cast<std::chrono::nanoseconds>(duration).count(),
   };
 }
 

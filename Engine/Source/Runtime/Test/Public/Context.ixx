@@ -10,6 +10,8 @@ struct Context final {
   const StringView name;
   const StringView description;
   const usize testCase;
+  /// Becomes requested once the test reaches its coroutine timeout boundary.
+  const std::stop_token stopToken;
   const std::source_location location;
   // NOLINTEND(cppcoreguidelines-avoid-const-or-ref-data-members)
 };

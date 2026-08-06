@@ -82,32 +82,6 @@ consteval auto timeoutCount() -> usize {
 }
 
 template <std::meta::info Function>
-consteval auto shouldPanicAnnotation() -> auto {
-  template for (constexpr std::meta::info annotation : meta::annotations<Function>) {
-    using Annotation = meta::TypeObject<annotation>;
-
-    if constexpr (is_should_panic_v<Annotation>)
-      return std::meta::extract<Annotation>(annotation);
-  }
-
-  static_assert(meta::always_false_v<meta::TypeObject<Function>>,
-      "Nyx::Test could not find the [[= shouldPanic(...)]] annotation.");
-}
-
-template <std::meta::info Function>
-consteval auto timeoutAnnotation() -> auto {
-  template for (constexpr std::meta::info annotation : meta::annotations<Function>) {
-    using Annotation = meta::TypeObject<annotation>;
-
-    if constexpr (std::same_as<Annotation, Timeout>)
-      return std::meta::extract<Annotation>(annotation);
-  }
-
-  static_assert(meta::always_false_v<meta::TypeObject<Function>>,
-      "Nyx::Test could not find the [[= timeout(...)]] annotation.");
-}
-
-template <std::meta::info Function>
 auto policyOf() -> TestPolicy {
   static_assert(shouldPanicCount<Function>() <= 1,
       "Nyx::Test tests may declare at most one [[= shouldPanic(...)]] annotation.");
@@ -118,14 +92,17 @@ auto policyOf() -> TestPolicy {
       .trace = Nyx::meta::has_annotation<Trace, Function>(),
   };
 
-  if constexpr (shouldPanicCount<Function>() != 0) {
-    constexpr auto expected = shouldPanicAnnotation<Function>();
-    policy.expectedPanic = String{expected.apply()};
-  }
+  template for (constexpr std::meta::info annotation : meta::annotations<Function>) {
+    using Annotation = meta::TypeObject<annotation>;
 
-  if constexpr (timeoutCount<Function>() != 0) {
-    constexpr Timeout limit = timeoutAnnotation<Function>();
-    policy.timeout = std::chrono::duration_cast<std::chrono::steady_clock::duration>(limit.duration);
+    if constexpr (is_should_panic_v<Annotation>) {
+      constexpr Annotation expected = std::meta::extract<Annotation>(annotation);
+      policy.expectedPanic = String{expected.apply()};
+    } else if constexpr (std::same_as<Annotation, Timeout>) {
+      constexpr auto limit = std::meta::extract<Timeout>(annotation);
+      policy.timeout = std::chrono::duration_cast<std::chrono::steady_clock::duration>(
+          std::chrono::nanoseconds{limit.nanoseconds});
+    }
   }
 
   return policy;
@@ -275,7 +252,8 @@ auto appendCaseWorkItems(Vec<detail::WorkItem> &workItems,
 }
 
 template <std::meta::info Namespace, std::meta::info Function>
-auto appendWorkItems(Vec<detail::WorkItem> &workItems, std::shared_ptr<FixtureScope<Namespace>> suiteFixtures) -> void {
+auto appendWorkItems(Vec<detail::WorkItem> &workItems, std::shared_ptr<FixtureScope<Namespace>> suiteFixtures)
+    -> void {
   usize testCaseIndex{};
 
   if constexpr (caseCount<Function>() == 0) {

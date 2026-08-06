@@ -44,10 +44,20 @@ public:
 
   auto abort() noexcept -> void;
 
+  /// Returns the cancellation state for the test currently being executed.
+  [[nodiscard]] auto stopToken() const noexcept -> std::stop_token;
+
+  /// Requests cooperative cancellation of the running coroutine test. The execution boundary uses this after
+  /// a timeout deadline is reached.
+  auto requestStop() noexcept -> void;
+
+  [[nodiscard]] auto stopRequested() const noexcept -> bool;
+
   [[nodiscard]] auto takeState() && noexcept -> TestState;
 
 private:
   TestState state_{};
+  std::stop_source stopSource_;
   bool traceEnabled_{};
 };
 

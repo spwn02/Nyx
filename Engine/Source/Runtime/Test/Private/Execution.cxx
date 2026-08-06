@@ -144,7 +144,7 @@ auto detail::applyPolicy(const TestPolicy &policy,
     }
   }
 
-  if (policy.timeout and elapsed > *policy.timeout)
+  if (policy.timeout and elapsed >= *policy.timeout)
     environment.recordError(timeoutDiagnostic(*policy.timeout, elapsed, location));
 }
 

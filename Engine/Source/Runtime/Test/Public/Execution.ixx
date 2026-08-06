@@ -33,6 +33,8 @@ struct TestExecution final {
 
 namespace detail {
 
+using Deadline = Option<std::chrono::steady_clock::time_point>;
+
 // NOLINTBEGIN(readability-identifier-naming)
 template <class>
 inline constexpr bool is_result_return_v{};
@@ -68,29 +70,32 @@ template <class Value>
 auto normalizeResult(const Result<Value> &result,
     TestEnvironment &environment,
     const Context &context,
-    std::source_location location) -> void;
+    std::source_location location,
+    const Deadline &deadline) -> void;
 
 template <class Value>
 auto normalizeTask(Task<Value> &&task,
     TestEnvironment &environment,
     const Context &context,
-    std::source_location location) -> void;
+    std::source_location location,
+    const Deadline &deadline) -> void;
 
 template <class Return>
 auto normalizeReturn(Return &&returned,
     TestEnvironment &environment,
     const Context &context,
-    std::source_location location) -> void {
+    std::source_location location,
+    const Deadline &deadline) -> void {
   using Type = std::remove_cvref_t<Return>;
 
   if constexpr (is_task_return_v<Type>) {
     static_assert(not std::is_lvalue_reference_v<Return>,
         "Nyx::Test asynchronous test functions must return Task<T> by value.");
-    normalizeTask(std::forward<Return>(returned), environment, context, location);
+    normalizeTask(std::forward<Return>(returned), environment, context, location, deadline);
   } else if constexpr (std::same_as<Type, Expression>) {
     static_cast<void>(check(std::forward<Return>(returned), location));
   } else if constexpr (is_result_return_v<Type>) {
-    normalizeResult(returned, environment, context, location);
+    normalizeResult(returned, environment, context, location, deadline);
   } else if constexpr (BoolTestable<Return>) {
     if (static_cast<bool>(std::forward<Return>(returned))) {
       environment.recordPass();
@@ -111,17 +116,27 @@ template <class Value>
 auto normalizeTask(Task<Value> &&task,
     TestEnvironment &environment,
     const Context &context,
-    std::source_location location) -> void {
-  detail::drive(task, [&environment, &context](std::coroutine_handle<> handle) -> void {
-    EnvironmentBinding environmentBinding{environment};
-    ContextBinding contextBinding{context};
-    handle.resume();
-  });
+    std::source_location location,
+    const Deadline &deadline) -> void {
+  const auto requestTimeoutStop = [&environment, &deadline] -> void {
+    if (deadline and not environment.stopRequested() and std::chrono::steady_clock::now() >= *deadline)
+      environment.requestStop();
+  };
+
+  detail::drive(
+      task,
+      [&environment, &context](std::coroutine_handle<> handle) -> void {
+        EnvironmentBinding environmentBinding{environment};
+        ContextBinding contextBinding{context};
+        handle.resume();
+      },
+      requestTimeoutStop,
+      environment.stopToken());
 
   if constexpr (std::same_as<Value, void>) {
     std::move(task).takeResult();
   } else {
-    normalizeReturn(std::move(task).takeResult(), environment, context, location);
+    normalizeReturn(std::move(task).takeResult(), environment, context, location, deadline);
   }
 }
 
@@ -129,7 +144,8 @@ template <class Value>
 auto normalizeResult(const Result<Value> &result,
     TestEnvironment &environment,
     const Context &context,
-    std::source_location location) -> void {
+    std::source_location location,
+    const Deadline &deadline) -> void {
   if (not result) {
     environment.recordError(returnedErrorDiagnostic(result.error(), location));
     return;
@@ -138,7 +154,7 @@ auto normalizeResult(const Result<Value> &result,
   if constexpr (std::is_same_v<Value, void>)
     return;
   else
-    normalizeReturn(*result, environment, context, location);
+    normalizeReturn(*result, environment, context, location, deadline);
 }
 
 template <class Function>
@@ -154,7 +170,8 @@ auto invokeTest(Function &&function, const Context &context) -> decltype(auto) {
 /// Executes one test in a dynamically bound TestEnvironment.
 ///
 /// A TestAbort records a fatal requirement failure but is not itself an error.
-/// Other exceptions are converted into UnhandledException diagnostics.
+/// Other exceptions are converted into UnhandledException diagnostics. Coroutine timeouts request
+/// Context::stopToken at the next queued resume.
 template <detail::TestInvocable Function>
 [[nodiscard]]
 auto run(TestDescriptor descriptor, Function &&function) -> TestExecution {
@@ -170,67 +187,70 @@ auto run(TestDescriptor descriptor, Function &&function) -> TestExecution {
     environment.enableTrace();
 
   environment.recordTrace(std::format("Running test: {} ...", execution.descriptor.name));
-
   const std::chrono::time_point started = std::chrono::steady_clock::now();
+  detail::Deadline deadline{};
+  if (execution.descriptor.policy.timeout)
+    deadline.emplace(started + *execution.descriptor.policy.timeout);
 
   {
     const auto recordDuration = std::scope_exit(
         [&execution, started] -> void { execution.duration = std::chrono::steady_clock::now() - started; });
+    const Context context{
+        .name = StringView{execution.descriptor.name},
+        .description = StringView{execution.descriptor.description},
+        .testCase = execution.descriptor.testCase,
+        .stopToken = environment.stopToken(),
+        .location = execution.descriptor.location,
+    };
 
-    {
-      const Context context{
-          .name = StringView{execution.descriptor.name},
-          .description = StringView{execution.descriptor.description},
-          .testCase = execution.descriptor.testCase,
-          .location = execution.descriptor.location,
-      };
+    try {
+      using Return = decltype(detail::invokeTest(std::forward<Function>(function), context));
+      using ReturnType = std::remove_cvref_t<Return>;
 
-      try {
-        using Return = decltype(detail::invokeTest(std::forward<Function>(function), context));
-        using ReturnType = std::remove_cvref_t<Return>;
-
-        if constexpr (std::same_as<Return, void>) {
+      if constexpr (std::same_as<Return, void>) {
+        EnvironmentBinding binding{environment};
+        ContextBinding contextBinding{context};
+        detail::invokeTest(std::forward<Function>(function), context);
+      } else if constexpr (detail::is_task_return_v<ReturnType>) {
+        static_assert(not std::is_lvalue_reference_v<ReturnType>,
+            "Nyx::Test asynchronous test functions must return Task<T> by value.");
+        const auto invokeTask = [&] -> ReturnType {
           EnvironmentBinding binding{environment};
           ContextBinding contextBinding{context};
-          detail::invokeTest(std::forward<Function>(function), context);
-        } else if constexpr (detail::is_task_return_v<ReturnType>) {
-          static_assert(not std::is_lvalue_reference_v<ReturnType>,
-              "Nyx::Test asynchronous test functions must return Task<T> by value.");
-          const auto invokeTask = [&] -> ReturnType {
-            EnvironmentBinding binding{environment};
-            ContextBinding contextBinding{context};
-            return detail::invokeTest(std::forward<Function>(function), context);
-          };
-          detail::normalizeReturn(invokeTask(), environment, context, execution.descriptor.location);
-        } else {
-          EnvironmentBinding binding{environment};
-          ContextBinding contextBinding{context};
-          detail::normalizeReturn(detail::invokeTest(std::forward<Function>(function), context),
-              environment,
-              context,
-              execution.descriptor.location);
-        }
-      } catch (const TestAbort &) { // NOLINT
-        // require() already recorded the fatal assertion and marked the test aborted.
-        // nothing to do here.
-      } catch (const TestPanic &panicException) {
-        environment.recordError(
-            detail::panickedDiagnostic(String{panicException.message()}, panicException.location()));
-      } catch (const std::exception &exception) {
-        const char *message = exception.what();
-        environment.recordError(detail::unhandledExceptionDiagnostic(
-            message == nullptr ? String{"standard exception"} : String{message},
-            execution.descriptor.location));
-      } catch (...) {
-        environment.recordError(
-            detail::unhandledExceptionDiagnostic("non-standard exception", execution.descriptor.location));
+          return detail::invokeTest(std::forward<Function>(function), context);
+        };
+        detail::normalizeReturn(invokeTask(), environment, context, execution.descriptor.location, deadline);
+      } else {
+        EnvironmentBinding binding{environment};
+        ContextBinding contextBinding{context};
+        detail::normalizeReturn(detail::invokeTest(std::forward<Function>(function), context),
+            environment,
+            context,
+            execution.descriptor.location,
+            deadline);
       }
+    } catch (const detail::TaskCancelled &) { // NOLINT
+      // The timeout policy records the final diagnostic after duration capture.
+    } catch (const TestAbort &) { // NOLINT
+      // require() already recorded the fatal assertion and marked the test aborted.
+      // nothing to do here.
+    } catch (const TestPanic &panicException) {
+      environment.recordError(
+          detail::panickedDiagnostic(String{panicException.message()}, panicException.location()));
+    } catch (const std::exception &exception) {
+      const char *message = exception.what();
+      environment.recordError(detail::unhandledExceptionDiagnostic(
+          message == nullptr ? String{"standard exception"} : String{message},
+          execution.descriptor.location));
+    } catch (...) {
+      environment.recordError(
+          detail::unhandledExceptionDiagnostic("non-standard exception", execution.descriptor.location));
     }
-
-    detail::applyPolicy(
-        execution.descriptor.policy, environment, execution.duration, execution.descriptor.location);
-    execution.state = std::move(environment).takeState();
   }
+
+  detail::applyPolicy(
+      execution.descriptor.policy, environment, execution.duration, execution.descriptor.location);
+  execution.state = std::move(environment).takeState();
 
   return execution;
 }

@@ -70,6 +70,18 @@ auto TestEnvironment::abort() noexcept -> void {
   state_.aborted = true;
 }
 
+auto TestEnvironment::stopToken() const noexcept -> std::stop_token {
+  return stopSource_.get_token();
+}
+
+auto TestEnvironment::requestStop() noexcept -> void {
+  static_cast<void>(stopSource_.request_stop());
+}
+
+auto TestEnvironment::stopRequested() const noexcept -> bool {
+  return stopSource_.stop_requested();
+}
+
 auto TestEnvironment::takeState() && noexcept -> TestState {
   return std::move(state_);
 }
