@@ -17,16 +17,49 @@ class TaskCancelled final {};
 
 class RunLoop final {
 public:
+  using Clock = std::chrono::steady_clock;
+  using TimePoint = Clock::time_point;
+
+  enum class[[= debug::derive]] WaitResult : u8 {
+    NoWork,
+    TimerReady,
+    ExternalWake,
+  };
+
   explicit RunLoop(std::stop_token stopToken = {}) noexcept;
 
   auto enqueue(std::coroutine_handle<> handle) -> void;
 
+  auto scheduleAt(std::coroutine_handle<> handle, TimePoint wakeTime) -> void;
+
   [[nodiscard]] auto dequeue() -> Option<std::coroutine_handle<>>;
+
+  /// Waits until a timer is ready or an external deadline is reached.
+  [[nodiscard]] auto waitForWork(Option<TimePoint> externalWake) -> WaitResult;
+
+  /// Makes every locally sleeping coroutine eligible to observe cancellation.
+  auto wakeAllTimers() -> void;
 
   [[nodiscard]] auto stopRequested() const noexcept -> bool;
 
 private:
+  struct Timer final {
+    TimePoint wakeTime;
+    std::coroutine_handle<> handle;
+  };
+
+  struct TimerCompare final {
+    [[nodiscard]] auto operator()(const Timer &left, const Timer &right) const noexcept -> bool {
+      return left.wakeTime > right.wakeTime;
+    }
+  };
+
+  auto promoteDueTimers() -> void;
+
+  [[nodiscard]] auto nextTimerWake() const -> Option<TimePoint>;
+
   std::deque<std::coroutine_handle<>> ready_;
+  std::priority_queue<Timer, Vec<Timer>, TimerCompare> timers_;
   std::stop_token stopToken_;
 };
 
@@ -63,6 +96,13 @@ template <class Value, class Resume, class BeforeResume>
 auto drive(Task<Value> &task, Resume &&resume, BeforeResume &&beforeResume, std::stop_token stopToken = {})
     -> void;
 
+template <class Value, class Resume, class BeforeResume, class NextWakeUp>
+auto drive(Task<Value> &task,
+    Resume &&resume,
+    BeforeResume &&beforeResume,
+    NextWakeUp &&nextWakeUp,
+    std::stop_token stopToken = {}) -> void;
+
 } // namespace detail
 
 /// Cooperative suspension point for a Nyx::Test Task.
@@ -83,6 +123,34 @@ struct YieldAwaiter final {
 
 [[nodiscard]] constexpr auto yield() noexcept -> YieldAwaiter {
   return {};
+}
+
+/// Cooperative timer awaiter for Nyx::Test Task.
+///
+/// It suspends only the current coroutine. The local test run loop waits for its deadline, and timeout
+/// cancellation resumes it early so cleanup can observe Context::stopToken.
+class SleepAwaiter final {
+public:
+  constexpr explicit SleepAwaiter(std::chrono::steady_clock::duration duration) noexcept
+      : duration_(duration) {
+  }
+
+  [[nodiscard]] constexpr auto await_ready() const noexcept -> bool {
+    return duration_ <= std::chrono::steady_clock::duration::zero();
+  }
+
+  auto await_suspend(std::coroutine_handle<> handle) const -> void;
+
+  constexpr auto await_resume() const noexcept -> void {
+  }
+
+private:
+  std::chrono::steady_clock::duration duration_;
+};
+
+template <class Rep, class Period>
+[[nodiscard]] constexpr auto sleepFor(std::chrono::duration<Rep, Period> duration) noexcept -> SleepAwaiter {
+  return SleepAwaiter{std::chrono::duration_cast<std::chrono::steady_clock::duration>(duration)};
 }
 
 template <class Value>
@@ -264,10 +332,11 @@ public:
   }
 
 private:
-  template <class OtherValue, class Resume, class BeforeResume>
+  template <class OtherValue, class Resume, class BeforeResume, class NextWakeUp>
   friend auto detail::drive(Task<OtherValue> &task,
       Resume &&resume,
       BeforeResume &&beforeResume,
+      NextWakeUp &&nextWakeUp,
       std::stop_token stopToken) -> void;
 
   explicit Task(Handle handle) noexcept
@@ -452,10 +521,11 @@ public:
   }
 
 private:
-  template <class OtherValue, class Resume, class BeforeResume>
+  template <class OtherValue, class Resume, class BeforeResume, class NextWakeUp>
   friend auto detail::drive(Task<OtherValue> &task,
       Resume &&resume,
       BeforeResume &&beforeResume,
+      NextWakeUp &&nextWakeUp,
       std::stop_token stopToken) -> void;
 
   explicit Task(Handle handle) noexcept
@@ -474,19 +544,37 @@ private:
 
 namespace detail {
 
-template <class Value, class Resume, class BeforeResume>
-auto drive(Task<Value> &task, Resume &&resume, BeforeResume &&beforeResume, std::stop_token stopToken)
-    -> void {
+template <class Value, class Resume, class BeforeResume, class NextWakeUp>
+auto drive(Task<Value> &task,
+    Resume &&resume,
+    BeforeResume &&beforeResume,
+    NextWakeUp &&nextWakeUp,
+    std::stop_token stopToken) -> void {
   if (not task.valid())
     throw std::logic_error{"Nyx::Test cannot execute an empty Task<T>"};
 
   RunLoop runLoop{std::move(stopToken)};
   runLoop.enqueue(task.handle_);
 
-  while (const Option<std::coroutine_handle<>> handle = runLoop.dequeue()) {
-    RunLoopBinding binding{runLoop};
-    std::invoke(std::forward<BeforeResume>(beforeResume));
-    std::invoke(std::forward<Resume>(resume), *handle);
+  while (not task.done()) {
+    if (const Option<std::coroutine_handle<>> handle = runLoop.dequeue()) {
+      RunLoopBinding binding{runLoop};
+      std::invoke(std::forward<BeforeResume>(beforeResume));
+      std::invoke(std::forward<Resume>(resume), *handle);
+      continue;
+    }
+
+    const RunLoop::WaitResult waitResult =
+        runLoop.waitForWork(std::invoke(std::forward<NextWakeUp>(nextWakeUp)));
+    if (waitResult == RunLoop::WaitResult::NoWork)
+      break;
+
+    if (waitResult == RunLoop::WaitResult::ExternalWake) {
+      RunLoopBinding binding{runLoop};
+      std::invoke(std::forward<BeforeResume>(beforeResume));
+      if (runLoop.stopRequested())
+        runLoop.wakeAllTimers();
+    }
   }
 
   if (not task.done()) {
@@ -495,9 +583,20 @@ auto drive(Task<Value> &task, Resume &&resume, BeforeResume &&beforeResume, std:
   }
 }
 
+template <class Value, class Resume, class BeforeResume>
+auto drive(Task<Value> &task, Resume &&resume, BeforeResume &&beforeResume, std::stop_token stopToken)
+    -> void {
+  drive(
+      task,
+      std::forward<Resume>(resume),
+      std::forward<BeforeResume>(beforeResume),
+      [] noexcept -> Option<RunLoop::TimePoint> { return None; },
+      std::move(stopToken));
+}
+
 template <class Value, class Resume>
 auto drive(Task<Value> &task, Resume &&resume) -> void {
-  drive(task, std::forward<Resume>(resume), []() noexcept -> void {});
+  drive(task, std::forward<Resume>(resume), [] noexcept -> void {});
 }
 
 } // namespace detail

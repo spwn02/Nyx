@@ -100,8 +100,7 @@ auto policyOf() -> TestPolicy {
       policy.expectedPanic = String{expected.apply()};
     } else if constexpr (std::same_as<Annotation, Timeout>) {
       constexpr auto limit = std::meta::extract<Timeout>(annotation);
-      policy.timeout = std::chrono::duration_cast<std::chrono::steady_clock::duration>(
-          std::chrono::nanoseconds{limit.nanoseconds});
+      policy.timeout = std::chrono::duration_cast<std::chrono::steady_clock::duration>(limit.apply());
     }
   }
 

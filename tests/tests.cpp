@@ -834,21 +834,6 @@ auto executionNamed(const Vec<TestExecution> &executions, StringView identifier)
   const Option<Ref<const TestExecution>> slow = executionNamed(executions, "slow");
   const Option<Ref<const TestExecution>> calm = executionNamed(executions, "calm");
 
-  Reporter{
-      ReporterOptions{
-          .renderer =
-              {
-                  .color = ColorMode::Always,
-                  .terminal = true,
-                  .showSource = true,
-                  .details = DetailMode::Trace,
-              },
-          .showPassedTests = true,
-          .showSummary = true,
-      },
-  }
-      .report(executions, std::cout);
-
   require(eq(executions.size(), expectedTests));
   require(eq(summary.passedCount, expectedPassed));
   require(eq(summary.failedCount, expectedFailed));

@@ -123,6 +123,13 @@ auto normalizeTask(Task<Value> &&task,
       environment.requestStop();
   };
 
+  const auto nextTimeoutWake = [&environment, &deadline] -> Deadline {
+    if (environment.stopRequested())
+      return None;
+
+    return deadline;
+  };
+
   detail::drive(
       task,
       [&environment, &context](std::coroutine_handle<> handle) -> void {
@@ -131,6 +138,7 @@ auto normalizeTask(Task<Value> &&task,
         handle.resume();
       },
       requestTimeoutStop,
+      nextTimeoutWake,
       environment.stopToken());
 
   if constexpr (std::same_as<Value, void>) {
