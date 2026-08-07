@@ -71,6 +71,7 @@ auto normalizeResult(const Result<Value> &result,
     TestEnvironment &environment,
     const Context &context,
     std::source_location location,
+    RunLoop &runLoop,
     const Deadline &deadline) -> void;
 
 template <class Value>
@@ -78,6 +79,7 @@ auto normalizeTask(Task<Value> &&task,
     TestEnvironment &environment,
     const Context &context,
     std::source_location location,
+    RunLoop &runLoop,
     const Deadline &deadline) -> void;
 
 template <class Return>
@@ -85,17 +87,18 @@ auto normalizeReturn(Return &&returned,
     TestEnvironment &environment,
     const Context &context,
     std::source_location location,
+    RunLoop &runLoop,
     const Deadline &deadline) -> void {
   using Type = std::remove_cvref_t<Return>;
 
   if constexpr (is_task_return_v<Type>) {
     static_assert(not std::is_lvalue_reference_v<Return>,
         "Nyx::Test asynchronous test functions must return Task<T> by value.");
-    normalizeTask(std::forward<Return>(returned), environment, context, location, deadline);
+    normalizeTask(std::forward<Return>(returned), environment, context, location, runLoop, deadline);
   } else if constexpr (std::same_as<Type, Expression>) {
     static_cast<void>(check(std::forward<Return>(returned), location));
   } else if constexpr (is_result_return_v<Type>) {
-    normalizeResult(returned, environment, context, location, deadline);
+    normalizeResult(returned, environment, context, location, runLoop, deadline);
   } else if constexpr (BoolTestable<Return>) {
     if (static_cast<bool>(std::forward<Return>(returned))) {
       environment.recordPass();
@@ -117,9 +120,10 @@ auto normalizeTask(Task<Value> &&task,
     TestEnvironment &environment,
     const Context &context,
     std::source_location location,
+    RunLoop &runLoop,
     const Deadline &deadline) -> void {
-  const auto requestTimeoutStop = [&environment, &deadline] -> void {
-    if (deadline and not environment.stopRequested() and std::chrono::steady_clock::now() >= *deadline)
+  const auto requestTimeoutStop = [&environment, &runLoop, &deadline] -> void {
+    if (deadline and not environment.stopRequested() and runLoop.now() >= *deadline)
       environment.requestStop();
   };
 
@@ -132,19 +136,19 @@ auto normalizeTask(Task<Value> &&task,
 
   detail::drive(
       task,
+      runLoop,
       [&environment, &context](std::coroutine_handle<> handle) -> void {
         EnvironmentBinding environmentBinding{environment};
         ContextBinding contextBinding{context};
         handle.resume();
       },
       requestTimeoutStop,
-      nextTimeoutWake,
-      environment.stopToken());
+      nextTimeoutWake);
 
   if constexpr (std::same_as<Value, void>) {
     std::move(task).takeResult();
   } else {
-    normalizeReturn(std::move(task).takeResult(), environment, context, location, deadline);
+    normalizeReturn(std::move(task).takeResult(), environment, context, location, runLoop, deadline);
   }
 }
 
@@ -153,6 +157,7 @@ auto normalizeResult(const Result<Value> &result,
     TestEnvironment &environment,
     const Context &context,
     std::source_location location,
+    RunLoop &runLoop,
     const Deadline &deadline) -> void {
   if (not result) {
     environment.recordError(returnedErrorDiagnostic(result.error(), location));
@@ -162,7 +167,7 @@ auto normalizeResult(const Result<Value> &result,
   if constexpr (std::is_same_v<Value, void>)
     return;
   else
-    normalizeReturn(*result, environment, context, location, deadline);
+    normalizeReturn(*result, environment, context, location, runLoop, deadline);
 }
 
 template <class Function>
@@ -179,10 +184,11 @@ auto invokeTest(Function &&function, const Context &context) -> decltype(auto) {
 ///
 /// A TestAbort records a fatal requirement failure but is not itself an error.
 /// Other exceptions are converted into UnhandledException diagnostics. Coroutine timeouts request
-/// Context::stopToken at the next queued resume.
+/// Context::stopToken at the next queued resume. TimeMode::Virtual advances only Nyx::Test scheduler time.
 template <detail::TestInvocable Function>
 [[nodiscard]]
-auto run(TestDescriptor descriptor, Function &&function) -> TestExecution {
+auto run(TestDescriptor descriptor, Function &&function, TimeMode timeMode = TimeMode::Real)
+    -> TestExecution {
   TestEnvironment environment{};
   TestExecution execution{
       .descriptor = std::move(descriptor),
@@ -195,14 +201,15 @@ auto run(TestDescriptor descriptor, Function &&function) -> TestExecution {
     environment.enableTrace();
 
   environment.recordTrace(std::format("enabled tracing for: {} ...", execution.descriptor.name));
-  const std::chrono::time_point started = std::chrono::steady_clock::now();
+  detail::RunLoop runLoop{timeMode, environment.stopToken()};
+  const detail::RunLoop::TimePoint started = runLoop.now();
   detail::Deadline deadline{};
   if (execution.descriptor.policy.timeout)
     deadline.emplace(started + *execution.descriptor.policy.timeout);
 
   {
-    const auto recordDuration = std::scope_exit(
-        [&execution, started] -> void { execution.duration = std::chrono::steady_clock::now() - started; });
+    const auto recordDuration =
+        std::scope_exit([&execution, &runLoop] -> void { execution.duration = runLoop.elapsed(); });
     const Context context{
         .name = StringView{execution.descriptor.name},
         .description = StringView{execution.descriptor.description},
@@ -227,7 +234,8 @@ auto run(TestDescriptor descriptor, Function &&function) -> TestExecution {
           ContextBinding contextBinding{context};
           return detail::invokeTest(std::forward<Function>(function), context);
         };
-        detail::normalizeReturn(invokeTask(), environment, context, execution.descriptor.location, deadline);
+        detail::normalizeReturn(
+            invokeTask(), environment, context, execution.descriptor.location, runLoop, deadline);
       } else {
         EnvironmentBinding binding{environment};
         ContextBinding contextBinding{context};
@@ -235,6 +243,7 @@ auto run(TestDescriptor descriptor, Function &&function) -> TestExecution {
             environment,
             context,
             execution.descriptor.location,
+            runLoop,
             deadline);
       }
     } catch (const detail::TaskCancelled &) { // NOLINT
@@ -273,6 +282,21 @@ template <detail::TestInvocable Function>
           .location = location,
       },
       std::forward<Function>(function));
+}
+
+/// Executes one test with an explicit per-run time source.
+template <detail::TestInvocable Function>
+[[nodiscard]] auto run(StringView identifier,
+    Function &&function,
+    TimeMode timeMode,
+    std::source_location location = std::source_location::current()) -> TestExecution {
+  return run(
+      TestDescriptor{
+          .location = location,
+          .description = String{identifier},
+      },
+      std::forward<Function>(function),
+      timeMode);
 }
 
 } // namespace Nyx::Test

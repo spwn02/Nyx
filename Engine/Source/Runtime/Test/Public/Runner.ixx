@@ -12,12 +12,15 @@ export namespace Nyx::Test {
 /// test cases; each case retains its own deterministic Task<T> run loop.
 struct RunOptions final {
   usize jobs{1};
+
+  /// Selects the independent scheduler clock supplied to every test execution in this run.
+  TimeMode timeMode{TimeMode::Real};
 };
 
 namespace detail {
 
 struct WorkItem final {
-  std::move_only_function<TestExecution()> execute;
+  std::move_only_function<TestExecution(TimeMode)> execute;
 };
 
 [[nodiscard]] auto executeWorkItems(Vec<WorkItem> workItems, const RunOptions &options) -> Vec<TestExecution>;

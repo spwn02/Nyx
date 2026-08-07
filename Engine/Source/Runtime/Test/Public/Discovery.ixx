@@ -11,6 +11,7 @@ import :Fixtures;
 import :Policies;
 import :Providers;
 import :Runner;
+import :Task;
 
 // NOLINTBEGIN(bugprone-reserved-identifier)
 export namespace Nyx::Test {
@@ -28,9 +29,6 @@ struct StaticMemberFunctions final {};
 inline constexpr StaticMemberFunctions staticMemberFunctions{};
 
 /// Immutable compile-time metadata emitted once for every registered suite.
-///
-/// The ELF catalog implementation owns neither test state nor fixtures. It merely preserves
-/// template-specialized factories that create descriptors or execute one reflected suite on demand.
 struct SuiteEntry final {
   using DescriptorFactory = Vec<TestDescriptor> (*)();
   using ExecutionFactory = Vec<TestExecution> (*)(RunOptions);
@@ -276,18 +274,22 @@ template <class CaseType>
 }
 
 template <std::meta::info Function>
-auto noProviderExecution(TestDescriptor descriptor) -> TestExecution {
+auto noProviderExecution(TestDescriptor descriptor, TimeMode timeMode) -> TestExecution {
   constexpr std::source_location location = detail::firstProviderLocation<Function>();
-  return run(std::move(descriptor), [location] -> void {
-    const Option<Ref<TestEnvironment>> environment = currentEnvironment();
-    if (not environment)
-      throw std::logic_error{"Nyx::Test could not report an empty provider without an active environment"};
+  return run(
+      std::move(descriptor),
+      [location] -> void {
+        const Option<Ref<TestEnvironment>> environment = currentEnvironment();
+        if (not environment)
+          throw std::logic_error{
+              "Nyx::Test could not report an empty provider without an active environment"};
 
-    Diagnostic diagnostic = makeDiagnostic(DiagnosticCode::ProviderProducedNoValues, location);
-    diagnostic.details.spans.front().label = "provider";
-    diagnostic.addNote("no reflected parameter-provider values were produced");
-    environment->get().recordError(std::move(diagnostic));
-  });
+        Diagnostic diagnostic = makeDiagnostic(DiagnosticCode::ProviderProducedNoValues, location);
+        diagnostic.details.spans.front().label = "provider";
+        diagnostic.addNote("no reflected parameter-provider values were produced");
+        environment->get().recordError(std::move(diagnostic));
+      },
+      timeMode);
 }
 
 template <std::meta::info Namespace, std::meta::info Function, class CaseValues>
@@ -303,13 +305,16 @@ auto appendProviderWorkItems(Vec<detail::WorkItem> &workItems,
         const auto providerTuple = std::make_tuple(providerValues...);
         const TestDescriptor descriptor =
             makeTestDescriptor<Function>(testCaseIndex, caseDescription, StringView{providerDescription});
-        workItems.push_back(detail::WorkItem{
-            .execute = [descriptor, caseValues, providerTuple, &suiteFixtures] -> TestExecution {
-              return run(descriptor,
+        workItems.push_back(
+            detail::WorkItem{.execute = [descriptor, caseValues, providerTuple, &suiteFixtures](
+                                            TimeMode timeMode) -> TestExecution {
+              return run(
+                  descriptor,
                   [caseValues, providerTuple, &suiteFixtures](const Context &context) -> decltype(auto) {
                     return detail::invokeWithFixtures<Namespace, Function>(
                         context, suiteFixtures, caseValues, providerTuple);
-                  });
+                  },
+                  timeMode);
             }});
         ++testCaseIndex;
       });
@@ -320,8 +325,9 @@ auto appendProviderWorkItems(Vec<detail::WorkItem> &workItems,
   const String providerDescription = detail::missingProviderDescription<Function>();
   const TestDescriptor descriptor =
       makeTestDescriptor<Function>(testCaseIndex, caseDescription, StringView{providerDescription});
-  workItems.push_back(detail::WorkItem{
-      .execute = [descriptor] -> TestExecution { return noProviderExecution<Function>(descriptor); }});
+  workItems.push_back(detail::WorkItem{.execute = [descriptor](TimeMode timeMode) -> TestExecution {
+    return noProviderExecution<Function>(descriptor, timeMode);
+  }});
   ++testCaseIndex;
 }
 
@@ -502,58 +508,6 @@ auto runAll(RunOptions options, Options... /*unused*/) -> Vec<TestExecution> {
 
 /// Executes every suite registered by file-scope discover<^^Scope>() calls.
 [[nodiscard]] auto runAll(RunOptions options = {}) -> Vec<TestExecution>;
-
-// /// Appends one descriptor per Case/provider combination in declaration order.
-// template <std::meta::info Namespace>
-// auto discover(Vec<TestDescriptor> &descriptors) -> void {
-//   template for (constexpr std::meta::info member :
-//       meta::members<Namespace, meta::AccessContext::unchecked()>) {
-//     if constexpr (std::meta::is_function(member) and detail::isTest<member>())
-//       detail::appendDescriptors<member>(descriptors);
-//     else if constexpr (std::meta::is_namespace(member))
-//       discover<member>(descriptors);
-//   }
-// }
-//
-// /// Returns one descriptor per Case/provider combination in declaration order.
-// template <std::meta::info Namespace>
-// [[nodiscard]]
-// auto discover() -> Vec<TestDescriptor> {
-//   Vec<TestDescriptor> descriptors{};
-//
-//   discover<Namespace>(descriptors);
-//
-//   return descriptors;
-// }
-//
-// /// Appends all reflected tests and their declarative Case/provider annotations.
-// template <std::meta::info Namespace>
-// auto runAll(Vec<detail::WorkItem> &workItems) -> void {
-//   static_assert(detail::fixtureDeclarationsAreValid<Namespace>());
-//
-//   auto suiteFixtures = std::make_shared<FixtureScope<Namespace>>();
-//
-//   template for (constexpr std::meta::info member :
-//       meta::members<Namespace, meta::AccessContext::unchecked()>) {
-//     if constexpr (std::meta::is_function(member) and detail::isTest<member>())
-//       detail::appendWorkItems<Namespace, member>(workItems, suiteFixtures);
-//     else if constexpr (std::meta::is_namespace(member))
-//       runAll<member>(workItems);
-//   }
-// }
-//
-// /// Executes all reflected tests and their declarative Case/provider annotations.
-// template <std::meta::info Namespace>
-// [[nodiscard]]
-// auto runAll(RunOptions options = {}) -> Vec<TestExecution> {
-//   static_assert(detail::fixtureDeclarationsAreValid<Namespace>());
-//
-//   Vec<detail::WorkItem> workItems{};
-//
-//   runAll<Namespace>(workItems);
-//
-//   return detail::executeWorkItems(std::move(workItems), options);
-// }
 
 } // namespace Nyx::Test
 // NOLINTEND(bugprone-reserved-identifier)

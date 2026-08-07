@@ -9,6 +9,15 @@ export namespace Nyx::Test {
 template <class Value = void>
 class Task;
 
+/// Selects the source of time used by one Nyx::Test task run loop.
+///
+/// Virtual time advances only when the loop reaches its next timer or external deadline. It therefore makes
+/// Nyx::Test awaitables deterministic without changing direct OS wait semantics.
+enum class[[= debug::derive]] TimeMode : u8 {
+  Real,
+  Virtual,
+};
+
 namespace detail {
 
 /// Internal control flow used when a run loop has requested cancellation.
@@ -26,7 +35,11 @@ public:
     ExternalWake,
   };
 
-  explicit RunLoop(std::stop_token stopToken = {}) noexcept;
+  explicit RunLoop(TimeMode timeMode = TimeMode::Real, std::stop_token stopToken = {}) noexcept;
+
+  [[nodiscard]] auto now() const noexcept -> TimePoint;
+
+  [[nodiscard]] auto elapsed() const noexcept -> Clock::duration;
 
   auto enqueue(std::coroutine_handle<> handle) -> void;
 
@@ -45,14 +58,20 @@ public:
 private:
   struct Timer final {
     TimePoint wakeTime;
+    usize sequence{};
     std::coroutine_handle<> handle;
   };
 
   struct TimerCompare final {
     [[nodiscard]] auto operator()(const Timer &left, const Timer &right) const noexcept -> bool {
-      return left.wakeTime > right.wakeTime;
+      if (left.wakeTime != right.wakeTime)
+        return left.wakeTime > right.wakeTime;
+
+      return left.sequence > right.sequence;
     }
   };
+
+  auto advanceTo(TimePoint time) noexcept -> void;
 
   auto promoteDueTimers() -> void;
 
@@ -60,6 +79,10 @@ private:
 
   std::deque<std::coroutine_handle<>> ready_;
   std::priority_queue<Timer, Vec<Timer>, TimerCompare> timers_;
+  TimeMode timeMode_{};
+  TimePoint startedAt_;
+  TimePoint currentTime_;
+  usize nextTimerSequence_{};
   std::stop_token stopToken_;
 };
 
@@ -87,6 +110,8 @@ private:
 
 auto schedule(std::coroutine_handle<> handle) -> void;
 
+auto scheduleAfter(std::coroutine_handle<> handle, RunLoop::Clock::duration duration) -> void;
+
 [[nodiscard]] auto stopRequested() noexcept -> bool;
 
 template <class Value, class Resume>
@@ -95,6 +120,13 @@ auto drive(Task<Value> &task, Resume &&resume) -> void;
 template <class Value, class Resume, class BeforeResume>
 auto drive(Task<Value> &task, Resume &&resume, BeforeResume &&beforeResume, std::stop_token stopToken = {})
     -> void;
+
+template <class Value, class Resume, class BeforeResume, class NextWakeUp>
+auto drive(Task<Value> &task,
+    RunLoop &runLoop,
+    Resume &&resume,
+    BeforeResume &&beforeResume,
+    NextWakeUp &&nextWakeUp) -> void;
 
 template <class Value, class Resume, class BeforeResume, class NextWakeUp>
 auto drive(Task<Value> &task,
@@ -334,10 +366,10 @@ public:
 private:
   template <class OtherValue, class Resume, class BeforeResume, class NextWakeUp>
   friend auto detail::drive(Task<OtherValue> &task,
+      detail::RunLoop &runLoop,
       Resume &&resume,
       BeforeResume &&beforeResume,
-      NextWakeUp &&nextWakeUp,
-      std::stop_token stopToken) -> void;
+      NextWakeUp &&nextWakeUp) -> void;
 
   explicit Task(Handle handle) noexcept
       : handle_(handle) {
@@ -523,10 +555,10 @@ public:
 private:
   template <class OtherValue, class Resume, class BeforeResume, class NextWakeUp>
   friend auto detail::drive(Task<OtherValue> &task,
+      detail::RunLoop &runLoop,
       Resume &&resume,
       BeforeResume &&beforeResume,
-      NextWakeUp &&nextWakeUp,
-      std::stop_token stopToken) -> void;
+      NextWakeUp &&nextWakeUp) -> void;
 
   explicit Task(Handle handle) noexcept
       : handle_(handle) {
@@ -546,14 +578,13 @@ namespace detail {
 
 template <class Value, class Resume, class BeforeResume, class NextWakeUp>
 auto drive(Task<Value> &task,
+    RunLoop &runLoop,
     Resume &&resume,
     BeforeResume &&beforeResume,
-    NextWakeUp &&nextWakeUp,
-    std::stop_token stopToken) -> void {
+    NextWakeUp &&nextWakeUp) -> void {
   if (not task.valid())
     throw std::logic_error{"Nyx::Test cannot execute an empty Task<T>"};
 
-  RunLoop runLoop{std::move(stopToken)};
   runLoop.enqueue(task.handle_);
 
   while (not task.done()) {
@@ -581,6 +612,20 @@ auto drive(Task<Value> &task,
     throw std::logic_error{
         "Nyx::Test Task<T> suspended without scheduling a continuation; use Nyx::Test::yield()."};
   }
+}
+
+template <class Value, class Resume, class BeforeResume, class NextWakeUp>
+auto drive(Task<Value> &task,
+    Resume &&resume,
+    BeforeResume &&beforeResume,
+    NextWakeUp &&nextWakeUp,
+    std::stop_token stopToken) -> void {
+  RunLoop runLoop{TimeMode::Real, std::move(stopToken)};
+  drive(task,
+      runLoop,
+      std::forward<Resume>(resume),
+      std::forward<BeforeResume>(beforeResume),
+      std::forward<NextWakeUp>(nextWakeUp));
 }
 
 template <class Value, class Resume, class BeforeResume>

@@ -16,8 +16,22 @@ thread_local RunLoop *currentRunLoop_{};
 
 } // namespace
 
-RunLoop::RunLoop(std::stop_token stopToken) noexcept
-    : stopToken_(std::move(stopToken)) {
+RunLoop::RunLoop(TimeMode timeMode, std::stop_token stopToken) noexcept
+    : timeMode_(timeMode)
+    , startedAt_(timeMode == TimeMode::Real ? Clock::now() : TimePoint{})
+    , currentTime_(startedAt_)
+    , stopToken_(std::move(stopToken)) {
+}
+
+auto RunLoop::now() const noexcept -> TimePoint {
+  if (timeMode_ == TimeMode::Virtual)
+    return currentTime_;
+
+  return Clock::now();
+}
+
+auto RunLoop::elapsed() const noexcept -> Clock::duration {
+  return now() - startedAt_;
 }
 
 auto RunLoop::enqueue(std::coroutine_handle<> handle) -> void {
@@ -33,13 +47,19 @@ auto RunLoop::scheduleAt(std::coroutine_handle<> handle, TimePoint wakeTime) -> 
 
   timers_.push(Timer{
       .wakeTime = wakeTime,
+      .sequence = nextTimerSequence_++,
       .handle = handle,
   });
 }
 
+auto RunLoop::advanceTo(TimePoint time) noexcept -> void {
+  if (timeMode_ == TimeMode::Virtual and time > currentTime_)
+    currentTime_ = time;
+}
+
 auto RunLoop::promoteDueTimers() -> void {
-  const TimePoint now = Clock::now();
-  while (not timers_.empty() and timers_.top().wakeTime <= now) {
+  const TimePoint currentTime = now();
+  while (not timers_.empty() and timers_.top().wakeTime <= currentTime) {
     const Timer timer = timers_.top();
     timers_.pop();
     enqueue(timer.handle);
@@ -75,10 +95,14 @@ auto RunLoop::waitForWork(Option<TimePoint> externalWake) -> WaitResult {
 
   const bool externalFirst = externalWake and (not timerWake or *externalWake <= *timerWake);
   const TimePoint wakeTime = externalFirst ? *externalWake : *timerWake;
-  std::this_thread::sleep_until(wakeTime);
+  if (timeMode_ == TimeMode::Virtual)
+    advanceTo(wakeTime);
+  else
+    std::this_thread::sleep_until(wakeTime);
+
   promoteDueTimers();
 
-  if (externalFirst and Clock::now() >= *externalWake)
+  if (externalFirst and now() >= *externalWake)
     return WaitResult::ExternalWake;
 
   return WaitResult::TimerReady;
@@ -122,7 +146,7 @@ auto scheduleAfter(std::coroutine_handle<> handle, RunLoop::Clock::duration dura
   if (runLoop == nullptr)
     throw std::logic_error{"Nyx::Test Task suspension requires an active test run loop."};
 
-  runLoop->scheduleAt(handle, RunLoop::Clock::now() + duration);
+  runLoop->scheduleAt(handle, runLoop->now() + duration);
 }
 
 [[nodiscard]]
