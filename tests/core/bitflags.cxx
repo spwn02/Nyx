@@ -13,7 +13,7 @@ enum class[[= Nyx::bitflags]] BufferUsage : Nyx::u8 {
 };
 
 // NOLINTBEGIN(cppcoreguidelines-avoid-magic-numbers, readability-magic-numbers)
-namespace Tests {
+namespace Tests::bitflags {
 
 [[= test]] auto bitflags() -> void {
   BufferUsage flags = BufferUsage::Vertex | BufferUsage::Index;
@@ -41,5 +41,9 @@ namespace Tests {
   require(Nyx::bits(Nyx::all<BufferUsage>()) == 0b1001011);
 }
 
-} // namespace Nyx::Test
+} // namespace Tests
 // NOLINTEND(cppcoreguidelines-avoid-magic-numbers, readability-magic-numbers)
+
+consteval {
+  discover<^^Tests::bitflags>();
+}

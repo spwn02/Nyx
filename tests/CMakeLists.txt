@@ -2,9 +2,14 @@
 
 add_executable(unit_tests EXCLUDE_FROM_ALL)
 
+file(GLOB_RECURSE framework_tests "${CMAKE_CURRENT_SOURCE_DIR}/framework/*.cxx")
+file(GLOB_RECURSE core_tests "${CMAKE_CURRENT_SOURCE_DIR}/core/*.cxx")
+
 target_sources(unit_tests
   PRIVATE
-    bitflags.cpp
+    ${framework_tests}
+    ${core_tests}
+    # bitflags.cpp
     # debug.cpp
     # error.cpp
     # fs.cpp

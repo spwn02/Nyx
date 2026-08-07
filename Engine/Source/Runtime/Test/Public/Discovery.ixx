@@ -15,7 +15,92 @@ import :Runner;
 // NOLINTBEGIN(bugprone-reserved-identifier)
 export namespace Nyx::Test {
 
+/// Includes tests declared in nested namespaces below a registered namespace.
+struct Recursive final {};
+
+inline constexpr Recursive recursive{};
+
+/// Enables discovery of static member functions when the registered scope is a class. Instance member tests
+/// require object-lifetime model and remain a future goal.
+/// TODO: Extend the functionality to support non-static member functions.
+struct StaticMemberFunctions final {};
+
+inline constexpr StaticMemberFunctions staticMemberFunctions{};
+
+/// Immutable compile-time metadata emitted once for every registered suite.
+///
+/// The ELF catalog implementation owns neither test state nor fixtures. It merely preserves
+/// template-specialized factories that create descriptors or execute one reflected suite on demand.
+struct SuiteEntry final {
+  using DescriptorFactory = Vec<TestDescriptor> (*)();
+  using ExecutionFactory = Vec<TestExecution> (*)(RunOptions);
+
+  StringView scope;
+  std::source_location location;
+  DescriptorFactory describe;
+  ExecutionFactory execute;
+};
+
 namespace detail {
+
+template <class Option>
+concept DiscoveryOption = std::same_as<std::remove_cvref_t<Option>, Recursive> or
+                          std::same_as<std::remove_cvref_t<Option>, StaticMemberFunctions>;
+
+template <class... Options>
+struct DiscoveryConfiguration final {
+  static constexpr usize recursiveCount_ =
+      (usize{} + ... + (std::same_as<Options, Recursive> ? usize{1} : usize{}));
+  static constexpr usize staticMemberFunctionsCount_ =
+      (usize{} + ... + (std::same_as<Options, StaticMemberFunctions> ? usize{1} : usize{}));
+
+  static_assert(recursiveCount_ <= 1, "Nyx::Test discover() accepts the reqursive option at most once.");
+  static_assert(staticMemberFunctionsCount_ <= 1,
+      "Nyx::Test discover() accepts the staticMemberFunctions option at most once.");
+
+  static constexpr bool recursive_{recursiveCount_ != 0};
+  static constexpr bool staticMemberFunctions_{staticMemberFunctionsCount_ != 0};
+};
+
+/// Appends immutable suite metadata to the process-wide automatic catalog.
+///
+/// This is intentionally a runtime operation. discover() materializes a registration anchor at compile time;
+/// the anchor invokes this function during ordinary static initialization before main().
+auto appendRegisteredSuite(const SuiteEntry &suite) -> void;
+
+template <std::meta::info Entity>
+consteval auto appendQualifiedName(String &result) -> void {
+  if constexpr (Entity != ^^::) {
+    constexpr std::meta::info parent = std::meta::parent_of(Entity);
+    if constexpr (parent != ^^::) {
+      appendQualifiedName<parent>(result);
+      if (not result.empty())
+        result.append("::");
+    }
+
+    result.append(std::meta::identifier_of(Entity));
+  }
+}
+
+template <std::meta::info Entity>
+consteval auto qualifiedNameOf() -> StringView {
+  if constexpr (Entity == ^^::) {
+    return "<global>";
+  } else {
+    String result{};
+    appendQualifiedName<Entity>(result);
+    return StringView{std::define_static_string(StringView{result}), result.size()};
+  }
+}
+
+template <std::meta::info Scope>
+consteval auto scopeLocationOf() -> std::source_location {
+  if constexpr (Scope == ^^::) {
+    return {};
+  } else {
+    return std::meta::source_location_of(Scope);
+  }
+}
 
 template <std::meta::info Function>
 consteval auto isTest() -> bool {
@@ -204,23 +289,23 @@ auto noProviderExecution(TestDescriptor descriptor) -> TestExecution {
 
 template <std::meta::info Namespace, std::meta::info Function, class CaseValues>
 auto appendProviderWorkItems(Vec<detail::WorkItem> &workItems,
-    std::shared_ptr<FixtureScope<Namespace>> suiteFixtures,
+    FixtureScope<Namespace> &suiteFixtures,
     const CaseValues &caseValues,
     StringView caseDescription,
     usize &testCaseIndex) -> void {
   const usize providerCount = detail::forEachProviderCombination<Function>(
-      [&workItems, suiteFixtures, &caseValues, &caseDescription, &testCaseIndex](
+      [&workItems, &suiteFixtures, &caseValues, &caseDescription, &testCaseIndex](
           const auto &...providerValues) -> void {
         const String providerDescription = detail::providerDescription<Function>(providerValues...);
         const auto providerTuple = std::make_tuple(providerValues...);
         const TestDescriptor descriptor =
             makeTestDescriptor<Function>(testCaseIndex, caseDescription, StringView{providerDescription});
         workItems.push_back(detail::WorkItem{
-            .execute = [descriptor, caseValues, providerTuple, suiteFixtures] -> TestExecution {
+            .execute = [descriptor, caseValues, providerTuple, &suiteFixtures] -> TestExecution {
               return run(descriptor,
-                  [caseValues, providerTuple, suiteFixtures](const Context &context) -> decltype(auto) {
+                  [caseValues, providerTuple, &suiteFixtures](const Context &context) -> decltype(auto) {
                     return detail::invokeWithFixtures<Namespace, Function>(
-                        context, *suiteFixtures, caseValues, providerTuple);
+                        context, suiteFixtures, caseValues, providerTuple);
                   });
             }});
         ++testCaseIndex;
@@ -239,7 +324,7 @@ auto appendProviderWorkItems(Vec<detail::WorkItem> &workItems,
 
 template <std::meta::info Namespace, std::meta::info Function, std::meta::info Annotation>
 auto appendCaseWorkItems(Vec<detail::WorkItem> &workItems,
-    std::shared_ptr<FixtureScope<Namespace>> suiteFixtures,
+    FixtureScope<Namespace> &suiteFixtures,
     usize &testCaseIndex) -> void {
   using Ann = meta::TypeObject<Annotation>;
   constexpr Ann testCase = std::meta::extract<Ann>(Annotation);
@@ -251,8 +336,7 @@ auto appendCaseWorkItems(Vec<detail::WorkItem> &workItems,
 }
 
 template <std::meta::info Namespace, std::meta::info Function>
-auto appendWorkItems(Vec<detail::WorkItem> &workItems, std::shared_ptr<FixtureScope<Namespace>> suiteFixtures)
-    -> void {
+auto appendWorkItems(Vec<detail::WorkItem> &workItems, FixtureScope<Namespace> &suiteFixtures) -> void {
   usize testCaseIndex{};
 
   if constexpr (caseCount<Function>() == 0) {
@@ -267,59 +351,206 @@ auto appendWorkItems(Vec<detail::WorkItem> &workItems, std::shared_ptr<FixtureSc
   }
 }
 
-} // namespace detail
+template <std::meta::info Scope, std::meta::info Function, class Configuration>
+consteval auto isDiscoveredTest() -> bool {
+  if constexpr (not isTest<Function>())
+    return false;
 
-/// Appends one descriptor per Case/provider combination in declaration order.
-template <std::meta::info Namespace>
-auto discover(Vec<TestDescriptor> &descriptors) -> void {
-  template for (constexpr std::meta::info member :
-      meta::members<Namespace, meta::AccessContext::unchecked()>) {
-    if constexpr (std::meta::is_function(member) and detail::isTest<member>())
-      detail::appendDescriptors<member>(descriptors);
-    else if constexpr (std::meta::is_namespace(member))
-      discover<member>(descriptors);
+  if constexpr (std::meta::is_namespace(Scope))
+    return true;
+
+  return Configuration::staticMemberFunctions_ and std::meta::is_static_member(Function);
+}
+
+template <std::meta::info Scope, class Configuration>
+auto appendScopeDescriptors(Vec<TestDescriptor> &descriptors) -> void {
+  template for (constexpr std::meta::info member : meta::members<Scope, meta::AccessContext::unchecked()>) {
+    if constexpr (std::meta::is_function(member) and isDiscoveredTest<Scope, member, Configuration>()) {
+      appendDescriptors<member>(descriptors);
+    }
+
+    if constexpr (Configuration::recursive_ and std::meta::is_namespace(member))
+      appendScopeDescriptors<member, Configuration>(descriptors);
   }
 }
 
-/// Returns one descriptor per Case/provider combination in declaration order.
-template <std::meta::info Namespace>
-[[nodiscard]]
-auto discover() -> Vec<TestDescriptor> {
+template <std::meta::info FixtureNamespace, std::meta::info Scope, class Configuration>
+auto appendScopeWorkItems(Vec<detail::WorkItem> &workItems, FixtureScope<FixtureNamespace> &suiteFixtures)
+    -> void {
+  template for (constexpr std::meta::info member : meta::members<Scope, meta::AccessContext::unchecked()>) {
+    if constexpr (std::meta::is_function(member) and isDiscoveredTest<Scope, member, Configuration>()) {
+      appendWorkItems<FixtureNamespace, member>(workItems, suiteFixtures);
+    }
+
+    if constexpr (Configuration::recursive_ and std::meta::is_namespace(member))
+      appendScopeWorkItems<FixtureNamespace, member, Configuration>(workItems, suiteFixtures);
+  }
+}
+
+template <std::meta::info Scope, class Configuration>
+[[nodiscard]] auto describeScope() -> Vec<TestDescriptor> {
   Vec<TestDescriptor> descriptors{};
-
-  discover<Namespace>(descriptors);
-
+  appendScopeDescriptors<Scope, Configuration>(descriptors);
   return descriptors;
 }
 
-/// Appends all reflected tests and their declarative Case/provider annotations.
-template <std::meta::info Namespace>
-auto runAll(Vec<detail::WorkItem> &workItems) -> void {
-  static_assert(detail::fixtureDeclarationsAreValid<Namespace>());
+template <std::meta::info Scope, class Configuration>
+[[nodiscard]] auto runScope(RunOptions options) -> Vec<TestExecution> {
+  static_assert(detail::fixtureDeclarationsAreValid<Scope>());
 
-  auto suiteFixtures = std::make_shared<FixtureScope<Namespace>>();
+  Vec<detail::WorkItem> workItems{};
+  FixtureScope<Scope> suiteFixtures{};
+  appendScopeWorkItems<Scope, Scope, Configuration>(workItems, suiteFixtures);
+  return detail::executeWorkItems(std::move(workItems), options);
+}
 
-  template for (constexpr std::meta::info member :
-      meta::members<Namespace, meta::AccessContext::unchecked()>) {
-    if constexpr (std::meta::is_function(member) and detail::isTest<member>())
-      detail::appendWorkItems<Namespace, member>(workItems, suiteFixtures);
-    else if constexpr (std::meta::is_namespace(member))
-      runAll<member>(workItems);
+template <std::meta::info Scope, class Configuration>
+inline constinit const SuiteEntry suiteEntry{
+    .scope = qualifiedNameOf<Scope>(),
+    .location = scopeLocationOf<Scope>(),
+    .describe = &describeScope<Scope, Configuration>,
+    .execute = &runScope<Scope, Configuration>,
+};
+
+template <std::meta::info Scope, class Configuration>
+struct SuiteRegistration final {
+  SuiteRegistration() {
+    appendRegisteredSuite(suiteEntry<Scope, Configuration>);
   }
+};
+
+template <std::meta::info Scope, class Configuration>
+inline SuiteRegistration<Scope, Configuration> suiteRegistration{}; // NOLINT
+
+template <std::meta::info Scope, class Configuration>
+consteval auto materializeRegistration() -> void {
+  static_cast<void>(&suiteRegistration<Scope, Configuration>);
+}
+
+template <std::meta::info Scope, class Configuration>
+consteval auto registerSuite() -> void {
+  static_assert(&suiteEntry<Scope, Configuration> != nullptr);
+}
+
+} // namespace detail
+
+/// Registers Scope in the process-wide automatic suite catalog.
+///
+/// Invoke this only from a file-scope conteval block:
+///
+/// ```
+/// consteval {
+///   discover<^^MyTests>(recursive);
+/// }
+/// ```
+///
+/// The immediate invocation materializes one registration anchor for this Scope/options specialization. Its
+/// ordinary static initialization appends the immutable SuiteEntry before main(), without linker sections or
+/// a manifest. The translation unit containing discover() must be linked into the test executable.
+template <std::meta::info Scope, detail::DiscoveryOption... Options>
+consteval auto discover(Options... /*unused*/) -> void {
+  using Configuration = detail::DiscoveryConfiguration<std::remove_cvref_t<Options>...>;
+  static_assert(std::meta::is_namespace(Scope) or Configuration::staticMemberFunctions_,
+      "Nyx::Test class-member discovery requires the staticMemberFunctions options.");
+  detail::materializeRegistration<Scope, Configuration>();
+}
+/// Returns one descriptor per Case/provider combination in declaration order.
+template <std::meta::info Scope, detail::DiscoveryOption... Options>
+[[nodiscard]]
+auto describe(Options... /*unused*/) -> Vec<TestDescriptor> {
+  using Configuration = detail::DiscoveryConfiguration<std::remove_cvref_t<Options>...>;
+  static_assert(std::meta::is_namespace(Scope) or Configuration::staticMemberFunctions_,
+      "Nyx::Test class-member discovery requires the staticMemberFunctions option.");
+  return detail::describeScope<Scope, Configuration>();
 }
 
 /// Executes all reflected tests and their declarative Case/provider annotations.
 template <std::meta::info Namespace>
 [[nodiscard]]
 auto runAll(RunOptions options = {}) -> Vec<TestExecution> {
-  static_assert(detail::fixtureDeclarationsAreValid<Namespace>());
-
-  Vec<detail::WorkItem> workItems{};
-
-  runAll<Namespace>(workItems);
-
-  return detail::executeWorkItems(std::move(workItems), options);
+  static_assert(std::meta::is_namespace(Namespace), "Provided Namespace should be a namespace.");
+  return detail::runScope<Namespace, detail::DiscoveryConfiguration<>>(options);
 }
+
+/// Executes one reflected scope with explicit discovery options.
+template <std::meta::info Scope, detail::DiscoveryOption... Options>
+  requires(sizeof...(Options) != 0)
+[[nodiscard]]
+auto runAll(Options... /*unused*/) -> Vec<TestExecution> {
+  using Configuration = detail::DiscoveryConfiguration<std::remove_cvref_t<Options>...>;
+  static_assert(std::meta::is_namespace(Scope) or Configuration::staticMemberFunctions_,
+      "Nyx::Test class-member discovery requires the staticMemberFunctions options.");
+  return detail::runScope<Scope, Configuration>({});
+}
+
+/// Executes one reflected scope with explicit discovery and runner options.
+template <std::meta::info Scope, detail::DiscoveryOption... Options>
+  requires(sizeof...(Options) != 0)
+[[nodiscard]]
+auto runAll(RunOptions options, Options... /*unused*/) -> Vec<TestExecution> {
+  using Configuration = detail::DiscoveryConfiguration<std::remove_cvref_t<Options>...>;
+  static_assert(std::meta::is_namespace(Scope) or Configuration::staticMemberFunctions_,
+      "Nyx::Test class-member discovery requires the staticMemberFunctions options.");
+  return detail::runScope<Scope, Configuration>(options);
+}
+
+/// Describes every suite registered by file-scope discover<^^Scope>() calls.
+[[nodiscard]] auto discover() -> Vec<TestDescriptor>;
+
+/// Executes every suite registered by file-scope discover<^^Scope>() calls.
+[[nodiscard]] auto runAll(RunOptions options = {}) -> Vec<TestExecution>;
+
+// /// Appends one descriptor per Case/provider combination in declaration order.
+// template <std::meta::info Namespace>
+// auto discover(Vec<TestDescriptor> &descriptors) -> void {
+//   template for (constexpr std::meta::info member :
+//       meta::members<Namespace, meta::AccessContext::unchecked()>) {
+//     if constexpr (std::meta::is_function(member) and detail::isTest<member>())
+//       detail::appendDescriptors<member>(descriptors);
+//     else if constexpr (std::meta::is_namespace(member))
+//       discover<member>(descriptors);
+//   }
+// }
+//
+// /// Returns one descriptor per Case/provider combination in declaration order.
+// template <std::meta::info Namespace>
+// [[nodiscard]]
+// auto discover() -> Vec<TestDescriptor> {
+//   Vec<TestDescriptor> descriptors{};
+//
+//   discover<Namespace>(descriptors);
+//
+//   return descriptors;
+// }
+//
+// /// Appends all reflected tests and their declarative Case/provider annotations.
+// template <std::meta::info Namespace>
+// auto runAll(Vec<detail::WorkItem> &workItems) -> void {
+//   static_assert(detail::fixtureDeclarationsAreValid<Namespace>());
+//
+//   auto suiteFixtures = std::make_shared<FixtureScope<Namespace>>();
+//
+//   template for (constexpr std::meta::info member :
+//       meta::members<Namespace, meta::AccessContext::unchecked()>) {
+//     if constexpr (std::meta::is_function(member) and detail::isTest<member>())
+//       detail::appendWorkItems<Namespace, member>(workItems, suiteFixtures);
+//     else if constexpr (std::meta::is_namespace(member))
+//       runAll<member>(workItems);
+//   }
+// }
+//
+// /// Executes all reflected tests and their declarative Case/provider annotations.
+// template <std::meta::info Namespace>
+// [[nodiscard]]
+// auto runAll(RunOptions options = {}) -> Vec<TestExecution> {
+//   static_assert(detail::fixtureDeclarationsAreValid<Namespace>());
+//
+//   Vec<detail::WorkItem> workItems{};
+//
+//   runAll<Namespace>(workItems);
+//
+//   return detail::executeWorkItems(std::move(workItems), options);
+// }
 
 } // namespace Nyx::Test
 // NOLINTEND(bugprone-reserved-identifier)

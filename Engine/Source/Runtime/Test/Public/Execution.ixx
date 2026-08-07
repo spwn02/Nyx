@@ -194,7 +194,7 @@ auto run(TestDescriptor descriptor, Function &&function) -> TestExecution {
   if (execution.descriptor.policy.trace)
     environment.enableTrace();
 
-  environment.recordTrace(std::format("Running test: {} ...", execution.descriptor.name));
+  environment.recordTrace(std::format("enabled tracing for: {} ...", execution.descriptor.name));
   const std::chrono::time_point started = std::chrono::steady_clock::now();
   detail::Deadline deadline{};
   if (execution.descriptor.policy.timeout)
