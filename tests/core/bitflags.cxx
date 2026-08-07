@@ -17,28 +17,28 @@ namespace Tests::bitflags {
 
 [[= test]] auto bitflags() -> void {
   BufferUsage flags = BufferUsage::Vertex | BufferUsage::Index;
-  require(Nyx::bits(flags) == 0b11);
+  check(Nyx::bits(flags) == 0b11_exp);
   flags |= BufferUsage::Storage;
-  require(Nyx::bits(flags) == 0b1011);
-  require(Nyx::has(flags, BufferUsage::Vertex));
+  check(Nyx::bits(flags) == 0b1011_exp);
+  check(Nyx::has(flags, BufferUsage::Vertex));
 }
 
 [[= test]] auto bitflagsDisplay() -> void {
   BufferUsage flags = BufferUsage::Vertex | BufferUsage::Storage;
-  require(std::format("{}", flags) == "9");
-  require(std::format("{:b}", flags) == "00001001");
-  require(std::format("{:x}", flags) == "9");
+  check(std::format("{}", flags) == "9"_exp);
+  check(std::format("{:b}", flags) == "00001001"_exp);
+  check(std::format("{:x}", flags) == "9"_exp);
 }
 
 [[= test]] auto bitflagsDisplayWithPrefix() -> void {
   BufferUsage flags = BufferUsage::Vertex | BufferUsage::Storage;
-  require(std::format("{:p}", flags) == "9");
-  require(std::format("{:bp}", flags) == "0b00001001");
-  require(std::format("{:xp}", flags) == "0x9");
+  check(std::format("{:p}", flags) == "9"_exp);
+  check(std::format("{:bp}", flags) == "0b00001001"_exp);
+  check(std::format("{:xp}", flags) == "0x9"_exp);
 }
 
-[[= test]] auto bitflagsAll() -> void {
-  require(Nyx::bits(Nyx::all<BufferUsage>()) == 0b1001011);
+[[= test]] auto bitflagsAll() -> Expression {
+  return Nyx::bits(Nyx::all<BufferUsage>()) == 0b1001011_exp;
 }
 
 } // namespace Tests

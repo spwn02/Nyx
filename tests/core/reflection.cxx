@@ -155,6 +155,7 @@ using Argv = Vec<const char *>;
 
 [[
   = test,
+  = Case{container<Argv>()},
   = Case{container<Argv>("NyxEngine")},
   = Case{container<Argv>("NyxEngine", "-n", "Spawn")},
   = Case{container<Argv>("NyxEngine", "-n", "Spawn", "-c", "3")}

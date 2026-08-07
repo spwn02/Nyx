@@ -6,11 +6,11 @@ using namespace Nyx;
 using namespace Nyx::Test;
 
 auto main() -> int {
-  const Vec<TestExecution> executions = runAll();
+  const Vec<TestExecution> executions = runAll({.jobs = 16});
   Reporter{
       ReporterOptions{
           .renderer =
-              RendererOptions{
+              {
                   .color = Nyx::Test::ColorMode::Always,
                   .terminal = true,
                   .showSource = true,
