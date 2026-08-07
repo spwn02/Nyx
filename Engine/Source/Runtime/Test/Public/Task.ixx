@@ -24,6 +24,33 @@ namespace detail {
 /// The test boundary turns this into the timeout diagnostic after cleanup.
 class TaskCancelled final {};
 
+/// Describes a broken asynchronous lifecycle observed by the test scheduduler.
+enum class[[= debug::derive]] TaskLifecycleFailure : u8 {
+  Stranded,
+  PendingWork,
+};
+
+/// Internal control flow used when an asynchronous test can no longer make safe progress.
+class TaskLifecycleError final {
+public:
+  constexpr explicit TaskLifecycleError(TaskLifecycleFailure failure, usize pendingWork = 0) noexcept
+      : failure_(failure)
+      , pendingWork_(pendingWork) {
+  }
+
+  [[nodiscard]] constexpr auto failure() const noexcept -> TaskLifecycleFailure {
+    return failure_;
+  }
+
+  [[nodiscard]] constexpr auto pendingWork() const noexcept -> usize {
+    return pendingWork_;
+  }
+
+private:
+  TaskLifecycleFailure failure_{};
+  usize pendingWork_{};
+};
+
 class RunLoop final {
 public:
   using Clock = std::chrono::steady_clock;
@@ -53,6 +80,12 @@ public:
   /// Makes every locally sleeping coroutine eligible to observe cancellation.
   auto wakeAllTimers() -> void;
 
+  /// Discards non-owning scheduler references before their coroutine owners are destroyed.
+  auto discardPending() noexcept -> void;
+
+  /// Counts live coroutine frames with an outstanding scheduler ticket.
+  [[nodiscard]] auto pendingWorkCount() const noexcept -> usize;
+
   [[nodiscard]] auto stopRequested() const noexcept -> bool;
 
 private:
@@ -79,6 +112,8 @@ private:
 
   std::deque<std::coroutine_handle<>> ready_;
   std::priority_queue<Timer, Vec<Timer>, TimerCompare> timers_;
+  /// A coroutine may own at most one ready or timer ticket at a time.
+  FlatSet<void *> scheduled_;
   TimeMode timeMode_{};
   TimePoint startedAt_;
   TimePoint currentTime_;
@@ -585,6 +620,7 @@ auto drive(Task<Value> &task,
   if (not task.valid())
     throw std::logic_error{"Nyx::Test cannot execute an empty Task<T>"};
 
+  const auto discardPending = std::scope_exit([&runLoop] -> void { runLoop.discardPending(); });
   runLoop.enqueue(task.handle_);
 
   while (not task.done()) {
@@ -608,10 +644,15 @@ auto drive(Task<Value> &task,
     }
   }
 
-  if (not task.done()) {
-    throw std::logic_error{
-        "Nyx::Test Task<T> suspended without scheduling a continuation; use Nyx::Test::yield()."};
-  }
+  if (not task.done() and runLoop.stopRequested())
+    throw TaskCancelled{};
+
+  if (not task.done())
+    throw TaskLifecycleError{TaskLifecycleFailure::Stranded};
+
+  const usize pendingWork = runLoop.pendingWorkCount();
+  if (pendingWork != 0)
+    throw TaskLifecycleError{TaskLifecycleFailure::PendingWork, pendingWork};
 }
 
 template <class Value, class Resume, class BeforeResume, class NextWakeUp>

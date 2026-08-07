@@ -130,6 +130,29 @@ auto detail::panickedDiagnostic(String message, std::source_location location) -
   return diagnostic;
 }
 
+auto detail::taskLifecycleDiagnostic(const TaskLifecycleError &error, std::source_location location)
+    -> Diagnostic {
+  Diagnostic diagnostic = makeDiagnostic(DiagnosticCode::TaskStranded, location);
+  diagnostic.details.spans.front().label = "async task";
+
+  switch (error.failure()) {
+    case TaskLifecycleFailure::Stranded:
+      diagnostic.addNote("the coroutine suspended without scheduling further work");
+      diagnostic.addNote(
+          "use yield(), sleepFor(), or an awaitable that resumes through the active test run loop",
+          DiagnosticLevel::Help);
+      break;
+    case TaskLifecycleFailure::PendingWork:
+      diagnostic.addNote(
+          std::format("{} scheduled continuation(s) remained after the task completed", error.pendingWork()));
+      diagnostic.addNote(
+          "an awaitable must not schedule a coroutine that it does not suspend", DiagnosticLevel::Help);
+      break;
+  }
+
+  return diagnostic;
+}
+
 auto detail::applyPolicy(const TestPolicy &policy,
     TestEnvironment &environment,
     std::chrono::steady_clock::duration elapsed,

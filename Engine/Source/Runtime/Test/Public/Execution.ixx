@@ -61,6 +61,9 @@ concept TestInvocable = std::invocable<Function> or ContextInvocable<Function>;
 
 [[nodiscard]] auto panickedDiagnostic(String message, std::source_location location) -> Diagnostic;
 
+[[nodiscard]] auto taskLifecycleDiagnostic(const TaskLifecycleError &error, std::source_location location)
+    -> Diagnostic;
+
 auto applyPolicy(const TestPolicy &policy,
     TestEnvironment &environment,
     std::chrono::steady_clock::duration elapsed,
@@ -248,6 +251,8 @@ auto run(TestDescriptor descriptor, Function &&function, TimeMode timeMode = Tim
       }
     } catch (const detail::TaskCancelled &) { // NOLINT
       // The timeout policy records the final diagnostic after duration capture.
+    } catch (const detail::TaskLifecycleError &error) {
+      environment.recordError(detail::taskLifecycleDiagnostic(error, execution.descriptor.location));
     } catch (const TestAbort &) { // NOLINT
       // require() already recorded the fatal assertion and marked the test aborted.
       // nothing to do here.

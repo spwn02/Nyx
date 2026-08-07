@@ -35,14 +35,30 @@ auto RunLoop::elapsed() const noexcept -> Clock::duration {
 }
 
 auto RunLoop::enqueue(std::coroutine_handle<> handle) -> void {
-  if (not handle or handle.done())
+  if (not handle)
+    return;
+
+  if (handle.done()) {
+    scheduled_.erase(handle.address());
+    return;
+  }
+
+  if (not scheduled_.insert(handle.address()).second)
     return;
 
   ready_.push_back(handle);
 }
 
 auto RunLoop::scheduleAt(std::coroutine_handle<> handle, TimePoint wakeTime) -> void {
-  if (not handle or handle.done())
+  if (not handle)
+    return;
+
+  if (handle.done()) {
+    scheduled_.erase(handle.address());
+    return;
+  }
+
+  if (not scheduled_.insert(handle.address()).second)
     return;
 
   timers_.push(Timer{
@@ -62,7 +78,15 @@ auto RunLoop::promoteDueTimers() -> void {
   while (not timers_.empty() and timers_.top().wakeTime <= currentTime) {
     const Timer timer = timers_.top();
     timers_.pop();
-    enqueue(timer.handle);
+
+    if (not timer.handle or timer.handle.done()) {
+      if (timer.handle)
+        scheduled_.erase(timer.handle.address());
+
+      continue;
+    }
+
+    ready_.push_back(timer.handle);
   }
 }
 
@@ -76,12 +100,18 @@ auto RunLoop::nextTimerWake() const -> Option<TimePoint> {
 auto RunLoop::dequeue() -> Option<std::coroutine_handle<>> {
   promoteDueTimers();
 
-  if (ready_.empty())
-    return None;
+  while (not ready_.empty()) {
+    const std::coroutine_handle<> handle = ready_.front();
+    ready_.pop_front();
 
-  const std::coroutine_handle<> handle = ready_.front();
-  ready_.pop_front();
-  return handle;
+    if (handle)
+      scheduled_.erase(handle.address());
+
+    if (handle and not handle.done())
+      return handle;
+  }
+
+  return None;
 }
 
 auto RunLoop::waitForWork(Option<TimePoint> externalWake) -> WaitResult {
@@ -112,8 +142,28 @@ auto RunLoop::wakeAllTimers() -> void {
   while (not timers_.empty()) {
     const Timer timer = timers_.top();
     timers_.pop();
-    enqueue(timer.handle);
+
+    if (not timer.handle or timer.handle.done()) {
+      if (timer.handle)
+        scheduled_.erase(timer.handle.address());
+
+      continue;
+    }
+
+    ready_.push_back(timer.handle);
   }
+}
+
+auto RunLoop::discardPending() noexcept -> void {
+  ready_.clear();
+  while (not timers_.empty())
+    timers_.pop();
+
+  scheduled_.clear();
+}
+
+auto RunLoop::pendingWorkCount() const noexcept -> usize {
+  return scheduled_.size();
 }
 
 auto RunLoop::stopRequested() const noexcept -> bool {

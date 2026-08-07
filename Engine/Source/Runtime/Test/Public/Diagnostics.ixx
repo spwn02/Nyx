@@ -30,6 +30,7 @@ enum class[[ = debug::derive, = diagnostic::prefix<"NYX">() ]] DiagnosticCode : 
   TimeoutExceeded[[= diagnostic::message<"test exceeded its timeout">()]] = 13,
   ExpectedPanicNotObserved[[= diagnostic::message<"expected panic was not observed">()]] = 14,
   ProviderProducedNoValues[[= diagnostic::message<"provider produced no values">()]] = 15,
+  TaskStranded[[= diagnostic::message<"asynchronous task was stranded">()]] = 16,
 };
 
 enum class[[= debug::derive]] DetailMode : u8 {
