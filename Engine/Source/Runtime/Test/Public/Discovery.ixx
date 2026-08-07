@@ -104,7 +104,10 @@ consteval auto scopeLocationOf() -> std::source_location {
 
 template <std::meta::info Function>
 consteval auto isTest() -> bool {
-  return std::meta::is_function(Function) and Nyx::meta::has_annotation<Test, Function>();
+  if constexpr (not std::meta::is_function(Function))
+    return false;
+  else
+    return Nyx::meta::has_annotation<Test, Function>();
 }
 
 consteval auto isCase(std::meta::info annotation) -> bool {

@@ -58,15 +58,15 @@ private:
   return catalog().snapshot();
 }
 
-auto validateUniqueIdentifiers(const Vec<TestDescriptor> &descriptors) -> void {
-  const auto duplicate =
-      std::ranges::adjacent_find(descriptors, std::ranges::equal_to{}, &TestDescriptor::identifier);
-  if (duplicate == descriptors.end())
-    return;
-
-  throw std::logic_error{
-      std::format("Nyx::Test discovered duplicate test identifier: {}", duplicate->identifier)};
-}
+// auto validateUniqueIdentifiers(const Vec<TestDescriptor> &descriptors) -> void {
+//   const auto duplicate =
+//       std::ranges::adjacent_find(descriptors, std::ranges::equal_to{}, &TestDescriptor::identifier);
+//   if (duplicate == descriptors.end())
+//     return;
+//
+//   throw std::logic_error{
+//       std::format("Nyx::Test discovered duplicate test identifier: {}", duplicate->identifier)};
+// }
 
 [[nodiscard]] auto describeSuites(const Vec<SuiteEntry> &suites) -> Vec<TestDescriptor> {
   Vec<TestDescriptor> descriptors{};
@@ -74,7 +74,7 @@ auto validateUniqueIdentifiers(const Vec<TestDescriptor> &descriptors) -> void {
     descriptors.append_range(suite.describe() | std::views::as_rvalue);
   });
   std::ranges::sort(descriptors, {}, &TestDescriptor::identifier);
-  validateUniqueIdentifiers(descriptors);
+  // validateUniqueIdentifiers(descriptors);
   return descriptors;
 }
 

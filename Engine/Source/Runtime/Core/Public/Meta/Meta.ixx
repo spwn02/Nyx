@@ -81,6 +81,10 @@ public:
   [[nodiscard]] constexpr operator const char *() const {
     return ptr_;
   }
+
+  [[nodiscard]] constexpr operator StringView() const {
+    return apply();
+  }
 };
 
 template <class... Items>

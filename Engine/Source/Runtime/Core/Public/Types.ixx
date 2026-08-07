@@ -43,8 +43,8 @@ template <class T>
 using Option = std::optional<T>;
 inline constexpr std::nullopt_t None = std::nullopt; // NOLINT(readability-identifier-naming)
 
-template <class T>
-using Span = std::span<T>;
+template <class T, usize Extent = std::dynamic_extent>
+using Span = std::span<T, Extent>;
 
 template <class T, class Compare = std::less<T>>
 using FlatSet = std::flat_set<T, Compare, Vec<T>>;

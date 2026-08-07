@@ -222,6 +222,63 @@ template <class... Items>
 inline constexpr bool is_values_v<Values<Items...>>{true};
 // NOLINTEND(readability-identifier-naming)
 
+/// Stores annotation-safe values and materializes Container when a Case invokes its test.
+template <class Container, class... Items>
+struct ContainerCase final {
+  constexpr explicit ContainerCase(Items... items)
+      : items_(std::move(items)...) {
+  }
+
+  [[nodiscard]] auto apply() const -> Container {
+    return applyAnnotationItems(items_,
+        []<class... Values>(const Values &...values) -> Container { return Container{values...}; },
+        std::index_sequence_for<Items...>{});
+  }
+
+  [[nodiscard]] auto describe() const -> String {
+    String result{"["};
+    bool first{true};
+    applyAnnotationItems(items_,
+        [&result, &first]<class... Values>(const Values &...values) -> void {
+          const auto append = [&result, &first]<class Value>(const Value &value) -> void {
+            result.append(first ? "" : ", ");
+            if constexpr (requires { value.apply(); })
+              result.append(value.apply());
+            else
+              result.append(std::format("{}", value));
+            first = false;
+          };
+          (append(values), ...);
+        },
+        std::index_sequence_for<Items...>{});
+    result.append("]");
+    return result;
+  }
+
+  AnnotationItems<Items...> items_;
+};
+
+template <class Container, class... Items>
+consteval auto container(Items &&...items)
+    -> ContainerCase<Container, decltype(valueItem(std::forward<Items>(items)))...> {
+  return ContainerCase<Container, decltype(valueItem(std::forward<Items>(items)))...>{
+      valueItem(std::forward<Items>(items))...};
+}
+
+template <class>
+inline constexpr bool is_container_case_v{};
+
+template <class Container, class... Items>
+inline constexpr bool is_container_case_v<ContainerCase<Container, Items...>>{true};
+
+template <class Value>
+constexpr auto materializeCaseValue(const Value &value) -> decltype(auto) {
+  if constexpr (is_container_case_v<std::remove_cvref_t<Value>>)
+    return value.apply();
+  else
+    return (value);
+}
+
 template <meta::StaticString Name>
 struct Files final {
   [[nodiscard]] static constexpr auto apply() -> StringView {
@@ -341,7 +398,8 @@ struct Case final {
   template <class Function>
   constexpr auto apply(Function &&function) const -> decltype(auto) {
     return withIndices<sizeof...(Values)>([this, &function](auto... indices) -> decltype(auto) {
-      return std::invoke(std::forward<Function>(function), storage_.[:members_[indices]:]...);
+      return std::invoke(
+          std::forward<Function>(function), materializeCaseValue(storage_.[:members_[indices]:])...);
     });
   }
 
@@ -351,14 +409,24 @@ struct Case final {
     bool first{true};
 
     apply([&]<class... Types>(const Types &...values) -> void {
-      ((result.append(first ? "" : ", "), result.append(std::format("{}", values)), first = false), ...);
+      const auto append = [&]<class Type>(const Type &value) -> void {
+        result.append(first ? "" : ", ");
+        if constexpr (requires { value.describe(); })
+          result.append(value.describe());
+        else if constexpr (requires { value.apply(); })
+          result.append(value.apply());
+        else
+          result.append(std::format("{}", value));
+        first = false;
+      };
+      (append(values), ...);
     });
     return result;
   }
 };
 
 template <class... Values>
-Case(Values...) -> Case<Values...>;
+Case(Values &&...) -> Case<decltype(valueItem(std::declval<Values>()))...>;
 
 } // namespace Nyx::Test
 // NOLINTEND(readability-identifier-naming, bugprone-reserved-identifier)

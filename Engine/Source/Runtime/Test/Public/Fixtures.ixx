@@ -17,7 +17,10 @@ namespace detail {
 
 template <std::meta::info Function>
 consteval auto isFixture() -> bool {
-  return std::meta::is_function(Function) and Nyx::meta::has_annotation<Fixture, Function>();
+  if constexpr (not std::meta::is_function(Function))
+    return false;
+  else
+    return Nyx::meta::has_annotation<Fixture, Function>();
 }
 
 template <std::meta::info FixtureFunction>
@@ -84,11 +87,12 @@ template <std::meta::info Namespace>
 consteval auto fixtureDeclarationsAreValid() -> bool {
   template for (constexpr std::meta::info member :
       meta::members<Namespace, meta::AccessContext::unchecked()>) {
-    if constexpr (std::meta::is_function(member) and isFixture<member>())
-      validateFixture<member>();
+    if constexpr (std::meta::is_function(member)) {
+      if constexpr (isFixture<member>())
+        validateFixture<member>();
 
-    if constexpr (std::meta::is_function(member) and isOnce<member>()) {
-      static_assert(isFixture<member>(), "Nyx::Test [[= once]] is valid only together with [[= fixture]].");
+      if constexpr (isOnce<member>())
+        static_assert(isFixture<member>(), "Nyx::Test [[= once]] is valid only together with [[= fixture]].");
     }
   }
 
