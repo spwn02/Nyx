@@ -35,12 +35,12 @@ namespace ProviderSubjects {
   require(value == 3_exp or value == 7_exp);
 }
 
-[[ = test, = arg<"path">(files<__FILE__>()) ]] auto receivesFile(const Path &path) -> void {
+[[ = test, = arg<"path">(files(__FILE__)) ]] auto receivesFile(const Path &path) -> void {
   require(path == Path{__FILE__});
 }
 
-[[ = test, = arg<"path">(files<"__nyx_missing_provider__/**/*.md">()) ]] auto receivesNoFiles(
-    const Path &path) -> void {
+[[ = test, = arg<"path">(files("__nyx_missing_provider__/**/*.md")) ]] auto receivesNoFiles(const Path &path)
+    -> void {
   require(path.empty());
 }
 

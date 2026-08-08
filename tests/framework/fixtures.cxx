@@ -58,7 +58,7 @@ auto resetFixtureCounters() -> void {
 
 [[
   = test,
-  = description<"injects a context and both fixture lifetimes">(),
+  = description("injects a context and both fixture lifetimes"),
   = Case{11},
   = Case{29},
   = arg<"ctx">(context),

@@ -173,7 +173,7 @@ auto chopArgument(Error &&error) -> Error {
   = test,
   = Case{container<Argv>("NyxEngine", "-n")},
   = Case{container<Argv>("NyxEngine", "-c")},
-  = shouldPanic<"Expected argument following">()
+  = shouldPanic("Expected argument following")
 ]] auto cliFail(Argv args) -> Result<void> {
   return clap::parse<Args>(static_cast<int>(args.size()), const_cast<char **>(args.data()))
       .transform([](Args &&args) -> void { static_cast<void>(args); })

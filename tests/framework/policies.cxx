@@ -11,15 +11,15 @@ namespace Tests::policies {
 
 namespace PolicySubjects {
 
-[[ = test, = shouldPanic<"explicit panic">() ]] auto explicitPanic() -> void {
+[[ = test, = shouldPanic("explicit panic") ]] auto explicitPanic() -> void {
   panic("explicit panic");
 }
 
-[[ = test, = shouldPanic<"returned error">() ]] auto returnedError() -> Result<void> {
+[[ = test, = shouldPanic("returned error") ]] auto returnedError() -> Result<void> {
   return bail({"returned error"});
 }
 
-[[ = test, = shouldPanic<"exception panic">() ]] auto thrownException() -> void {
+[[ = test, = shouldPanic("exception panic") ]] auto thrownException() -> void {
   throw std::runtime_error{"exception panic"};
 }
 
@@ -32,7 +32,7 @@ namespace PolicySubjects {
   std::this_thread::sleep_for(std::chrono::milliseconds(2));
 }
 
-[[ = test, = shouldPanic<"missing panic">() ]] auto calm() -> void {
+[[ = test, = shouldPanic("missing panic") ]] auto calm() -> void {
 }
 
 } // namespace PolicySubjects

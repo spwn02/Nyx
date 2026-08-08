@@ -3,33 +3,54 @@ export module Nyx.Test:Annotations;
 import std;
 import Nyx.Core;
 
-export namespace Nyx::diagnostic {
-
 // NOLINTBEGIN(readability-identifier-naming, bugprone-reserved-identifier)
-template <meta::StaticString Name>
+// NOLINTBEGIN(cppcoreguidelines-avoid-c-arrays, modernize-avoid-c-arrays)
+export namespace Nyx::Test {
+
+template <usize N>
+consteval auto valueItem(const char (&item)[N]) -> meta::StaticString<N> {
+  return meta::StaticString<N>{item};
+}
+
+template <class Item>
+consteval auto valueItem(Item &&item) -> std::decay_t<Item> {
+  return std::forward<Item>(item);
+}
+
+} // namespace Nyx::Test
+
+export namespace Nyx::diagnostics {
+
+template <usize Size>
 struct Message final {
-  [[nodiscard]] static constexpr auto apply() -> StringView {
-    return Name.apply();
+  meta::StaticString<Size> message_;
+
+  constexpr explicit Message(meta::StaticString<Size> message)
+      : message_(std::move(message)) {
+  }
+
+  [[nodiscard]] constexpr auto apply() const -> StringView {
+    return message_.apply();
   }
 };
 
-template <meta::StaticString Name>
-consteval auto message() -> Message<Name> {
-  return Message<Name>{};
+template <usize Size>
+consteval auto message(const char (&message)[Size]) -> Message<Size> {
+  return Message<Size>{Test::valueItem(message)};
 }
 
 template <class>
 inline constexpr bool is_message_v{};
 
-template <meta::StaticString Name>
-inline constexpr bool is_message_v<Message<Name>>{true};
+template <usize Size>
+inline constexpr bool is_message_v<Message<Size>>{true};
 
 template <std::meta::info Info>
 consteval auto annotationMessage() -> StringView {
   template for (constexpr std::meta::info annotation : meta::annotations<Info>) {
     using Annotation = meta::TypeObject<annotation>;
 
-    if constexpr (diagnostic::is_message_v<Annotation>) {
+    if constexpr (is_message_v<Annotation>) {
       return std::meta::extract<Annotation>(annotation).apply();
     }
   }
@@ -37,30 +58,36 @@ consteval auto annotationMessage() -> StringView {
   return meta::identifier<Info>;
 }
 
-template <meta::StaticString Name>
+template <usize Size>
 struct Prefix final {
-  [[nodiscard]] static constexpr auto apply() -> StringView {
-    return Name.apply();
+  meta::StaticString<Size> prefix_;
+
+  constexpr explicit Prefix(meta::StaticString<Size> prefix)
+      : prefix_(std::move(prefix)) {
+  }
+
+  [[nodiscard]] constexpr auto apply() const -> StringView {
+    return prefix_.apply();
   }
 };
 
-template <meta::StaticString Name>
-consteval auto prefix() -> Prefix<Name> {
-  return Prefix<Name>{};
+template <usize Size>
+consteval auto prefix(const char (&prefix)[Size]) -> Prefix<Size> {
+  return Prefix<Size>{Test::valueItem(prefix)};
 }
 
 template <class>
 inline constexpr bool is_prefix_v{};
 
-template <meta::StaticString Name>
-inline constexpr bool is_prefix_v<Prefix<Name>>{true};
+template <usize Size>
+inline constexpr bool is_prefix_v<Prefix<Size>>{true};
 
 template <std::meta::info Item>
 consteval auto annotationPrefix() -> StringView {
   template for (constexpr std::meta::info annotation : meta::annotations<Item>) {
     using Annotation = meta::TypeObject<annotation>;
 
-    if constexpr (diagnostic::is_prefix_v<Annotation>) {
+    if constexpr (is_prefix_v<Annotation>) {
       return std::meta::extract<Annotation>(annotation).apply();
     }
   }
@@ -182,16 +209,6 @@ public:
 template <meta::StaticString Name>
 inline constexpr ArgumentBuilder<ArgumentName<Name>{}> arg{};
 
-template <usize N>
-consteval auto valueItem(const char (&item)[N]) -> meta::StaticString<N> { // NOLINT
-  return meta::StaticString<N>{item};
-}
-
-template <class Item>
-consteval auto valueItem(Item &&item) -> std::decay_t<Item> {
-  return std::forward<Item>(item);
-}
-
 template <class... Items>
 struct Values final {
   static constexpr usize size_{sizeof...(Items)};
@@ -230,7 +247,8 @@ struct ContainerCase final {
   }
 
   [[nodiscard]] auto apply() const -> Container {
-    return applyAnnotationItems(items_,
+    return applyAnnotationItems(
+        items_,
         []<class... Values>(const Values &...values) -> Container { return Container{values...}; },
         std::index_sequence_for<Items...>{});
   }
@@ -238,7 +256,8 @@ struct ContainerCase final {
   [[nodiscard]] auto describe() const -> String {
     String result{"["};
     bool first{true};
-    applyAnnotationItems(items_,
+    applyAnnotationItems(
+        items_,
         [&result, &first]<class... Values>(const Values &...values) -> void {
           const auto append = [&result, &first]<class Value>(const Value &value) -> void {
             result.append(first ? "" : ", ");
@@ -279,63 +298,81 @@ constexpr auto materializeCaseValue(const Value &value) -> decltype(auto) {
     return (value);
 }
 
-template <meta::StaticString Name>
+template <usize Size>
 struct Files final {
-  [[nodiscard]] static constexpr auto apply() -> StringView {
-    return Name.apply();
+  meta::StaticString<Size> files_;
+
+  explicit constexpr Files(meta::StaticString<Size> files)
+      : files_(std::move(files)) {
+  }
+
+  [[nodiscard]] constexpr auto apply() const -> StringView {
+    return files_.apply();
   }
 };
 
-template <meta::StaticString Name>
-consteval auto files() -> Files<Name> {
-  return Files<Name>{};
+template <usize Size>
+consteval auto files(const char (&files)[Size]) -> Files<Size> {
+  return Files<Size>{valueItem(files)};
 }
 
 template <class>
 inline constexpr bool is_files_v{};
 
-template <meta::StaticString Name>
-inline constexpr bool is_files_v<ArgumentName<Name>>{true};
+template <usize Size>
+inline constexpr bool is_files_v<Files<Size>>{true};
 
-template <meta::StaticString Name>
+template <usize Size>
 struct Exclude final {
-  [[nodiscard]] static constexpr auto apply() -> StringView {
-    return Name.apply();
+  meta::StaticString<Size> exclude_;
+
+  explicit constexpr Exclude(meta::StaticString<Size> exclude)
+      : exclude_(std::move(exclude)) {
+  }
+
+  [[nodiscard]] constexpr auto apply() const -> StringView {
+    return exclude_.apply();
   }
 };
 
-template <meta::StaticString Name>
-consteval auto exclude() -> Exclude<Name> {
-  return Exclude<Name>{};
+template <usize Size>
+consteval auto exclude() -> Exclude<Size> {
+  return Exclude<Size>{};
 }
 
 template <class>
 inline constexpr bool is_exclude_v{};
 
-template <meta::StaticString Name>
-inline constexpr bool is_exclude_v<Exclude<Name>>{true};
+template <usize Size>
+inline constexpr bool is_exclude_v<Exclude<Size>>{true};
 
-template <meta::StaticString Name>
+template <usize Size>
 struct ShouldPanic final {
-  [[nodiscard]] static constexpr auto apply() -> StringView {
-    return Name.apply();
+  meta::StaticString<Size> message_;
+
+  explicit constexpr ShouldPanic(meta::StaticString<Size> message)
+      : message_(std::move(message)) {
+  }
+
+  [[nodiscard]] constexpr auto apply() const -> StringView {
+    return message_.apply();
   }
 };
 
-template <meta::StaticString Name>
-consteval auto shouldPanic() -> ShouldPanic<Name> {
-  return ShouldPanic<Name>{};
+template <usize Size>
+consteval auto shouldPanic(const char (&message)[Size]) -> ShouldPanic<Size> {
+  return ShouldPanic<Size>{valueItem(message)};
 }
 
-consteval auto shouldPanic() -> ShouldPanic<""> {
-  return ShouldPanic<"">{};
+consteval auto shouldPanic() -> ShouldPanic<1> {
+  return ShouldPanic<1>{valueItem("")};
 }
 
 template <class>
 inline constexpr bool is_should_panic_v{};
 
-template <meta::StaticString Name>
-inline constexpr bool is_should_panic_v<ShouldPanic<Name>>{true};
+template <usize Size>
+inline constexpr bool is_should_panic_v<ShouldPanic<Size>>{true};
 
 struct Timeout final {
   long long nanoseconds{};
@@ -352,23 +389,55 @@ consteval auto timeout(std::chrono::duration<Rep, Period> duration) -> Timeout {
   };
 }
 
-template <meta::StaticString Name>
+template <usize Size>
 struct Description final {
-  [[nodiscard]] static constexpr auto apply() -> StringView {
-    return Name.apply();
+  meta::StaticString<Size> description_;
+
+  explicit constexpr Description(meta::StaticString<Size> description)
+      : description_(std::move(description)) {
+  }
+
+  [[nodiscard]] constexpr auto apply() const -> StringView {
+    return description_.apply();
   }
 };
 
-template <meta::StaticString Name>
-consteval auto description() -> Description<Name> {
-  return Description<Name>{};
+template <usize Size>
+consteval auto description(const char (&description)[Size]) -> Description<Size> {
+  return Description<Size>{valueItem(description)};
 }
 
 template <class>
 inline constexpr bool is_description_v{};
 
-template <meta::StaticString Name>
-inline constexpr bool is_description_v<Description<Name>>{true};
+template <usize Size>
+inline constexpr bool is_description_v<Description<Size>>{true};
+
+/// Assigns one presentation-oriented group to a test.
+template <usize Size>
+struct Group final {
+  constexpr explicit Group(meta::StaticString<Size> name)
+      : name_(std::move(name)) {
+  }
+
+  [[nodiscard]] constexpr auto apply() const -> StringView {
+    return name_.apply();
+  }
+
+private:
+  meta::StaticString<Size> name_;
+};
+
+template <usize Size>
+consteval auto group(const char (&name)[Size]) -> Group<Size> {
+  return Group<Size>{valueItem(name)};
+}
+
+template <class>
+inline constexpr bool is_group_v{};
+
+template <usize Size>
+inline constexpr bool is_group_v<Group<Size>>{true};
 
 template <usize Count, class Function>
 constexpr auto withIndices(Function &&function) -> decltype(auto) {
@@ -429,4 +498,5 @@ template <class... Values>
 Case(Values &&...) -> Case<decltype(valueItem(std::declval<Values>()))...>;
 
 } // namespace Nyx::Test
+// NOLINTEND(cppcoreguidelines-avoid-c-arrays, modernize-avoid-c-arrays)
 // NOLINTEND(readability-identifier-naming, bugprone-reserved-identifier)

@@ -19,18 +19,18 @@ enum class[[= debug::derive]] SpanKind : u8 {
   Secondary,
 };
 
-enum class[[ = debug::derive, = diagnostic::prefix<"NYX">() ]] DiagnosticCode : u8 {
+enum class[[ = debug::derive, = diagnostics::prefix("NYX") ]] DiagnosticCode : u8 {
   /// Deliberately has no message: the renderer falls back to its debug-derived name.
   Unknown = 0,
 
-  AssertionFailed[[= diagnostic::message<"assertion failed">()]] = 1,
-  UnhandledException[[= diagnostic::message<"unhandled exception">()]] = 10,
-  TestReturnedError[[= diagnostic::message<"test returned an error">()]] = 11,
-  TestPanicked[[= diagnostic::message<"test panicked">()]] = 12,
-  TimeoutExceeded[[= diagnostic::message<"test exceeded its timeout">()]] = 13,
-  ExpectedPanicNotObserved[[= diagnostic::message<"expected panic was not observed">()]] = 14,
-  ProviderProducedNoValues[[= diagnostic::message<"provider produced no values">()]] = 15,
-  TaskStranded[[= diagnostic::message<"asynchronous task was stranded">()]] = 16,
+  AssertionFailed[[= diagnostics::message("assertion failed")]] = 1,
+  UnhandledException[[= diagnostics::message("unhandled exception")]] = 10,
+  TestReturnedError[[= diagnostics::message("test returned an error")]] = 11,
+  TestPanicked[[= diagnostics::message("test panicked")]] = 12,
+  TimeoutExceeded[[= diagnostics::message("test exceeded its timeout")]] = 13,
+  ExpectedPanicNotObserved[[= diagnostics::message("expected panic was not observed")]] = 14,
+  ProviderProducedNoValues[[= diagnostics::message("provider produced no values")]] = 15,
+  TaskStranded[[= diagnostics::message("asynchronous task was stranded")]] = 16,
 };
 
 enum class[[= debug::derive]] DetailMode : u8 {
@@ -107,7 +107,7 @@ struct Diagnostic final {
 };
 
 [[nodiscard]] constexpr auto diagnosticCode(DiagnosticCode code) -> String {
-  StringView prefix = diagnostic::annotationPrefix<^^DiagnosticCode>();
+  StringView prefix = diagnostics::annotationPrefix<^^DiagnosticCode>();
   return std::format("{}{:03}", prefix, std::to_underlying(code));
 }
 
@@ -115,7 +115,7 @@ struct Diagnostic final {
   // NOLINTNEXTLINE(bugprone-reserved-identifier)
   template for (constexpr std::meta::info item : meta::enumerators<^^DiagnosticCode>) {
     if ([:item:] == code)
-      return String{diagnostic::annotationMessage<item>()};
+      return String{diagnostics::annotationMessage<item>()};
   }
 
   return std::format("{}", code);

@@ -35,14 +35,14 @@ struct IsValues<Values<Items...>> final : std::true_type {};
 template <class>
 struct IsFiles final : std::false_type {};
 
-template <meta::StaticString Name>
-struct IsFiles<Files<Name>> final : std::true_type {};
+template <usize Size>
+struct IsFiles<Files<Size>> final : std::true_type {};
 
 template <class>
 struct IsExclude final : std::false_type {};
 
-template <meta::StaticString Name>
-struct IsExclude<Exclude<Name>> final : std::true_type {};
+template <usize Size>
+struct IsExclude<Exclude<Size>> final : std::true_type {};
 
 template <class>
 struct IsIncludeDotFiles final : std::false_type {};
@@ -181,7 +181,7 @@ consteval auto validateArgumentBindings() -> void {
     if constexpr (is_argument_v<Annotation>) {
       static_assert(ArgumentTraits<Annotation>::propertiesAreSupported(),
           "Nyx:Test [[= arg<\"name\">(...)]] accepts only [[= context]], [[= fromCase]], [[= values(...)]], "
-          "[[= exclude(...)]], and [[= includeDotFiles]].");
+          "[[= files(...)]], [[= exclude(...)]], and [[= includeDotFiles]].");
       static_assert(argumentTargetsFunctionParameter<Function, Annotation>(),
           "Nyx:Test [[= arg<\"name\">(...)]] must name a parameter of its test function.");
     }

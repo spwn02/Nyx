@@ -7,7 +7,7 @@ using namespace Nyx::Test;
 
 namespace Tests::error {
 
-[[ = test, = shouldPanic<"Failed">() ]] auto fail() -> Result<usize> {
+[[ = test, = shouldPanic("Failed") ]] auto fail() -> Result<usize> {
   return bail({"Failed"});
 }
 
