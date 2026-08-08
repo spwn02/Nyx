@@ -107,6 +107,143 @@ auto resetFixtureCounters() -> void {
 
 } // namespace FixtureSubjects
 
+namespace DependencySubjects {
+
+enum class[[= debug::derive]] FixtureEvent : u8 {
+  Repository,
+  Connection,
+  SharedGateway,
+  SharedSettings,
+};
+
+// NOLINTBEGIN(cppcoreguidelines-avoid-non-const-global-variables)
+inline usize settingsCreations{};
+inline usize gatewayCreations{};
+inline usize connectionCreations{};
+inline usize repositoryCreations{};
+inline Vec<FixtureEvent> destructions{};
+// NOLINTEND(cppcoreguidelines-avoid-non-const-global-variables)
+
+class LifetimeProbe final {
+public:
+  explicit LifetimeProbe(FixtureEvent event)
+      : event_(event) {
+  }
+
+  ~LifetimeProbe() { // NOLINT
+    destructions.push_back(event_);
+  }
+
+  LifetimeProbe(const LifetimeProbe &) = delete;
+  auto operator=(const LifetimeProbe &) -> LifetimeProbe & = delete;
+  LifetimeProbe(LifetimeProbe &&) noexcept = delete;
+  auto operator=(LifetimeProbe &&) noexcept -> LifetimeProbe & = delete;
+
+private:
+  FixtureEvent event_{};
+};
+
+[[nodiscard]] auto makeProbe(FixtureEvent event) -> std::shared_ptr<LifetimeProbe> {
+  return std::make_shared<LifetimeProbe>(event);
+}
+
+struct SharedSettings final {
+  u32 revision{};
+  std::shared_ptr<LifetimeProbe> lifetime;
+};
+
+struct SharedGateway final {
+  u32 settingsRevision{};
+  std::shared_ptr<LifetimeProbe> lifetime;
+};
+
+struct Connection final {
+  usize instance{};
+  u32 settingsRevision{};
+  std::shared_ptr<LifetimeProbe> lifetime;
+};
+
+struct Repository final {
+  usize connectionInstance{};
+  u32 settingsRevision{};
+  std::shared_ptr<LifetimeProbe> lifetime;
+};
+
+auto resetDependencyCounters() -> void {
+  settingsCreations = 0;
+  gatewayCreations = 0;
+  connectionCreations = 0;
+  repositoryCreations = 0;
+  destructions.clear();
+}
+
+[[ = fixture, = once ]] auto sharedSettings() -> SharedSettings {
+  ++settingsCreations;
+  return SharedSettings{
+      .revision = 69,
+      .lifetime = makeProbe(FixtureEvent::SharedSettings),
+  };
+}
+
+[[ = fixture, = once ]] auto sharedGateway(const SharedSettings &settings) -> SharedGateway {
+  ++gatewayCreations;
+  return SharedGateway{
+      .settingsRevision = settings.revision,
+      .lifetime = makeProbe(FixtureEvent::SharedGateway),
+  };
+}
+
+[[= fixture]] auto connection(const SharedGateway &gateway) -> Connection {
+  return Connection{
+      .instance = ++connectionCreations,
+      .settingsRevision = gateway.settingsRevision,
+      .lifetime = makeProbe(FixtureEvent::Connection),
+  };
+}
+
+[[= fixture]] auto repository(const Connection &connectionValue, const SharedSettings &settings)
+    -> Repository {
+  ++repositoryCreations;
+  return Repository{
+      .connectionInstance = connectionValue.instance,
+      .settingsRevision = settings.revision,
+      .lifetime = makeProbe(FixtureEvent::Repository),
+  };
+}
+
+[[ = test, = Case{0}, = Case{1}, = arg<"expectedTestCase">(fromCase) ]] auto receivesACompleteFixtureGraph(
+    u32 expectedTestCase,
+    const Repository &repositoryValue,
+    const Connection &connectionValue,
+    const SharedGateway &gateway,
+    const SharedSettings &settings) -> void {
+  const Option<Ref<const Context>> active = currentContext();
+
+  require(active);
+  require(settings.revision == 69_exp);
+  require(gateway.settingsRevision == settings.revision);
+  require(connectionValue.settingsRevision == settings.revision);
+  require(repositoryValue.settingsRevision == settings.revision);
+  require(repositoryValue.connectionInstance == connectionValue.instance);
+  check(active->get().testCase == expectedTestCase);
+}
+
+[[= test]] auto receivesAResolvedDependency(const Connection &connectionValue, const SharedGateway &gateway)
+    -> void {
+  require(connectionValue.settingsRevision == gateway.settingsRevision);
+}
+
+[[= test]] auto retainsFixtureDependenciesAcrossAwait(const Repository &repositoryValue, // NOLINT
+    const Connection &connectionValue,                                                   // NOLINT
+    const SharedSettings &settings) -> Task<void> {                                      // NOLINT
+  co_await yield();
+
+  require(repositoryValue.settingsRevision == settings.revision);
+  check(repositoryValue.connectionInstance == connectionValue.instance);
+}
+
+} // namespace DependencySubjects
+
 [[= test]] auto directRunInjectsContext() -> void {
   const Option<Ref<const Context>> outer = currentContext();
   const auto location = std::source_location::current();
@@ -154,6 +291,45 @@ auto resetFixtureCounters() -> void {
   check(firstRun[1].descriptor.testCase == 1_exp);
   check(firstRun[2].descriptor.name == "reusesNormalFixtureWithinOneTest"_exp);
   check(firstRun[3].descriptor.name == "receivesAsyncContext"_exp);
+}
+
+[[= test]] auto reflectedFixtureDependenciesRespectScopeLifetimes() -> void {
+  using DependencySubjects::FixtureEvent;
+
+  constexpr Array<FixtureEvent, 9> expectedDestructions{
+      FixtureEvent::Repository,
+      FixtureEvent::Connection,
+      FixtureEvent::Repository,
+      FixtureEvent::Connection,
+      FixtureEvent::Connection,
+      FixtureEvent::Repository,
+      FixtureEvent::Connection,
+      FixtureEvent::SharedGateway,
+      FixtureEvent::SharedSettings,
+  };
+  const auto passed = [](const TestExecution &execution) -> bool { return execution.passed(); };
+
+  DependencySubjects::resetDependencyCounters();
+  const Vec<TestExecution> firstRun = runAll<^^DependencySubjects>();
+
+  require(firstRun.size() == 4_exp);
+  require(std::ranges::all_of(firstRun, passed));
+  require(DependencySubjects::settingsCreations == 1_exp);
+  require(DependencySubjects::gatewayCreations == 1_exp);
+  require(DependencySubjects::connectionCreations == 4_exp);
+  require(DependencySubjects::repositoryCreations == 3_exp);
+  require(std::ranges::equal(DependencySubjects::destructions, expectedDestructions));
+
+  DependencySubjects::destructions.clear();
+  const Vec<TestExecution> secondRun = runAll<^^DependencySubjects>();
+
+  require(secondRun.size() == 4_exp);
+  require(std::ranges::all_of(secondRun, passed));
+  require(DependencySubjects::settingsCreations == 2_exp);
+  require(DependencySubjects::gatewayCreations == 2_exp);
+  require(DependencySubjects::connectionCreations == 8_exp);
+  require(DependencySubjects::repositoryCreations == 6_exp);
+  check(std::ranges::equal(DependencySubjects::destructions, expectedDestructions));
 }
 
 } // namespace Tests::fixtures

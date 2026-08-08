@@ -15,6 +15,12 @@ class FixtureScope;
 // NOLINTBEGIN(bugprone-reserved-identifier)
 namespace detail {
 
+template <std::meta::info Namespace>
+class FixtureResolver;
+
+template <std::meta::info Namespace, std::meta::info FixtureFunction>
+auto invokeFixture(FixtureResolver<Namespace> &resolver) -> meta::ReturnObject<FixtureFunction>;
+
 template <std::meta::info Function>
 consteval auto isFixture() -> bool {
   if constexpr (not std::meta::is_function(Function))
@@ -66,11 +72,12 @@ consteval auto validateContextParameter() -> void {
 }
 
 template <std::meta::info FixtureFunction>
-consteval auto validateFixture() -> void {
-  static_assert(
-      std::meta::parameters_of(FixtureFunction).empty(), "Nyx::Test fixtures must be nullary for now.");
+consteval auto validateFixtureSignature() -> void {
+  validateArgumentBindings<FixtureFunction>();
   static_assert(
       not std::same_as<meta::ReturnObject<FixtureFunction>, void>, "Nyx::Test fixtures must return a value.");
+  static_assert(not is_task_return_v<meta::ReturnObject<FixtureFunction>>,
+      "Nyx::Test fixtures must return a concrete value, not Task<T>.");
   static_assert(not std::is_reference_v<meta::Return<FixtureFunction>>,
       "Nyx::Test fixtures must return a concrete value, not a reference.");
   static_assert(std::constructible_from<meta::ReturnObject<FixtureFunction>, meta::Return<FixtureFunction>>,
@@ -79,24 +86,8 @@ consteval auto validateFixture() -> void {
 
 template <std::meta::info FixtureFunction, class Value>
 consteval auto providesFixture() -> bool {
-  validateFixture<FixtureFunction>();
+  validateFixtureSignature<FixtureFunction>();
   return std::same_as<meta::ReturnObject<FixtureFunction>, Value>;
-}
-
-template <std::meta::info Namespace>
-consteval auto fixtureDeclarationsAreValid() -> bool {
-  template for (constexpr std::meta::info member :
-      meta::members<Namespace, meta::AccessContext::unchecked()>) {
-    if constexpr (std::meta::is_function(member)) {
-      if constexpr (isFixture<member>())
-        validateFixture<member>();
-
-      if constexpr (isOnce<member>())
-        static_assert(isFixture<member>(), "Nyx::Test [[= once]] is valid only together with [[= fixture]].");
-    }
-  }
-
-  return true;
 }
 
 template <std::meta::info Namespace, class Value>
@@ -133,6 +124,72 @@ consteval auto fixtureFor() -> std::meta::info {
   }
 
   return {};
+}
+
+template <std::meta::info Candidate, std::meta::info... Path>
+consteval auto fixturePathContains() -> bool {
+  return (false or ... or (Candidate == Path));
+}
+
+template <std::meta::info Namespace, std::meta::info FixtureFunction, std::meta::info... Path>
+consteval auto validateFixtureDependencyGraph() -> void;
+
+template <std::meta::info Namespace,
+    std::meta::info FixtureFunction,
+    std::meta::info Parameter,
+    std::meta::info... Path>
+consteval auto validateFixtureDependency() -> void {
+  validateInputParameter<Parameter>();
+  static_assert(argumentBindingCount<FixtureFunction, Parameter>() == 0,
+      "Nyx::Test fixture parameters are dependencies and cannot use [[= arg<\"name\">(...)]] bindings.");
+
+  using Value = meta::TypeObject<Parameter>;
+  constexpr usize candidateCount = fixtureCount<Namespace, Value>();
+
+  if constexpr (candidateCount == 0) {
+    static_assert(candidateCount != 0,
+        "Nyx::Test fixture dependencies require one matching [[= fixture]] return type.");
+  } else if constexpr (candidateCount > 1) {
+    static_assert(candidateCount == 1,
+        "Nyx::Test fixture dependencies are ambiguous; keep one [[= fixture]] per return type.");
+  } else {
+    constexpr std::meta::info dependency = fixtureFor<Namespace, Value>();
+    static_assert(not fixturePathContains<dependency, Path..., FixtureFunction>(),
+        "Nyx::Test fixture dependencies cannot for a cycle.");
+
+    if constexpr (isOnce<FixtureFunction>()) {
+      static_assert(isOnce<dependency>(),
+          "Nyx::Test [[= once]] fixtures may depend only on other [[= once]] fixtures.");
+    }
+
+    validateFixtureDependencyGraph<Namespace, dependency, Path..., FixtureFunction>();
+  }
+}
+
+template <std::meta::info Namespace, std::meta::info FixtureFunction, std::meta::info... Path>
+consteval auto validateFixtureDependencyGraph() -> void {
+  static_assert(not fixturePathContains<FixtureFunction, Path...>(),
+      "Nyx::Test fixture dependencies cannot form a cycle.");
+  validateFixtureSignature<FixtureFunction>();
+
+  template for (constexpr std::meta::info parameter : meta::parameters<FixtureFunction>)
+    validateFixtureDependency<Namespace, FixtureFunction, parameter, Path...>();
+}
+
+template <std::meta::info Namespace>
+consteval auto fixtureDeclarationsAreValid() -> bool {
+  template for (constexpr std::meta::info member :
+      meta::members<Namespace, meta::AccessContext::unchecked()>) {
+    if constexpr (std::meta::is_function(member)) {
+      if constexpr (isFixture<member>())
+        validateFixtureDependencyGraph<Namespace, member>();
+
+      if constexpr (isOnce<member>())
+        static_assert(isFixture<member>(), "Nyx::Test [[= once]] is valid only together with [[= fixture]].");
+    }
+  }
+
+  return true;
 }
 
 template <std::meta::info Function, usize ParameterIndex = 0>
@@ -224,45 +281,160 @@ private:
     Value value_;
   };
 
+  enum class[[= debug::derive]] FixtureState : u8 {
+    Empty,
+    Constructing,
+    Ready,
+  };
+
+  struct FixtureSlot final {
+    std::condition_variable ready;
+    std::thread::id owner;
+    UPtr<FixtureEntry> value;
+    FixtureState state{};
+  };
+
   template <class Value>
-  [[nodiscard]] static auto fixtureValue(const UPtr<FixtureEntry> &fixture) -> const Value & {
+  [[nodiscard]] static auto fixtureValue(const FixtureSlot &fixture) -> const Value & {
     // The type-index key is derived from Value at both insertion and lookup.
-    return static_cast<const FixtureBox<Value> &>(*fixture).value();
+    return static_cast<const FixtureBox<Value> &>(*fixture.value).value();
   }
 
 public:
-  /// Owns lazily materialized fixtures for one execution lifetime scope.
-  template <class Value>
-  [[nodiscard]] auto get() -> const Value & {
-    constexpr std::meta::info fixtureFunction = detail::fixtureFor<Namespace, Value>();
-    const std::type_index key{typeid(Value)};
-    std::lock_guard lock{mutex_};
-    const auto found = values_.find(key);
-    if (found != values_.end())
-      return fixtureValue<Value>(found->second);
+  FixtureScope() = default;
 
-    UPtr<FixtureEntry> fixture = std::make_unique<FixtureBox<Value>>([:fixtureFunction:]());
-    const auto [entry, _] = values_.emplace(key, std::move(fixture));
-    return fixtureValue<Value>(entry->second);
+  ~FixtureScope() {
+    std::lock_guard lock{mutex_};
+    std::ranges::for_each(
+        std::views::reverse(constructionOrder_), [this](const std::type_index &key) -> void {
+          const auto found = values_.find(key);
+          if (found != values_.end())
+            found->second->value.reset();
+        });
   }
 
+  FixtureScope(const FixtureScope &) = delete ("FixtureScope owns mutex state.");
+  auto operator=(const FixtureScope &) -> FixtureScope & = delete ("FixtureScope owns mutex state.");
+  FixtureScope(FixtureScope &&) noexcept = delete ("FixtureScope owns mutex state.");
+  auto operator=(FixtureScope &&) noexcept -> FixtureScope & = delete ("FixtureScope owns mutex state.");
+
 private:
+  template <class Value>
+  [[nodiscard]] auto get(detail::FixtureResolver<Namespace> &resolver) -> const Value &;
+
+  friend class detail::FixtureResolver<Namespace>;
+
   std::mutex mutex_;
-  FlatMap<std::type_index, UPtr<FixtureEntry>> values_;
+  FlatMap<std::type_index, UPtr<FixtureSlot>> values_;
+  Vec<std::type_index> constructionOrder_;
 };
 
 namespace detail {
 
-template <std::meta::info Namespace, class Value>
-auto fixtureArgument(FixtureScope<Namespace> &testFixtures, FixtureScope<Namespace> &suiteFixtures)
-    -> decltype(auto) {
-  constexpr std::meta::info fixtureFunction = fixtureFor<Namespace, Value>();
+/// Selects the owning scope from the dependency's lifetime rather than from the requesting fixture.
+template <std::meta::info Namespace>
+class FixtureResolver final {
+public:
+  FixtureResolver(FixtureScope<Namespace> &testFixtures, FixtureScope<Namespace> &suiteFixtures)
+      : testFixtures_(testFixtures)
+      , suiteFixtures_(suiteFixtures) {
+  }
 
-  if constexpr (isOnce<fixtureFunction>())
-    return (suiteFixtures.template get<Value>());
-  else
-    return (testFixtures.template get<Value>());
+  template <class Value>
+  [[nodiscard]] auto resolve() -> const Value & {
+    constexpr std::meta::info fixtureFunction = fixtureFor<Namespace, Value>();
+
+    if constexpr (isOnce<fixtureFunction>())
+      return suiteFixtures_.template get<Value>(*this);
+    else
+      return testFixtures_.template get<Value>(*this);
+  }
+
+private:
+  FixtureScope<Namespace> &testFixtures_;  // NOLINT
+  FixtureScope<Namespace> &suiteFixtures_; // NOLINT
+};
+
+template <std::meta::info Namespace, std::meta::info FixtureFunction, usize ParameterIndex>
+auto fixtureDependencyArgument(FixtureResolver<Namespace> &resolver) -> decltype(auto) {
+  constexpr std::meta::info parameter = meta::parameters<FixtureFunction>[ParameterIndex];
+  using Value = meta::TypeObject<parameter>;
+  return resolver.template resolve<Value>();
 }
+
+template <std::meta::info Namespace, std::meta::info FixtureFunction>
+auto invokeFixture(FixtureResolver<Namespace> &resolver) -> meta::ReturnObject<FixtureFunction> {
+  constexpr usize parameterCount = meta::parameters<FixtureFunction>.size();
+
+  return withIndices<parameterCount>([&]<usize... Indices>(std::integral_constant<usize, Indices>...)
+                                         -> meta::ReturnObject<FixtureFunction> {
+    return [:FixtureFunction:](fixtureDependencyArgument<Namespace, FixtureFunction, Indices>(resolver)...);
+  });
+}
+
+template <std::meta::info Namespace, class Value>
+auto fixtureArgument(FixtureResolver<Namespace> &resolver) -> decltype(auto) {
+  return resolver.template resolve<Value>();
+}
+
+} // namespace detail
+
+template <std::meta::info Namespace>
+template <class Value>
+auto FixtureScope<Namespace>::get(detail::FixtureResolver<Namespace> &resolver) -> const Value & {
+  constexpr std::meta::info fixtureFunction = detail::fixtureFor<Namespace, Value>();
+  const std::type_index key{typeid(Value)};
+  FixtureSlot *slot{};
+
+  {
+    std::unique_lock lock{mutex_};
+    const auto found = values_.find(key);
+    if (found == values_.end()) {
+      const auto [entry, _] = values_.emplace(key, std::make_unique<FixtureSlot>());
+      slot = entry->second.get();
+    } else {
+      slot = found->second.get();
+    }
+
+    while (slot->state == FixtureState::Constructing) {
+      if (slot->owner == std::this_thread::get_id())
+        throw std::logic_error{"Nyx::Test detected recursive fixture construction."};
+
+      slot->ready.wait(lock, [slot] -> bool { return slot->state != FixtureState::Constructing; });
+    }
+
+    if (slot->state == FixtureState::Ready)
+      return fixtureValue<Value>(*slot);
+
+    slot->state = FixtureState::Constructing;
+    slot->owner = std::this_thread::get_id();
+  }
+
+  try {
+    UPtr<FixtureEntry> fixture =
+        std::make_unique<FixtureBox<Value>>(detail::invokeFixture<Namespace, fixtureFunction>(resolver));
+
+    std::lock_guard lock{mutex_};
+    constructionOrder_.push_back(key);
+    slot->value = std::move(fixture);
+    slot->owner = {};
+    slot->state = FixtureState::Ready;
+  } catch (...) {
+    {
+      std::lock_guard lock{mutex_};
+      slot->owner = {};
+      slot->state = FixtureState::Empty;
+    }
+
+    slot->ready.notify_all();
+    throw;
+  }
+
+  slot->ready.notify_all();
+  return fixtureValue<Value>(*slot);
+}
+
+namespace detail {
 
 template <std::meta::info Namespace,
     std::meta::info Function,
@@ -270,8 +442,7 @@ template <std::meta::info Namespace,
     class CaseValues,
     class ProviderValues>
 auto bindArgument(const Context &context,
-    FixtureScope<Namespace> &testFixtures,
-    FixtureScope<Namespace> &suiteFixtures,
+    FixtureResolver<Namespace> &fixtures,
     const CaseValues &caseValues,
     const ProviderValues &providerValues) -> decltype(auto) {
   constexpr std::meta::info parameter = meta::parameters<Function>[ParameterIndex];
@@ -306,14 +477,14 @@ auto bindArgument(const Context &context,
     }
   } else if constexpr (hasFixtureFor<Namespace, Value>()) {
     validateInputParameter<parameter>();
-    return fixtureArgument<Namespace, Value>(testFixtures, suiteFixtures);
+    return fixtureArgument<Namespace, Value>(fixtures);
   } else if constexpr (usesLegacyCaseBinding<Namespace, Function>()) {
     validateInputParameter<parameter>();
     if constexpr (ParameterIndex < caseValueCount) {
       return (std::get<ParameterIndex>(caseValues));
     } else {
       static_assert(meta::always_false_v<Value>,
-          "Nyx::Test could not bind a legacy Case parameter. Add [[= arg<\"name\">(fromCase)]] for injected "
+          "Nyx::Test could not bind a legacy Case parameter. Add [[= arg<\"name\">(fromCase) for injected "
           "tests.");
     }
   } else {
@@ -325,8 +496,7 @@ auto bindArgument(const Context &context,
 
 template <std::meta::info Namespace, std::meta::info Function, class CaseValues, class ProviderValues>
 constexpr auto invokeTest(const Context &context,
-    FixtureScope<Namespace> &testFixtures,
-    FixtureScope<Namespace> &suiteFixtures,
+    FixtureResolver<Namespace> &fixtures,
     const CaseValues &caseValues,
     const ProviderValues &providerValues) -> decltype(auto) {
   constexpr usize parameterCount = meta::parameters<Function>.size();
@@ -340,12 +510,12 @@ constexpr auto invokeTest(const Context &context,
 
   return withIndices<parameterCount>(
       [&]<usize... Indices>(std::integral_constant<usize, Indices>...) constexpr -> decltype(auto) {
-        return [:Function:](bindArgument<Namespace, Function, Indices>(
-            context, testFixtures, suiteFixtures, caseValues, providerValues)...);
+        return [:Function:](
+            bindArgument<Namespace, Function, Indices>(context, fixtures, caseValues, providerValues)...);
       });
 }
 
-/// Invokes a coroutine test while retaining every injected value through its final suspension point. In
+//// Invokes a coroutine test while retaining every injected value through its final suspension point. In
 /// particular, const-reference fixture parameters must remain valid after the test's first co_await.
 template <std::meta::info Namespace, std::meta::info Function, class CaseValues, class ProviderValues>
 auto invokeAsyncTest(const Context &context, // NOLINT(cppcoreguidelines-avoid-reference-coroutine-parameters)
@@ -353,14 +523,13 @@ auto invokeAsyncTest(const Context &context, // NOLINT(cppcoreguidelines-avoid-r
     CaseValues caseValues,
     ProviderValues providerValues) -> Task<TaskValueType<meta::ReturnObject<Function>>> {
   FixtureScope<Namespace> testFixtures{};
+  FixtureResolver<Namespace> fixtures{testFixtures, suiteFixtures};
 
   if constexpr (std::same_as<TaskValueType<meta::ReturnObject<Function>>, void>) {
-    co_await invokeTest<Namespace, Function>(
-        context, testFixtures, suiteFixtures, caseValues, providerValues);
+    co_await invokeTest<Namespace, Function>(context, fixtures, caseValues, providerValues);
     co_return;
   } else {
-    co_return co_await invokeTest<Namespace, Function>(
-        context, testFixtures, suiteFixtures, caseValues, providerValues);
+    co_return co_await invokeTest<Namespace, Function>(context, fixtures, caseValues, providerValues);
   }
 }
 
@@ -379,7 +548,8 @@ auto invokeWithFixtures(const Context &context,
     return invokeAsyncTest<Namespace, Function>(context, suiteFixtures, caseValues, providerValues);
   } else {
     FixtureScope<Namespace> testFixtures{};
-    return invokeTest<Namespace, Function>(context, testFixtures, suiteFixtures, caseValues, providerValues);
+    FixtureResolver<Namespace> fixtures{testFixtures, suiteFixtures};
+    return invokeTest<Namespace, Function>(context, fixtures, caseValues, providerValues);
   }
 }
 
