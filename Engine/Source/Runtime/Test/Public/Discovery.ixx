@@ -28,6 +28,20 @@ struct StaticMemberFunctions final {};
 
 inline constexpr StaticMemberFunctions staticMemberFunctions{};
 
+/// Describes which reflected test cases participate in a list or run operation.
+///
+/// Include patterns us '*' and '?' globs over fully qualified identifiers. Excludes always win. tagsAll
+/// requires every requested tag; tagsAny requires at least one requested tag when it is non-empty.
+struct TestSelection final {
+  Vec<String> include;
+  Vec<String> exclude;
+  Vec<String> tagsAll;
+  Vec<String> tagsAny;
+  Option<String> group;
+
+  [[nodiscard]] auto matches(const TestDescriptor &descriptor) const -> bool;
+};
+
 /// Immutable compile-time metadata emitted once for every registered suite.
 struct SuiteEntry final {
   using DescriptorFactory = Vec<TestDescriptor> (*)();
@@ -40,6 +54,11 @@ struct SuiteEntry final {
 };
 
 namespace detail {
+
+[[nodiscard]] auto filterDescriptors(Vec<TestDescriptor> descriptors, const TestSelection &selection)
+    -> Vec<TestDescriptor>;
+
+auto filterPlannedCases(RunSession &session, const TestSelection &selection) -> void;
 
 template <class Option>
 concept DiscoveryOption = std::same_as<std::remove_cvref_t<Option>, Recursive> or
@@ -168,6 +187,48 @@ consteval auto timeoutCount() -> usize {
 }
 
 template <std::meta::info Function>
+consteval auto groupCount() -> usize {
+  usize count{};
+
+  template for (constexpr std::meta::info annotation : meta::annotations<Function>) {
+    using Annotation = meta::TypeObject<annotation>;
+
+    if constexpr (is_group_v<Annotation>)
+      ++count;
+  }
+
+  return count;
+}
+
+template <std::meta::info Function>
+auto metadataOf() -> TestMetadata {
+  static_assert(
+      groupCount<Function>() <= 1, "Nyx::Test tests may declare at most one [[= group(...)]] annotation.");
+
+  TestMetadata metadata{};
+  const auto appendTag = [&metadata](StringView tagName) -> void {
+    const bool alreadyPresent = std::ranges::any_of(
+        metadata.tags, [tagName](const String &candidate) -> bool { return candidate == tagName; });
+    if (not alreadyPresent)
+      metadata.tags.emplace_back(tagName);
+  };
+
+  template for (constexpr std::meta::info annotation : meta::annotations<Function>) {
+    using Annotation = meta::TypeObject<annotation>;
+
+    if constexpr (is_group_v<Annotation>) {
+      constexpr Annotation groupAnnotation = std::meta::extract<Annotation>(annotation);
+      metadata.group = String{groupAnnotation.apply()};
+    } else if constexpr (is_tag_v<Annotation>) {
+      constexpr Annotation tagAnnotation = std::meta::extract<Annotation>(annotation);
+      tagAnnotation.apply([&appendTag](const auto &...tags) -> void { (appendTag(tags.apply()), ...); });
+    }
+  }
+
+  return metadata;
+}
+
+template <std::meta::info Function>
 auto policyOf() -> TestPolicy {
   static_assert(shouldPanicCount<Function>() <= 1,
       "Nyx::Test tests may declare at most one [[= shouldPanic(...)]] annotation.");
@@ -197,7 +258,7 @@ template <std::meta::info Function>
 auto makeTestDescriptor(usize testCase, StringView caseDescription = {}, StringView providerDescription = {})
     -> TestDescriptor {
   constexpr StringView name = meta::identifier<Function>;
-  String identifier{name};
+  String identifier{qualifiedNameOf<Function>()};
 
   if (not caseDescription.empty() or not providerDescription.empty()) {
     identifier.append("(");
@@ -220,6 +281,7 @@ auto makeTestDescriptor(usize testCase, StringView caseDescription = {}, StringV
       .description = String{descriptionOf<Function>()},
       .testCase = testCase,
       .policy = policyOf<Function>(),
+      .metadata = metadataOf<Function>(),
   };
 }
 
@@ -305,17 +367,19 @@ auto appendProviderWorkItems(Vec<detail::PlannedCase> &plannedCases,
         const auto providerTuple = std::make_tuple(providerValues...);
         const TestDescriptor descriptor =
             makeTestDescriptor<Function>(testCaseIndex, caseDescription, StringView{providerDescription});
-        plannedCases.push_back(
-            detail::PlannedCase{.execute = [descriptor, caseValues, providerTuple, &suiteFixtures](
-                                               TimeMode timeMode) -> TestExecution {
+        plannedCases.push_back(detail::PlannedCase{
+            .descriptor = descriptor,
+            .execute = [caseValues, providerTuple, &suiteFixtures](
+                           TestDescriptor descriptor, TimeMode timeMode) -> TestExecution {
               return run(
-                  descriptor,
+                  std::move(descriptor),
                   [caseValues, providerTuple, &suiteFixtures](const Context &context) -> decltype(auto) {
                     return detail::invokeWithFixtures<Namespace, Function>(
                         context, suiteFixtures, caseValues, providerTuple);
                   },
                   timeMode);
-            }});
+            },
+        });
         ++testCaseIndex;
       });
 
@@ -325,9 +389,10 @@ auto appendProviderWorkItems(Vec<detail::PlannedCase> &plannedCases,
   const String providerDescription = detail::missingProviderDescription<Function>();
   const TestDescriptor descriptor =
       makeTestDescriptor<Function>(testCaseIndex, caseDescription, StringView{providerDescription});
-  plannedCases.push_back(detail::PlannedCase{.execute = [descriptor](TimeMode timeMode) -> TestExecution {
-    return noProviderExecution<Function>(descriptor, timeMode);
-  }});
+  plannedCases.push_back(detail::PlannedCase{
+      .descriptor = descriptor, .execute = [](TestDescriptor descriptor, TimeMode timeMode) -> TestExecution {
+        return noProviderExecution<Function>(std::move(descriptor), timeMode);
+      }});
   ++testCaseIndex;
 }
 
@@ -404,6 +469,11 @@ template <std::meta::info Scope, class Configuration>
 }
 
 template <std::meta::info Scope, class Configuration>
+[[nodiscard]] auto listScope(const TestSelection &selection) -> Vec<TestDescriptor> {
+  return filterDescriptors(describeScope<Scope, Configuration>(), selection);
+}
+
+template <std::meta::info Scope, class Configuration>
 auto appendScopePlan(detail::RunSession &session) -> void {
   static_assert(detail::fixtureDeclarationsAreValid<Scope>());
 
@@ -413,9 +483,10 @@ auto appendScopePlan(detail::RunSession &session) -> void {
 }
 
 template <std::meta::info Scope, class Configuration>
-[[nodiscard]] auto runScope(RunOptions options) -> Vec<TestExecution> {
+[[nodiscard]] auto runScope(const TestSelection &selection, RunOptions options) -> Vec<TestExecution> {
   detail::RunSession session{};
   appendScopePlan<Scope, Configuration>(session);
+  filterPlannedCases(session, selection);
   return detail::executePlannedCases(session, options);
 }
 
@@ -479,12 +550,37 @@ auto describe(Options... /*unused*/) -> Vec<TestDescriptor> {
   return detail::describeScope<Scope, Configuration>();
 }
 
+/// Lists one reflected scope after applying metadata and qualified-name selection.
+template <std::meta::info Scope>
+[[nodiscard]] auto list(TestSelection selection = {}) -> Vec<TestDescriptor> {
+  static_assert(std::meta::is_namespace(Scope), "Provided Scope should be a namespace.");
+  return detail::listScope<Scope, detail::DiscoveryConfiguration<>>(selection);
+}
+
+/// Lists one reflected scope with explicit discovery options and selection.
+template <std::meta::info Scope, detail::DiscoveryOption... Options>
+  requires(sizeof...(Options) != 0)
+[[nodiscard]] auto list(TestSelection selection, Options... /*unused*/) -> Vec<TestDescriptor> {
+  using Configuration = detail::DiscoveryConfiguration<std::remove_cvref_t<Options>...>;
+  static_assert(std::meta::is_namespace(Scope) or Configuration::staticMemberFunctions_,
+      "Nyx::Test class-member discovery requires the staticMemberFunctions options.");
+  return detail::listScope<Scope, Configuration>(selection);
+}
+
 /// Executes all reflected tests and their declarative Case/provider annotations.
 template <std::meta::info Namespace>
 [[nodiscard]]
 auto runAll(RunOptions options = {}) -> Vec<TestExecution> {
   static_assert(std::meta::is_namespace(Namespace), "Provided Namespace should be a namespace.");
-  return detail::runScope<Namespace, detail::DiscoveryConfiguration<>>(options);
+  return detail::runScope<Namespace, detail::DiscoveryConfiguration<>>({}, options);
+}
+
+/// Executes one reflected namespace after selecting expanded cases.
+template <std::meta::info Namespace>
+[[nodiscard]]
+auto runAll(TestSelection selection, RunOptions options = {}) -> Vec<TestExecution> {
+  static_assert(std::meta::is_namespace(Namespace), "Provided Namespace should be a namespace.");
+  return detail::runScope<Namespace, detail::DiscoveryConfiguration<>>(selection, options);
 }
 
 /// Executes one reflected scope with explicit discovery options.
@@ -495,7 +591,7 @@ auto runAll(Options... /*unused*/) -> Vec<TestExecution> {
   using Configuration = detail::DiscoveryConfiguration<std::remove_cvref_t<Options>...>;
   static_assert(std::meta::is_namespace(Scope) or Configuration::staticMemberFunctions_,
       "Nyx::Test class-member discovery requires the staticMemberFunctions options.");
-  return detail::runScope<Scope, Configuration>({});
+  return detail::runScope<Scope, Configuration>({}, {});
 }
 
 /// Executes one reflected scope with explicit discovery and runner options.
@@ -506,14 +602,41 @@ auto runAll(RunOptions options, Options... /*unused*/) -> Vec<TestExecution> {
   using Configuration = detail::DiscoveryConfiguration<std::remove_cvref_t<Options>...>;
   static_assert(std::meta::is_namespace(Scope) or Configuration::staticMemberFunctions_,
       "Nyx::Test class-member discovery requires the staticMemberFunctions options.");
-  return detail::runScope<Scope, Configuration>(options);
+  return detail::runScope<Scope, Configuration>({}, options);
+}
+
+/// Executes one reflected scope with explicit discovery options and selection.
+template <std::meta::info Scope, detail::DiscoveryOption... Options>
+  requires(sizeof...(Options) != 0)
+[[nodiscard]] auto runAll(TestSelection selection, Options... /*unused*/) -> Vec<TestExecution> {
+  using Configuration = detail::DiscoveryConfiguration<std::remove_cvref_t<Options>...>;
+  static_assert(std::meta::is_namespace(Scope) or Configuration::staticMemberFunctions_,
+      "Nyx::Test class-member discovery requires the staticMemberFunctions options.");
+  return detail::runScope<Scope, Configuration>(selection, {});
+}
+
+/// Executes one reflected scope with explicit discovery, selection, and runner options.
+template <std::meta::info Scope, detail::DiscoveryOption... Options>
+  requires(sizeof...(Options) != 0)
+[[nodiscard]] auto runAll(TestSelection selection, RunOptions options, Options... /*unused*/)
+    -> Vec<TestExecution> {
+  using Configuration = detail::DiscoveryConfiguration<std::remove_cvref_t<Options>...>;
+  static_assert(std::meta::is_namespace(Scope) or Configuration::staticMemberFunctions_,
+      "Nyx::Test class-member discovery requires the staticMemberFunctions options.");
+  return detail::runScope<Scope, Configuration>(selection, options);
 }
 
 /// Describes every suite registered by file-scope discover<^^Scope>() calls.
 [[nodiscard]] auto discover() -> Vec<TestDescriptor>;
 
+/// Lists every registered suite after applying metadata and qualified-name selection.
+[[nodiscard]] auto list(TestSelection selection = {}) -> Vec<TestDescriptor>;
+
 /// Executes every suite registered by file-scope discover<^^Scope>() calls.
 [[nodiscard]] auto runAll(RunOptions options = {}) -> Vec<TestExecution>;
+
+/// Executes selected cases from every file-scope registered suite..
+[[nodiscard]] auto runAll(TestSelection selection, RunOptions options = {}) -> Vec<TestExecution>;
 
 } // namespace Nyx::Test
 // NOLINTEND(bugprone-reserved-identifier)

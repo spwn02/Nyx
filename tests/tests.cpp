@@ -5,8 +5,10 @@ import Nyx.Test;
 using namespace Nyx;
 using namespace Nyx::Test;
 
-auto main() -> int {
-  const Vec<TestExecution> executions = runAll({.jobs = 16});
+auto main() -> int { // NOLINT
+  const Vec<TestExecution> executions = runAll({
+      .jobs = 16,
+  });
   Reporter{
       ReporterOptions{
           .renderer =

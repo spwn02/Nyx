@@ -9,7 +9,7 @@ using namespace Nyx::RHI;
 // NOLINTBEGIN(cppcoreguidelines-avoid-magic-numbers, readability-magic-numbers)
 namespace Tests::RHI {
 
-[[= test]] auto textureFormatMetadata() -> void {
+[[ = test, = group("core"), = tag("rhi") ]] auto textureFormatMetadata() -> void {
   check(texture_format_info_v<TextureFormat::Rgba8Unorm>.blockBytes == 4);
   check(texture_format_info_v<TextureFormat::Rgba8UnormSrgb>.srgb);
   check(texture_format_info_v<TextureFormat::D32Float>.aspects == TextureAspect::Depth);

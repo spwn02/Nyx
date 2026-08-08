@@ -58,6 +58,8 @@ auto resetFixtureCounters() -> void {
 
 [[
   = test,
+  = group("framework"),
+  = tag("fixtures", "subjects"),
   = description("injects a context and both fixture lifetimes"),
   = Case{11},
   = Case{29},
@@ -80,15 +82,21 @@ auto resetFixtureCounters() -> void {
   check(active->get().testCase == ctx.testCase);
 }
 
-[[= test]] auto reusesNormalFixtureWithinOneTest(PerTest first, const PerTest &second) -> void {
+[[ = test, = group("framework"), = tag("fixtures", "subjects") ]] auto reusesNormalFixtureWithinOneTest(
+    PerTest first,
+    const PerTest &second) -> void {
   require(eq(first.instance, second.instance));
 }
 
-[[ = test,
+[[
+  = test,
+  = group("framework"),
+  = tag("fixtures", "subjects"),
   = Case{11},
   = Case{29},
   = arg<"ctx">(context),
-  = arg<"input">(fromCase) ]] auto receivesAsyncContext(Context ctx,
+  = arg<"input">(fromCase)
+]] auto receivesAsyncContext(Context ctx,
     u32 input,
     const Transient &transientValue,           // NOLINT
     const Shared &sharedValue) -> Task<void> { // NOLINT
@@ -211,8 +219,14 @@ auto resetDependencyCounters() -> void {
   };
 }
 
-[[ = test, = Case{0}, = Case{1}, = arg<"expectedTestCase">(fromCase) ]] auto receivesACompleteFixtureGraph(
-    u32 expectedTestCase,
+[[
+  = test,
+  = group("framework"),
+  = tag("fixtures", "subjects"),
+  = Case{0},
+  = Case{1},
+  = arg<"expectedTestCase">(fromCase)
+]] auto receivesACompleteFixtureGraph(u32 expectedTestCase,
     const Repository &repositoryValue,
     const Connection &connectionValue,
     const SharedGateway &gateway,
@@ -228,14 +242,16 @@ auto resetDependencyCounters() -> void {
   check(active->get().testCase == expectedTestCase);
 }
 
-[[= test]] auto receivesAResolvedDependency(const Connection &connectionValue, const SharedGateway &gateway)
-    -> void {
+[[ = test, = group("framework"), = tag("fixtures", "subjects") ]] auto receivesAResolvedDependency(
+    const Connection &connectionValue,
+    const SharedGateway &gateway) -> void {
   require(connectionValue.settingsRevision == gateway.settingsRevision);
 }
 
-[[= test]] auto retainsFixtureDependenciesAcrossAwait(const Repository &repositoryValue, // NOLINT
-    const Connection &connectionValue,                                                   // NOLINT
-    const SharedSettings &settings) -> Task<void> {                                      // NOLINT
+[[ = test, = group("framework"), = tag("fixtures", "subjects") ]] auto retainsFixtureDependenciesAcrossAwait(
+    const Repository &repositoryValue,              // NOLINT
+    const Connection &connectionValue,              // NOLINT
+    const SharedSettings &settings) -> Task<void> { // NOLINT
   co_await yield();
 
   require(repositoryValue.settingsRevision == settings.revision);
@@ -244,7 +260,7 @@ auto resetDependencyCounters() -> void {
 
 } // namespace DependencySubjects
 
-[[= test]] auto directRunInjectsContext() -> void {
+[[ = test, = group("framework"), = tag("fixtures") ]] auto directRunInjectsContext() -> void {
   const Option<Ref<const Context>> outer = currentContext();
   const auto location = std::source_location::current();
   const TestExecution execution = run(
@@ -271,7 +287,7 @@ auto resetDependencyCounters() -> void {
   check(currentContext()->get().name == outer->get().name);
 }
 
-[[= test]] auto reflectedInjectionUsesFixtureScopes() -> void {
+[[ = test, = group("framework"), = tag("fixtures") ]] auto reflectedInjectionUsesFixtureScopes() -> void {
   FixtureSubjects::resetFixtureCounters();
 
   const Vec<TestExecution> firstRun = runAll<^^FixtureSubjects>();
@@ -293,7 +309,8 @@ auto resetDependencyCounters() -> void {
   check(firstRun[3].descriptor.name == "receivesAsyncContext"_exp);
 }
 
-[[= test]] auto reflectedFixtureDependenciesRespectScopeLifetimes() -> void {
+[[ = test, = group("framework"), = tag("fixtures") ]] auto reflectedFixtureDependenciesRespectScopeLifetimes()
+    -> void {
   using DependencySubjects::FixtureEvent;
 
   constexpr Array<FixtureEvent, 9> expectedDestructions{

@@ -35,7 +35,7 @@ auto executePlannedCases(RunSession &session, const RunOptions &options) -> Vec<
 
   if (workers == 1) {
     return plannedCases | std::views::transform([&options](PlannedCase &plannedCase) -> TestExecution {
-      return plannedCase.execute(options.timeMode);
+      return plannedCase.execute(std::move(plannedCase.descriptor), options.timeMode);
     }) | std::ranges::to<Vec<TestExecution>>();
   }
 
@@ -48,7 +48,8 @@ auto executePlannedCases(RunSession &session, const RunOptions &options) -> Vec<
       if (index >= plannedCases.size())
         return;
 
-      executions[index] = plannedCases[index].execute(options.timeMode);
+      executions[index] =
+          plannedCases[index].execute(std::move(plannedCases[index].descriptor), options.timeMode);
     }
   };
 

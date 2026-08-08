@@ -91,7 +91,8 @@ auto driveDirectly(Task<Value> &task, detail::RunLoop &runLoop) -> void {
 
 } // namespace
 
-[[= test]] auto doesNotResumeADoublyScheduledCoroutineBeforeItsTimer() -> void {
+[[ = test, = group("framework"), = tag("lifecycle") ]] auto
+doesNotResumeADoublyScheduledCoroutineBeforeItsTimer() -> void {
   constexpr usize expectedCompletions{1};
   usize completions{};
   const TestExecution execution = runVirtually("double schedule", [&completions] -> Task<void> { // NOLINT
@@ -106,7 +107,7 @@ auto driveDirectly(Task<Value> &task, detail::RunLoop &runLoop) -> void {
   check(execution.state.diagnostics.empty());
 }
 
-[[= test]] auto reportsAStrandedAsyncTask() -> void {
+[[ = test, = group("framework"), = tag("lifecycle") ]] auto reportsAStrandedAsyncTask() -> void {
   const TestExecution execution = runVirtually("stranded", [] -> Task<void> { co_await NeverResumes{}; });
 
   require(execution.failed());
@@ -122,7 +123,8 @@ auto driveDirectly(Task<Value> &task, detail::RunLoop &runLoop) -> void {
   check(diagnostic.details.notes.back().level == DiagnosticLevel::Help);
 }
 
-[[= test]] auto reportsOnlyTheTimeoutWhenCancellationCannotResumeATask() -> void {
+[[ = test, = group("framework"), = tag("lifecycle") ]] auto
+reportsOnlyTheTimeoutWhenCancellationCannotResumeATask() -> void {
   const TestExecution execution = runVirtually(
       "cancelled stranded", [] -> Task<void> { co_await NeverResumes{}; }, std::chrono::milliseconds{0});
 
@@ -132,7 +134,8 @@ auto driveDirectly(Task<Value> &task, detail::RunLoop &runLoop) -> void {
   check(execution.state.diagnostics.front().header.code == DiagnosticCode::TimeoutExceeded);
 }
 
-[[= test]] auto reportsAndCleansPendingWorkAfterATaskCompletes() -> void {
+[[ = test, = group("framework"), = tag("lifecycle") ]] auto reportsAndCleansPendingWorkAfterATaskCompletes()
+    -> void {
   const TestExecution invalidExecution =
       runVirtually("pending work", [] -> Task<void> { co_await ScheduleWithoutSuspending{}; });
   const TestExecution followingExecution = runVirtually("following", [] -> void { require(true); });
@@ -147,7 +150,7 @@ auto driveDirectly(Task<Value> &task, detail::RunLoop &runLoop) -> void {
   check(detail::currentRunLoop() == nullptr);
 }
 
-[[= test]] auto clearsRunLoopTicketsWhenDrivingFails() -> void {
+[[ = test, = group("framework"), = tag("lifecycle") ]] auto clearsRunLoopTicketsWhenDrivingFails() -> void {
   detail::RunLoop runLoop{TimeMode::Virtual};
   Task<void> pending = taskWithPendingWork();
   bool caught{};
@@ -169,7 +172,8 @@ auto driveDirectly(Task<Value> &task, detail::RunLoop &runLoop) -> void {
   check(detail::currentRunLoop() == nullptr);
 }
 
-[[= test]] auto restoresTaskLocalBindingsAfterAsyncAbort() -> void {
+[[ = test, = group("framework"), = tag("lifecycle") ]] auto restoresTaskLocalBindingsAfterAsyncAbort()
+    -> void {
   bool cleaned{};
   const Option<Ref<TestEnvironment>> outerEnvironment = currentEnvironment();
   const Option<Ref<const Context>> outerContext = currentContext();
@@ -192,7 +196,7 @@ auto driveDirectly(Task<Value> &task, detail::RunLoop &runLoop) -> void {
   check(std::addressof(currentContext()->get()) == std::addressof(outerContext->get()));
 }
 
-[[= test]] auto runsCancellationCleanupExactlyOnce() -> void {
+[[ = test, = group("framework"), = tag("lifecycle") ]] auto runsCancellationCleanupExactlyOnce() -> void {
   constexpr usize expectedCleanupCalls{1};
   usize cleanupCalls{};
   bool observedStop{};

@@ -22,7 +22,8 @@ namespace detail {
 
 /// One fully expanded reflected Case/provider combination ready for indepndent execution.
 struct PlannedCase final {
-  std::move_only_function<TestExecution(TimeMode)> execute;
+  TestDescriptor descriptor{};
+  std::move_only_function<TestExecution(TestDescriptor, TimeMode)> execute;
 };
 
 /// Owns opaque suite-local state while its PlannedCase values execute.

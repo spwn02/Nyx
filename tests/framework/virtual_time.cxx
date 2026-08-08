@@ -116,14 +116,15 @@ auto nestedParent() -> Task<void> {
 
 namespace runnerProbe {
 
-[[= test]] auto oneHourTask() -> Task<void> {
+[[ = test, = group("framework"), = tag("virtual_time", "subjects") ]] auto oneHourTask() -> Task<void> {
   co_await sleepFor(std::chrono::hours{1});
   require(true);
 }
 
 } // namespace runnerProbe
 
-[[= test]] auto equalDeadlineTimersKeepSchedulingOrder() -> void {
+[[ = test, = group("framework"), = tag("virtual_time") ]] auto equalDeadlineTimersKeepSchedulingOrder()
+    -> void {
   detail::RunLoop runLoop{TimeMode::Virtual};
   Vec<usize> order{};
   TimerProbe first = recordTimer(order, 1);
@@ -147,7 +148,8 @@ namespace runnerProbe {
   require(order == Vec<usize>{1, 2});
 }
 
-[[= test]] auto virtualTimeCompletesOneHourWithoutWaiting() -> void {
+[[ = test, = group("framework"), = tag("virtual_time") ]] auto virtualTimeCompletesOneHourWithoutWaiting()
+    -> void {
   const Clock::time_point started = Clock::now();
   const TestExecution execution = runVirtually("one hour virtual wait", oneHourSleep);
   const Clock::duration wallElapsed = Clock::now() - started;
@@ -157,14 +159,14 @@ namespace runnerProbe {
   require(wallElapsed < std::chrono::seconds{1});
 }
 
-[[= test]] auto virtualTimeFlowsThroughNestedTasks() -> void {
+[[ = test, = group("framework"), = tag("virtual_time") ]] auto virtualTimeFlowsThroughNestedTasks() -> void {
   const TestExecution execution = runVirtually("nested virtual task", nestedParent);
 
   require(execution.passed());
   require(eq(execution.duration, std::chrono::seconds{2}));
 }
 
-[[= test]] auto virtualTimeoutWinsTimerTie() -> void {
+[[ = test, = group("framework"), = tag("virtual_time") ]] auto virtualTimeoutWinsTimerTie() -> void {
   bool observedStop{};
   const TestExecution execution = runVirtually(
       "timer timeout tie",
@@ -184,7 +186,7 @@ namespace runnerProbe {
   require(execution.state.diagnostics.front().header.code == DiagnosticCode::TimeoutExceeded);
 }
 
-[[= test]] auto virtualTimeoutRunsCoroutineCleanup() -> void {
+[[ = test, = group("framework"), = tag("virtual_time") ]] auto virtualTimeoutRunsCoroutineCleanup() -> void {
   bool cleanupRan{};
   bool observedStop{};
   const TestExecution execution = runVirtually(
@@ -204,7 +206,7 @@ namespace runnerProbe {
   require(execution.state.errors == 1);
 }
 
-[[= test]] auto runOptionsPropagateVirtualTime() -> void {
+[[ = test, = group("framework"), = tag("virtual_time") ]] auto runOptionsPropagateVirtualTime() -> void {
   const Clock::time_point started = Clock::now();
   const Vec<TestExecution> executions =
       runAll<^^Tests::virtualTime::runnerProbe>(RunOptions{.timeMode = TimeMode::Virtual});

@@ -8,7 +8,7 @@ using namespace Nyx::Test;
 
 namespace Tests::fs {
 
-[[= test]] auto fileIsDirectory() -> void {
+[[ = test, = group("core"), = tag("fs") ]] auto fileIsDirectory() -> void {
   const Path path = std::filesystem::current_path();
   constexpr OpenOptions options{
       .create = true,
@@ -19,7 +19,7 @@ namespace Tests::fs {
   require(err.display().starts_with("Error: Provided file is a directory"));
 }
 
-[[= test]] auto createFileWithoutWriteMode() -> void {
+[[ = test, = group("core"), = tag("fs") ]] auto createFileWithoutWriteMode() -> void {
   const Path path = std::filesystem::current_path() / "tests" / "foo.txt";
   constexpr OpenOptions options{
       .create = true,
@@ -30,7 +30,7 @@ namespace Tests::fs {
   require(err.display().starts_with("Error: Attempted to create a file without write/append mode"));
 }
 
-[[= test]] auto fileDoesNotExist() -> void {
+[[ = test, = group("core"), = tag("fs") ]] auto fileDoesNotExist() -> void {
   const Path path = std::filesystem::current_path() / "tests" / "bar.txt";
   constexpr OpenOptions options{
       .read = true,
@@ -42,7 +42,7 @@ namespace Tests::fs {
                                     "without create/create_new mode"));
 }
 
-[[= test]] auto readWriteNotChosen() -> void {
+[[ = test, = group("core"), = tag("fs") ]] auto readWriteNotChosen() -> void {
   const Path path = std::filesystem::current_path() / "tests" / "foo.txt";
   constexpr OpenOptions options{};
   const Result<File> res = options.open(path);
@@ -52,7 +52,7 @@ namespace Tests::fs {
                                     "any of read/write/append modes"));
 }
 
-[[= test]] auto truncateFileWithoutWriteMode() -> void {
+[[ = test, = group("core"), = tag("fs") ]] auto truncateFileWithoutWriteMode() -> void {
   const Path path = std::filesystem::current_path() / "tests" / "foo.txt";
   constexpr OpenOptions options{.truncate = true};
   const Result<File> res = options.open(path);
@@ -61,7 +61,7 @@ namespace Tests::fs {
   require(err.display().starts_with("Error: Attempted to truncate file without write mode"));
 }
 
-[[ = test, = trace ]] auto fileOperations() -> void {
+[[ = test, = trace, = group("core"), = tag("fs") ]] auto fileOperations() -> void {
   const Path path = std::filesystem::current_path() / "tests" / "foo.txt";
   OpenOptions options{
       .create = true,

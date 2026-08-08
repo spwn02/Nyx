@@ -30,7 +30,7 @@ static constexpr f32 posX = 10;
 static constexpr f32 posY = 20;
 static constexpr f32 acceleration = 45;
 
-[[ = test, = trace ]] auto debug() -> void {
+[[ = test, = trace, = group("core"), = tag("debug") ]] auto debug() -> void {
   traceEvent("formatting Vec2 ...");
 
   Vec2 vec2{
@@ -89,7 +89,7 @@ struct[[= Nyx::debug::derive]] Vec3 {
   [[= Nyx::debug::hide]] f32 acc{};
 };
 
-[[= test]] auto structsWithHiddenMembers() -> void {
+[[ = test, = group("core"), = tag("debug") ]] auto structsWithHiddenMembers() -> void {
   check(std::format("{}", Vec3{}) == R"(Vec3 { x: 0, y: 0, z: 0 })"_exp);
 }
 
@@ -105,13 +105,13 @@ struct[[= Nyx::debug::derive]] VideoChunk : DataChunk {
   [[= Nyx::debug::hide]] u32 version{1};
 };
 
-[[= test]] auto structWithRenamedMembers() -> void {
+[[ = test, = group("core"), = tag("debug") ]] auto structWithRenamedMembers() -> void {
   check(std::format("{}", VideoChunk{}) == "VideoChunk { signature: 1447642160 }"_exp);
 }
 
 struct[[= Nyx::debug::derive]] Empty {};
 
-[[= test]] auto emptyStruct() -> void {
+[[ = test, = group("core"), = tag("debug") ]] auto emptyStruct() -> void {
   check(std::format("{}", Empty{}) == "Empty"_exp);
 }
 
@@ -120,7 +120,7 @@ struct[[= Nyx::debug::derive]] EmptyNested {
   Empty empty;
 };
 
-[[= test]] auto emptyNestedStruct() -> void {
+[[ = test, = group("core"), = tag("debug") ]] auto emptyNestedStruct() -> void {
   check(std::format("{}", EmptyNested{}) == "EmptyNested { a: 0, b: 0, c: 0, empty: Empty }"_exp);
 }
 
@@ -129,7 +129,7 @@ struct[[= Nyx::debug::derive]] AllHidden {
   [[= Nyx::debug::hide]] bool c{};
 };
 
-[[= test]] auto allHiddenStruct() -> void {
+[[ = test, = group("core"), = tag("debug") ]] auto allHiddenStruct() -> void {
   /// Same as Empty
   check(std::format("{}", AllHidden{}) == "AllHidden"_exp);
 }
@@ -140,14 +140,14 @@ enum class[[= Nyx::debug::derive]] Color : u8 {
   Blue = 3,
 };
 
-[[= test]] auto enumDisplay() -> void {
+[[ = test, = group("core"), = tag("debug") ]] auto enumDisplay() -> void {
   check(std::format("{}", Color::Red) == "Red"_exp);
   check(std::format("{}", Color::Green) == "Green"_exp);
   check(std::format("{}", Color::Blue) == "Blue"_exp);
   check(std::format("{}", static_cast<Color>(69)) == "<unnamed>"_exp);
 }
 
-[[= test]] auto renamedEnum() -> void {
+[[ = test, = group("core"), = tag("debug") ]] auto renamedEnum() -> void {
   enum class[[= Nyx::debug::derive]] Status : u8 {
     Failed[[= Nyx::debug::rename<"failed">()]] = 1,
     Skipped[[= Nyx::debug::rename<"skipped">()]],
@@ -159,7 +159,7 @@ enum class[[= Nyx::debug::derive]] Color : u8 {
   check(std::format("{}", Status::Success) == "success"_exp);
 }
 
-[[= test]] auto hiddenEnum() -> void {
+[[ = test, = group("core"), = tag("debug") ]] auto hiddenEnum() -> void {
   enum class[[= Nyx::debug::derive]] HiddenEnum : u8 {
     Default = 1,
     Hidden[[= Nyx::debug::hide]],
@@ -169,7 +169,7 @@ enum class[[= Nyx::debug::derive]] Color : u8 {
   check(std::format("{}", HiddenEnum::Hidden) == "<unnamed>"_exp);
 }
 
-[[= test]] auto hiddenEnumWithDefaultEnumerator() -> void {
+[[ = test, = group("core"), = tag("debug") ]] auto hiddenEnumWithDefaultEnumerator() -> void {
   enum class[[= Nyx::debug::derive]] HiddenEnum : u8 {
     Default[[ = Nyx::debug::prefer, = Nyx::debug::rename<"default">() ]] = 1,
     Hidden[[= Nyx::debug::hide]],

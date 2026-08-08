@@ -12,6 +12,12 @@ import :Task;
 
 export namespace Nyx::Test {
 
+/// Immutable reflected labels attached to an expanded test case.
+struct TestMetadata final {
+  Option<String> group;
+  Vec<String> tags;
+};
+
 struct TestDescriptor final {
   String identifier;
   std::source_location location;
@@ -19,6 +25,7 @@ struct TestDescriptor final {
   String description;
   usize testCase{};
   TestPolicy policy{};
+  TestMetadata metadata{};
 };
 
 struct TestExecution final {

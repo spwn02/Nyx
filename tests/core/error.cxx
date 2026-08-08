@@ -7,20 +7,20 @@ using namespace Nyx::Test;
 
 namespace Tests::error {
 
-[[ = test, = shouldPanic("Failed") ]] auto fail() -> Result<usize> {
+[[ = test, = group("Core"), = tag("error"), = shouldPanic("Failed") ]] auto fail() -> Result<usize> {
   return bail({"Failed"});
 }
 
-[[= test]] auto errorStoresMessage() -> void {
+[[ = test, = group("Core"), = tag("error") ]] auto errorStoresMessage() -> void {
   Error err{"invalid query"};
   check(err.display() == "Error: invalid query\n"_exp);
 }
 
-[[= test]] auto errorFunction() -> void {
+[[ = test, = group("Core"), = tag("error") ]] auto errorFunction() -> void {
   check(not fail());
 }
 
-[[ = test, = shouldPanic() ]] auto empty() -> Result<void> {
+[[ = test, = group("Core"), = tag("error"), = shouldPanic() ]] auto empty() -> Result<void> {
   return bail({});
 }
 
@@ -50,7 +50,7 @@ auto start() -> Result<void> {
   });
 }
 
-[[= test]] auto stackTrace() -> void {
+[[ = test, = group("core"), = tag("debug") ]] auto stackTrace() -> void {
   Result<void> res = start();
   require(not res);
   check(res.error().display() == R"(Error: Failed to start the application
@@ -61,7 +61,7 @@ Caused by:
   2: Failed to open a file: /home/spawn/dev/cpp/Nyx/foo.txt)"_exp);
 }
 
-[[= test]] auto errorLocation() -> void {
+[[ = test, = group("core"), = tag("debug") ]] auto errorLocation() -> void {
   const auto location = std::source_location::current();
   Error::Message msg{"Message", location};
   check(msg.location.file_name() == location.file_name());
@@ -69,7 +69,7 @@ Caused by:
   check(msg.location.column() == location.column());
 }
 
-[[ = test, = trace ]] auto releaseError() -> void {
+[[ = test, = trace, = group("core"), = tag("debug") ]] auto releaseError() -> void {
   Error err1{"This value is about to be moved"};
   traceEvent("instantiated the first error");
 

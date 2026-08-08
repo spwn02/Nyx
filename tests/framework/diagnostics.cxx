@@ -24,7 +24,7 @@ auto makeDiagnosticForRendering() -> Diagnostic {
 
   return diagnostic;
 }
-[[= test]] auto diagnostics() -> void {
+[[ = test, = group("framework"), = tag("diagnostics") ]] auto diagnostics() -> void {
   const Diagnostic diagnostic = makeDiagnosticForRendering();
   const SourceSpan &primary = diagnostic.primarySpan()->get();
   const usize lineNumberWidth = std::to_string(primary.location.line()).size();

@@ -15,7 +15,7 @@ enum class[[= Nyx::bitflags]] BufferUsage : Nyx::u8 {
 // NOLINTBEGIN(cppcoreguidelines-avoid-magic-numbers, readability-magic-numbers)
 namespace Tests::bitflags {
 
-[[= test]] auto bitflags() -> void {
+[[ = test, = group("core"), = tag("bitflags") ]] auto bitflags() -> void {
   BufferUsage flags = BufferUsage::Vertex | BufferUsage::Index;
   check(Nyx::bits(flags) == 0b11_exp);
   flags |= BufferUsage::Storage;
@@ -23,21 +23,21 @@ namespace Tests::bitflags {
   check(Nyx::has(flags, BufferUsage::Vertex));
 }
 
-[[= test]] auto bitflagsDisplay() -> void {
+[[ = test, = group("core"), = tag("bitflags") ]] auto bitflagsDisplay() -> void {
   BufferUsage flags = BufferUsage::Vertex | BufferUsage::Storage;
   check(std::format("{}", flags) == "9"_exp);
   check(std::format("{:b}", flags) == "00001001"_exp);
   check(std::format("{:x}", flags) == "9"_exp);
 }
 
-[[= test]] auto bitflagsDisplayWithPrefix() -> void {
+[[ = test, = group("core"), = tag("bitflags") ]] auto bitflagsDisplayWithPrefix() -> void {
   BufferUsage flags = BufferUsage::Vertex | BufferUsage::Storage;
   check(std::format("{:p}", flags) == "9"_exp);
   check(std::format("{:bp}", flags) == "0b00001001"_exp);
   check(std::format("{:xp}", flags) == "0x9"_exp);
 }
 
-[[= test]] auto bitflagsAll() -> Expression {
+[[ = test, = group("core"), = tag("bitflags") ]] auto bitflagsAll() -> Expression {
   return Nyx::bits(Nyx::all<BufferUsage>()) == 0b1001011_exp;
 }
 

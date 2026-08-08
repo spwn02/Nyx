@@ -14,7 +14,7 @@ auto delayedValue() -> Task<i32> {
   co_return value;
 }
 
-[[= test]] auto executesVoidTestsInAnEnvironment() -> void {
+[[ = test, = group("framework"), = tag("executions") ]] auto executesVoidTestsInAnEnvironment() -> void {
   const TestExecution execution = run("void", [] -> void { require(currentEnvironment()); });
 
   check(execution.passed());
@@ -22,7 +22,7 @@ auto delayedValue() -> Task<i32> {
   check(currentEnvironment());
 }
 
-[[= test]] auto normalizesBooleanReturnValues() -> void {
+[[ = test, = group("framework"), = tag("executions") ]] auto normalizesBooleanReturnValues() -> void {
   constexpr usize expectedAssertions{1};
   constexpr usize expectedFailures{1};
   const auto location = std::source_location::current();
@@ -44,7 +44,7 @@ auto delayedValue() -> Task<i32> {
   check(execution.state.diagnostics.front().details.spans.front().label == "test return"_exp);
 }
 
-[[= test]] auto normalizesResultReturnValues() -> void {
+[[ = test, = group("framework"), = tag("executions") ]] auto normalizesResultReturnValues() -> void {
   constexpr usize expectedAssertions{1};
   constexpr usize expectedFailures{1};
   constexpr usize expectedErrors{1};
@@ -69,7 +69,8 @@ auto delayedValue() -> Task<i32> {
   check(returnedError.state.diagnostics.front().details.notes.front().message == "invalid user"_exp);
 }
 
-[[= test]] auto capturesFatalRequirementsAtTheTestBoundary() -> void {
+[[ = test, = group("framework"), = tag("executions") ]] auto capturesFatalRequirementsAtTheTestBoundary()
+    -> void {
   constexpr usize expectedAssertions{1};
   constexpr usize expectedFailures{1};
   bool continued{};
@@ -87,7 +88,8 @@ auto delayedValue() -> Task<i32> {
   check(execution.state.diagnostics.front().details.spans.front().label == "requirement"_exp);
 }
 
-[[= test]] auto preservesTaskLocalBindingsAcrossAsyncResumption() -> void {
+[[ = test, = group("framework"), = tag("executions") ]] auto preservesTaskLocalBindingsAcrossAsyncResumption()
+    -> void {
   constexpr usize expectedAssertions{4};
   bool completed{};
   const TestExecution execution = run("asyncBindings", [&completed] -> Task<void> { // NOLINT
@@ -106,7 +108,7 @@ auto delayedValue() -> Task<i32> {
   require(execution.state.assertions == expectedAssertions);
 }
 
-[[= test]] auto awaitsNestedAsyncTasks() -> void {
+[[ = test, = group("framework"), = tag("executions") ]] auto awaitsNestedAsyncTasks() -> void {
   constexpr usize expectedAssertions{1};
   const TestExecution execution = run("nestedAsync", [] -> Task<bool> {
     constexpr i32 expectedValue{69};
@@ -119,7 +121,7 @@ auto delayedValue() -> Task<i32> {
   require(execution.state.diagnostics.empty());
 }
 
-[[= test]] auto normalizesAsyncReturnValues() -> void {
+[[ = test, = group("framework"), = tag("executions") ]] auto normalizesAsyncReturnValues() -> void {
   constexpr usize expectedAssertions{1};
   constexpr usize expectedErrors{1};
   const TestExecution returnedTrue = run("asyncTrue", [] -> Task<bool> {
@@ -146,7 +148,8 @@ auto delayedValue() -> Task<i32> {
   check(returnedError.state.diagnostics.front().details.notes.front().message == "async failure"_exp);
 }
 
-[[= test]] auto capturesAsyncFatalRequirementsAtTheTestBoundary() -> void {
+[[ = test, = group("framework"), = tag("executions") ]] auto capturesAsyncFatalRequirementsAtTheTestBoundary()
+    -> void {
   constexpr usize expectedAssertions{1};
   constexpr usize expectedFailures{1};
   bool continued{};
@@ -165,7 +168,8 @@ auto delayedValue() -> Task<i32> {
   check(execution.state.diagnostics.front().details.spans.front().label == "requirement"_exp);
 }
 
-[[= test]] auto capturesAsyncExceptionsAtTheTestBoundary() -> void {
+[[ = test, = group("framework"), = tag("executions") ]] auto capturesAsyncExceptionsAtTheTestBoundary()
+    -> void {
   constexpr usize expectedErrors{1};
   const TestExecution execution = run("asyncThrows", [] -> Task<void> {
     co_await yield();
@@ -179,7 +183,7 @@ auto delayedValue() -> Task<i32> {
         "exception: broken async test"_exp);
 }
 
-[[= test]] auto capturesUnhandledExceptions() -> void {
+[[ = test, = group("framework"), = tag("executions") ]] auto capturesUnhandledExceptions() -> void {
   constexpr usize expectedErrors{1};
   const TestExecution execution = run("throws", [] -> void { throw std::runtime_error{"broken test"}; });
 
@@ -191,7 +195,7 @@ auto delayedValue() -> Task<i32> {
   check(execution.state.diagnostics.front().details.notes.front().message == "exception: broken test"_exp);
 }
 
-[[= test]] auto reportsAggregateResults() -> void {
+[[ = test, = group("framework"), = tag("executions") ]] auto reportsAggregateResults() -> void {
   constexpr usize progressBarWidth{80};
   constexpr usize expectedTests{3};
   constexpr usize expectedPassed{1};

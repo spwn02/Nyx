@@ -11,28 +11,38 @@ namespace Tests::policies {
 
 namespace PolicySubjects {
 
-[[ = test, = shouldPanic("explicit panic") ]] auto explicitPanic() -> void {
+[[ = test, = group("framework"), = tag("policies", "subjects"), = shouldPanic("explicit panic") ]] auto
+explicitPanic() -> void {
   panic("explicit panic");
 }
 
-[[ = test, = shouldPanic("returned error") ]] auto returnedError() -> Result<void> {
+[[ = test, = group("framework"), = tag("policies", "subjects"), = shouldPanic("returned error") ]] auto
+returnedError() -> Result<void> {
   return bail({"returned error"});
 }
 
-[[ = test, = shouldPanic("exception panic") ]] auto thrownException() -> void {
+[[ = test, = group("framework"), = tag("policies", "subjects"), = shouldPanic("exception panic") ]] auto
+thrownException() -> void {
   throw std::runtime_error{"exception panic"};
 }
 
-[[ = test, = trace ]] auto traced() -> void {
+[[ = test, = group("framework"), = tag("policies", "subjects"), = trace ]] auto traced() -> void {
   traceEvent("created request");
   require(true);
 }
 
-[[ = test, = timeout(std::chrono::milliseconds(1)) ]] auto slow() -> void {
+[[
+  = test,
+  = group("framework"),
+  = tag("policies", "subjects"),
+  = timeout(std::chrono::milliseconds(1))
+]] auto
+slow() -> void {
   std::this_thread::sleep_for(std::chrono::milliseconds(2));
 }
 
-[[ = test, = shouldPanic("missing panic") ]] auto calm() -> void {
+[[ = test, = group("framework"), = tag("policies", "subjects"), = shouldPanic("missing panic") ]] auto calm()
+    -> void {
 }
 
 } // namespace PolicySubjects
@@ -54,15 +64,18 @@ auto executionNamed(const Vec<TestExecution> &executions, StringView identifier)
 
 } // namespace
 
-[[= test]] auto appliesDeclarativePolicies() -> void {
+[[ = test, = group("framework"), = tag("policies") ]] auto appliesDeclarativePolicies() -> void {
   constexpr usize expectedTests{6};
   constexpr usize expectedPassed{4};
   constexpr usize expectedFailed{2};
   const Vec<TestExecution> executions = runAll<^^PolicySubjects>();
   const TestSummary summary = Reporter::summarize(executions);
-  const Option<Ref<const TestExecution>> traced = executionNamed(executions, "traced");
-  const Option<Ref<const TestExecution>> slow = executionNamed(executions, "slow");
-  const Option<Ref<const TestExecution>> calm = executionNamed(executions, "calm");
+  const Option<Ref<const TestExecution>> traced =
+      executionNamed(executions, "Tests::policies::PolicySubjects::traced");
+  const Option<Ref<const TestExecution>> slow =
+      executionNamed(executions, "Tests::policies::PolicySubjects::slow");
+  const Option<Ref<const TestExecution>> calm =
+      executionNamed(executions, "Tests::policies::PolicySubjects::calm");
 
   require(eq(executions.size(), expectedTests));
   require(eq(summary.passedCount, expectedPassed));
@@ -80,7 +93,7 @@ auto executionNamed(const Vec<TestExecution> &executions, StringView identifier)
   check(calm->get().state.diagnostics.front().header.code == DiagnosticCode::ExpectedPanicNotObserved);
 }
 
-[[= test]] auto keepsThePanicCallSite() -> void {
+[[ = test, = group("framework"), = tag("policies") ]] auto keepsThePanicCallSite() -> void {
   const auto location = std::source_location::current();
   const TestExecution execution = run(
       TestDescriptor{
@@ -97,7 +110,7 @@ auto executionNamed(const Vec<TestExecution> &executions, StringView identifier)
   check(execution.state.diagnostics.front().details.spans.front().label == "panic"_exp);
 }
 
-[[= test]] auto preservesFailuresBeforeAnExpectedPanic() -> void {
+[[ = test, = group("framework"), = tag("policies") ]] auto preservesFailuresBeforeAnExpectedPanic() -> void {
   const auto location = std::source_location::current();
   const TestExecution execution = run(
       TestDescriptor{
@@ -120,7 +133,7 @@ auto executionNamed(const Vec<TestExecution> &executions, StringView identifier)
   check(execution.state.diagnostics.front().header.code == DiagnosticCode::AssertionFailed);
 }
 
-[[= test]] auto rendersCapturedTrace() -> void {
+[[ = test, = group("framework"), = tag("policies") ]] auto rendersCapturedTrace() -> void {
   const TestExecution execution = run(
       TestDescriptor{
           .identifier = "traceOutput",
@@ -149,7 +162,7 @@ auto executionNamed(const Vec<TestExecution> &executions, StringView identifier)
   check(output.str().contains("= trace: connected database"));
 }
 
-[[= test]] auto exposesStopTokenAtTimeoutBoundary() -> void {
+[[ = test, = group("framework"), = tag("policies") ]] auto exposesStopTokenAtTimeoutBoundary() -> void {
   constexpr auto timeout{std::chrono::milliseconds{20}};
   bool observedStop{};
   bool completed{};
@@ -176,7 +189,7 @@ auto executionNamed(const Vec<TestExecution> &executions, StringView identifier)
   check(execution.state.diagnostics.front().header.code == DiagnosticCode::TimeoutExceeded);
 }
 
-[[= test]] auto cancelsIgnoredTimeoutAtNextYield() -> void {
+[[ = test, = group("framework"), = tag("policies") ]] auto cancelsIgnoredTimeoutAtNextYield() -> void {
   constexpr auto timeout{std::chrono::milliseconds{20}};
   bool continued{};
   const TestExecution execution = run(

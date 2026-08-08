@@ -15,7 +15,8 @@ auto containsHighlighted(const Vec<DiagnosticFragment> &fragments, StringView te
   });
 }
 
-[[= test]] auto compactLiteralsUseTheAssertionLocation() -> void {
+[[ = test, = group("framework"), = tag("expressions") ]] auto compactLiteralsUseTheAssertionLocation()
+    -> void {
   const auto location = std::source_location::current();
 
   Diagnostic diagnostic{};
@@ -33,7 +34,7 @@ auto containsHighlighted(const Vec<DiagnosticFragment> &fragments, StringView te
   check(diagnostic.details.spans.front().label == "assertion"_exp);
 }
 
-[[= test]] auto literalOperatorsProduceExpressions() -> void {
+[[ = test, = group("framework"), = tag("expressions") ]] auto literalOperatorsProduceExpressions() -> void {
   constexpr u32 one{1};
   constexpr u32 two{2};
   constexpr u32 three{3};
@@ -46,7 +47,7 @@ auto containsHighlighted(const Vec<DiagnosticFragment> &fragments, StringView te
   check(two >= 2_exp);
 }
 
-[[= test]] auto stringDifferencesVisualizeWhitespace() -> void {
+[[ = test, = group("framework"), = tag("expressions") ]] auto stringDifferencesVisualizeWhitespace() -> void {
   Vec<DiagnosticNote> notes{};
 
   {
@@ -64,7 +65,7 @@ auto containsHighlighted(const Vec<DiagnosticFragment> &fragments, StringView te
   check(containsHighlighted(notes.back().fragments, "·"));
 }
 
-[[= test]] auto utilityComparatorsProduceExpressions() -> void {
+[[ = test, = group("framework"), = tag("expressions") ]] auto utilityComparatorsProduceExpressions() -> void {
   TestState state{};
   Expression rangeFailure{};
 
@@ -100,7 +101,7 @@ auto containsHighlighted(const Vec<DiagnosticFragment> &fragments, StringView te
   check(rangeFailure.diagnostic->details.notes.back().message == "expected: 4"_exp);
 }
 
-[[= test]] auto requiredExpressionsAbortTheTest() -> void {
+[[ = test, = group("framework"), = tag("expressions") ]] auto requiredExpressionsAbortTheTest() -> void {
   TestState state{};
   bool continued{};
 
@@ -124,7 +125,8 @@ auto containsHighlighted(const Vec<DiagnosticFragment> &fragments, StringView te
   check(state.diagnostics.front().details.spans.front().label == "requirement"_exp);
 }
 
-[[= test]] auto returnedExpressionsPreserveTheirDiagnostics() -> void {
+[[ = test, = group("framework"), = tag("expressions") ]] auto returnedExpressionsPreserveTheirDiagnostics()
+    -> void {
   const TestExecution execution = run("returnsExpression", [] -> Expression { return eq(u32{2}, 3_exp); });
 
   require(execution.failed());
@@ -135,7 +137,7 @@ auto containsHighlighted(const Vec<DiagnosticFragment> &fragments, StringView te
         "condition: values are not equal"_exp);
 }
 
-[[= test]] auto comparisonsExposeValuesAndLocations() -> void {
+[[ = test, = group("framework"), = tag("expressions") ]] auto comparisonsExposeValuesAndLocations() -> void {
   const auto location = std::source_location::current();
   bool passed{};
   bool failed{};

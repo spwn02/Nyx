@@ -18,12 +18,18 @@ constexpr auto fibonacci(u32 input) -> u32 {
   }
 }
 
-[[ = test, = Case{0, 0}, = Case{1, 1}, = Case{5, 5} ]] constexpr auto fibonacciCases(u32 input, u32 expected)
-    -> bool {
+[[
+  = test,
+  = group("framework"),
+  = tag("discovery", "subjects", "passing"),
+  = Case{0, 0},
+  = Case{1, 1},
+  = Case{5, 5}
+]] constexpr auto fibonacciCases(u32 input, u32 expected) -> bool {
   return fibonacci(input) == expected;
 }
 
-[[= test]] auto voidCase() -> void {
+[[ = test, = group("framework"), = tag("discovery", "subjects", "passing") ]] auto voidCase() -> void {
   require(true);
 }
 
@@ -53,8 +59,15 @@ auto observePeak(usize value) -> void {
   }
 }
 
-[[ = test, = Case{1}, = Case{2}, = Case{3}, = Case{4} ]] auto runsConcurrently(u32 /*ignored*/)
-    -> Task<void> {
+[[
+  = test,
+  = group("framework"),
+  = tag("discovery", "subjects", "parallel"),
+  = Case{1},
+  = Case{2},
+  = Case{3},
+  = Case{4}
+]] auto runsConcurrently(u32 /*ignored*/) -> Task<void> {
   const usize current = active.fetch_add(1, std::memory_order_relaxed) + 1;
   observePeak(current);
   const auto cleanup = std::scope_exit([] -> void { active.fetch_sub(1, std::memory_order_relaxed); });
@@ -105,12 +118,16 @@ auto reset() -> void {
   };
 }
 
-[[ = test,
+[[
+  = test,
+  = group("framework"),
+  = tag("discovery", "subjects", "parallel", "fixtures"),
   = Case{1},
   = Case{2},
   = Case{3},
   = Case{4},
-  = arg<"expectedCase">(fromCase) ]] auto resolvesFixtureScopesInParallel(u32 expectedCase,
+  = arg<"expectedCase">(fromCase)
+]] auto resolvesFixtureScopesInParallel(u32 expectedCase,
     const SharedFixture &shared,                         // NOLINT
     const CaseFixture &caseFixtureValue) -> Task<void> { // NOLINT
   co_await sleepFor(oneHour);
@@ -198,7 +215,8 @@ struct Fixture final {
   };
 }
 
-[[= test]] auto runsInLeftSuite(const Fixture &fixtureValue) -> void {
+[[ = test, = group("framework"), = tag("discovery", "subjects", "cross_suite", "left") ]] auto
+runsInLeftSuite(const Fixture &fixtureValue) -> void {
   require(fixtureValue.lifetime);
   CrossSuiteState::runConcurrently();
 }
@@ -218,7 +236,8 @@ struct Fixture final {
   };
 }
 
-[[= test]] auto runsInRightSuite(const Fixture &fixtureValue) -> void {
+[[ = test, = group("framework"), = tag("discovery", "subjects", "cross_suite", "right") ]] auto
+runsInRightSuite(const Fixture &fixtureValue) -> void {
   require(fixtureValue.lifetime);
   CrossSuiteState::runConcurrently();
 }
@@ -227,24 +246,46 @@ struct Fixture final {
 
 namespace FailingTests {
 
-[[ = test, = Case{2, 2}, = Case{3, 2} ]] constexpr auto identityCases(u32 input, u32 expected) -> bool {
+[[
+  = test,
+  = group("framework"),
+  = tag("discovery", "subjects", "failing"),
+  = Case{2, 2},
+  = Case{3, 2}
+]] constexpr auto identityCases(u32 input, u32 expected) -> bool {
   return input == expected;
 }
 
 } // namespace FailingTests
 
-[[= test]] auto discoversEachDeclarativeCase() -> void {
+namespace SelectionSubjects {
+
+[[ = test, = group("math"), = tag("unit", "fast") ]] constexpr auto adds() -> void {
+  require(1U + 1 == 2_exp);
+}
+
+[[ = test, = group("math"), = tag("unit", "slow") ]] auto multiplies() -> void {
+  require(2U * 3 == 6_exp);
+}
+
+[[ = test, = group("filesystem"), = tag("integration") ]] auto reads() -> void {
+  require(true);
+}
+
+} // namespace SelectionSubjects
+
+[[ = test, = group("framework"), = tag("discovery") ]] auto discoversEachDeclarativeCase() -> void {
   constexpr usize expectedCases{4};
   const Vec<TestDescriptor> descriptors = describe<^^PassingTests>();
 
   require(eq(descriptors.size(), expectedCases));
-  check(descriptors.front().identifier == "fibonacciCases(0, 0)"_exp);
-  check(descriptors[1].identifier == "fibonacciCases(1, 1)"_exp);
-  check(descriptors[2].identifier == "fibonacciCases(5, 5)"_exp);
-  check(descriptors.back().identifier == "voidCase"_exp);
+  check(descriptors.front().identifier == "Tests::discovery::PassingTests::fibonacciCases(0, 0)"_exp);
+  check(descriptors[1].identifier == "Tests::discovery::PassingTests::fibonacciCases(1, 1)"_exp);
+  check(descriptors[2].identifier == "Tests::discovery::PassingTests::fibonacciCases(5, 5)"_exp);
+  check(descriptors.back().identifier == "Tests::discovery::PassingTests::voidCase"_exp);
 }
 
-[[= test]] auto dispatchesParameterisedTests() -> void {
+[[ = test, = group("framework"), = tag("discovery") ]] auto dispatchesParameterisedTests() -> void {
   constexpr usize expectedCases{4};
   constexpr usize expectedAssertions{4};
   const Vec<TestExecution> executions = runAll<^^PassingTests>();
@@ -257,7 +298,7 @@ namespace FailingTests {
   check(summary.passed());
 }
 
-[[= test]] auto preservesCaseIdentityForFailures() -> void {
+[[ = test, = group("framework"), = tag("discovery") ]] auto preservesCaseIdentityForFailures() -> void {
   constexpr usize expectedCases{2};
   constexpr usize expectedPassed{1};
   constexpr usize expectedFailed{1};
@@ -268,11 +309,11 @@ namespace FailingTests {
   require(summary.passedCount == expectedPassed);
   require(summary.failedCount == expectedFailed);
   require(executions.back().failed());
-  check(executions.back().descriptor.identifier == "identityCases(3, 2)"_exp);
+  check(executions.back().descriptor.identifier == "Tests::discovery::FailingTests::identityCases(3, 2)"_exp);
   check(executions.back().state.diagnostics.front().description() == "test returned false"_exp);
 }
 
-[[= test]] auto dispatchesIndependentCasesInParallel() -> void {
+[[ = test, = group("framework"), = tag("discovery") ]] auto dispatchesIndependentCasesInParallel() -> void {
   constexpr usize workerCount{2};
   constexpr usize expectedCases{4};
   ParallelTests::reset();
@@ -284,11 +325,12 @@ namespace FailingTests {
   require(executions.size() == expectedCases);
   require(summary.passedCount == expectedCases);
   check(ParallelTests::peak.load(std::memory_order_relaxed) >= workerCount);
-  check(executions.front().descriptor.identifier == "runsConcurrently(1)");
-  check(executions.back().descriptor.identifier == "runsConcurrently(4)");
+  check(executions.front().descriptor.identifier == "Tests::discovery::ParallelTests::runsConcurrently(1)");
+  check(executions.back().descriptor.identifier == "Tests::discovery::ParallelTests::runsConcurrently(4)");
 }
 
-[[= test]] auto preservesFixtureScopesAndVirtualTimeAcrossParallelCases() -> void {
+[[ = test, = group("framework"), = tag("discovery") ]] auto
+preservesFixtureScopesAndVirtualTimeAcrossParallelCases() -> void {
   constexpr usize workerCount{4};
   constexpr usize expectedCases{4};
   const auto passed = [](const TestExecution &execution) -> bool { return execution.passed(); };
@@ -306,11 +348,14 @@ namespace FailingTests {
   require(std::ranges::all_of(executions, [](const TestExecution &execution) -> bool {
     return execution.duration == ParallelFixtureTests::oneHour;
   }));
-  check(executions.front().descriptor.identifier == "resolvesFixtureScopesInParallel(1)"_exp);
-  check(executions.back().descriptor.identifier == "resolvesFixtureScopesInParallel(4)"_exp);
+  check(executions.front().descriptor.identifier ==
+        "Tests::discovery::ParallelFixtureTests::resolvesFixtureScopesInParallel(1)"_exp);
+  check(executions.back().descriptor.identifier ==
+        "Tests::discovery::ParallelFixtureTests::resolvesFixtureScopesInParallel(4)"_exp);
 }
 
-[[= test]] auto flattensIndependentSuitesAndUsesAutomaticWorkerCount() -> void {
+[[ = test, = group("framework"), = tag("discovery") ]] auto
+flattensIndependentSuitesAndUsesAutomaticWorkerCount() -> void {
   constexpr usize expectedCases{2};
   const usize available = std::max(static_cast<usize>(std::thread::hardware_concurrency()), usize{1});
   const usize expectedWorkers = std::min(available, expectedCases);
@@ -333,8 +378,37 @@ namespace FailingTests {
 
   require(CrossSuiteState::peak.load(std::memory_order_relaxed) == expectedWorkers);
   require(CrossSuiteState::fixtureDestructions.load(std::memory_order_relaxed) == expectedCases);
-  check(executions.front().descriptor.identifier == "runsInLeftSuite"_exp);
-  check(executions.back().descriptor.identifier == "runsInRightSuite"_exp);
+  check(executions.front().descriptor.identifier == "Tests::discovery::CrossSuiteLeft::runsInLeftSuite"_exp);
+  check(executions.back().descriptor.identifier == "Tests::discovery::CrossSuiteRight::runsInRightSuite"_exp);
+}
+
+[[ = test, = group("framework"), = tag("discovery") ]] auto selectsTestsByQualifiedNameGroupAndTags()
+    -> void {
+  constexpr usize expectedDescriptors{3};
+  const TestSelection fastMath{
+      .include = {"Tests::discovery::SelectionSubjects::*"},
+      .tagsAll = {"unit", "fast"},
+      .group = String{"math"},
+  };
+  const TestSelection excluded{
+      .include = {"Tests::discovery::SelectionSubjects::*"},
+      .exclude = {"*adds"},
+      .tagsAny = {"fast", "slow"},
+  };
+  const Vec<TestDescriptor> all = list<^^SelectionSubjects>();
+  const Vec<TestDescriptor> selected = list<^^SelectionSubjects>(fastMath);
+  const Vec<TestDescriptor> withoutAdds = list<^^SelectionSubjects>(excluded);
+  const Vec<TestExecution> executions = runAll<^^SelectionSubjects>(fastMath);
+
+  require(all.size() == expectedDescriptors);
+  require(selected.size() == 1_exp);
+  require(withoutAdds.size() == 1_exp);
+  require(executions.size() == 1_exp);
+  check(selected.front().identifier == "Tests::discovery::SelectionSubjects::adds"_exp);
+  check(selected.front().metadata.group == String{"math"});
+  check(selected.front().metadata.tags == Vec<String>{"unit", "fast"});
+  check(withoutAdds.front().identifier == "Tests::discovery::SelectionSubjects::multiplies"_exp);
+  check(executions.front().descriptor.identifier == "Tests::discovery::SelectionSubjects::adds"_exp);
 }
 
 } // namespace Tests::discovery

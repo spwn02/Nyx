@@ -58,6 +58,43 @@ private:
   return catalog().snapshot();
 }
 
+[[nodiscard]] auto globMatches(StringView pattern, StringView value) -> bool {
+  usize patternIndex{};
+  usize valueIndex{};
+  Option<usize> starIndex{};
+  Option<usize> restartIndex{};
+
+  while (valueIndex < value.size()) {
+    if (patternIndex < pattern.size() and
+        (pattern[patternIndex] == '?' or pattern[patternIndex] == value[valueIndex])) {
+      ++patternIndex;
+      ++valueIndex;
+    } else if (patternIndex < pattern.size() and pattern[patternIndex] == '*') {
+      starIndex = patternIndex++;
+      restartIndex = valueIndex;
+    } else if (starIndex) {
+      patternIndex = *starIndex + 1;
+      valueIndex = ++*restartIndex;
+    } else {
+      return false;
+    }
+  }
+
+  while (patternIndex < pattern.size() and pattern[patternIndex] == '*')
+    ++patternIndex;
+
+  return patternIndex == pattern.size();
+}
+
+[[nodiscard]] auto matchesAny(const Vec<String> &patterns, StringView value) -> bool {
+  return std::ranges::any_of(
+      patterns, [value](const String &pattern) -> bool { return globMatches(pattern, value); });
+}
+
+[[nodiscard]] auto hasTag(const TestDescriptor &descriptor, StringView tag) -> bool {
+  return std::ranges::contains(descriptor.metadata.tags, tag);
+}
+
 // auto validateUniqueIdentifiers(const Vec<TestDescriptor> &descriptors) -> void {
 //   const auto duplicate =
 //       std::ranges::adjacent_find(descriptors, std::ranges::equal_to{}, &TestDescriptor::identifier);
@@ -67,6 +104,23 @@ private:
 //   throw std::logic_error{
 //       std::format("Nyx::Test discovered duplicate test identifier: {}", duplicate->identifier)};
 // }
+
+} // namespace
+
+namespace detail {
+
+auto filterDescriptors(Vec<TestDescriptor> descriptors, const TestSelection &selection)
+    -> Vec<TestDescriptor> {
+  std::erase_if(descriptors,
+      [&selection](const TestDescriptor &descriptor) -> bool { return not selection.matches(descriptor); });
+  return descriptors;
+}
+
+auto filterPlannedCases(detail::RunSession &session, const TestSelection &selection) -> void {
+  std::erase_if(session.plannedCases(), [&selection](const detail::PlannedCase &plannedCases) -> bool {
+    return not selection.matches(plannedCases.descriptor);
+  });
+}
 
 [[nodiscard]] auto describeSuites(const Vec<SuiteEntry> &suites) -> Vec<TestDescriptor> {
   Vec<TestDescriptor> descriptors{};
@@ -78,26 +132,48 @@ private:
   return descriptors;
 }
 
-} // namespace
-
-namespace detail {
-
 auto appendRegisteredSuite(const SuiteEntry &suite) -> void {
   catalog().append(suite);
 }
 
 } // namespace detail
 
+auto TestSelection::matches(const TestDescriptor &descriptor) const -> bool {
+  if (not include.empty() and not matchesAny(include, descriptor.identifier))
+    return false;
+
+  if (matchesAny(exclude, descriptor.identifier))
+    return false;
+
+  if (group and (not descriptor.metadata.group or *descriptor.metadata.group != *group))
+    return false;
+
+  if (not std::ranges::all_of(
+          tagsAll, [&descriptor](const String &tag) -> bool { return hasTag(descriptor, tag); }))
+    return false;
+
+  return tagsAny.empty() or std::ranges::any_of(tagsAny,
+                                [&descriptor](const String &tag) -> bool { return hasTag(descriptor, tag); });
+}
+
 auto discover() -> Vec<TestDescriptor> {
-  return describeSuites(registeredSuites());
+  return detail::describeSuites(registeredSuites());
+}
+
+auto list(TestSelection selection) -> Vec<TestDescriptor> { // NOLINT
+  return detail::filterDescriptors(detail::describeSuites(registeredSuites()), selection);
 }
 
 auto runAll(RunOptions options) -> Vec<TestExecution> {
+  return runAll({}, options);
+}
+
+auto runAll(TestSelection selection, RunOptions options) -> Vec<TestExecution> { // NOLINT
   const Vec<SuiteEntry> suites = registeredSuites();
   detail::RunSession session{};
 
-  std::ranges::for_each(
-      registeredSuites(), [&session](const SuiteEntry &suite) -> void { suite.plan(session); });
+  std::ranges::for_each(suites, [&session](const SuiteEntry &suite) -> void { suite.plan(session); });
+  detail::filterPlannedCases(session, selection);
 
   Vec<TestExecution> executions = detail::executePlannedCases(session, options);
   std::ranges::sort(executions, {}, [](const TestExecution &execution) -> const String & {

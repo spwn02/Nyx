@@ -31,7 +31,9 @@ enum Color : u8 { red, green, blue };
   = Case{Color::red, "red"},
   = Case{Color::green, "green"},
   = Case{Color::blue, "blue"},
-  = Case{Color{69}, "<unnamed>"}
+  = Case{Color{69}, "<unnamed>"},
+  = group("experimental"),
+  = tag("reflection")
 ]] auto enumToString(Color value, StringView expected) -> Expression {
   return eq(enum_to_string(value), expected);
 }
@@ -59,7 +61,9 @@ struct[[= debug::derive]] Vec2 {
   = test,
   = Case{Vec2{}, "x: 0; y: 0"},
   = Case{Vec2{.x = 69}, "x: 69; y: 0"},
-  = Case{Vec2{.x = 34, .y = 35}, "x: 34; y: 35"}
+  = Case{Vec2{.x = 34, .y = 35}, "x: 34; y: 35"},
+  = group("experimental"),
+  = tag("reflection")
 ]] auto listMembers(Vec2 vec2, StringView expected) -> Expression {
   return eq(list_members(vec2), expected);
 }
@@ -158,7 +162,9 @@ using Argv = Vec<const char *>;
   = Case{container<Argv>()},
   = Case{container<Argv>("NyxEngine")},
   = Case{container<Argv>("NyxEngine", "-n", "Spawn")},
-  = Case{container<Argv>("NyxEngine", "-n", "Spawn", "-c", "3")}
+  = Case{container<Argv>("NyxEngine", "-n", "Spawn", "-c", "3")},
+  = group("experimental"),
+  = tag("reflection")
 ]] auto cli(Argv args) -> bool {
   return clap::parse<Args>(static_cast<int>(args.size()), const_cast<char **>(args.data())).has_value();
 }
@@ -173,7 +179,9 @@ auto chopArgument(Error &&error) -> Error {
   = test,
   = Case{container<Argv>("NyxEngine", "-n")},
   = Case{container<Argv>("NyxEngine", "-c")},
-  = shouldPanic("Expected argument following")
+  = shouldPanic("Expected argument following"),
+  = group("experimental"),
+  = tag("reflection")
 ]] auto cliFail(Argv args) -> Result<void> {
   return clap::parse<Args>(static_cast<int>(args.size()), const_cast<char **>(args.data()))
       .transform([](Args &&args) -> void { static_cast<void>(args); })

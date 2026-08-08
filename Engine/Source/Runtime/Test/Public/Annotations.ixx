@@ -416,6 +416,8 @@ inline constexpr bool is_description_v<Description<Size>>{true};
 /// Assigns one presentation-oriented group to a test.
 template <usize Size>
 struct Group final {
+  meta::StaticString<Size> name_;
+
   constexpr explicit Group(meta::StaticString<Size> name)
       : name_(std::move(name)) {
   }
@@ -423,9 +425,6 @@ struct Group final {
   [[nodiscard]] constexpr auto apply() const -> StringView {
     return name_.apply();
   }
-
-private:
-  meta::StaticString<Size> name_;
 };
 
 template <usize Size>
@@ -438,6 +437,35 @@ inline constexpr bool is_group_v{};
 
 template <usize Size>
 inline constexpr bool is_group_v<Group<Size>>{true};
+
+/// Assigns one or more arbitrary labels to a test for selection and reporting.
+template <class... Names>
+struct Tags final {
+  static constexpr usize size_{sizeof...(Names)};
+  AnnotationItems<Names...> names_;
+
+  constexpr explicit Tags(Names... names)
+      : names_(std::move(names)...) {
+  }
+
+  template <class Function>
+  constexpr auto apply(Function &&function) const -> decltype(auto) {
+    return applyAnnotationItems(
+        names_, std::forward<Function>(function), std::index_sequence_for<Names...>{});
+  }
+};
+
+template <usize... Sizes>
+  requires(sizeof...(Sizes) != 0)
+consteval auto tag(const char (&...names)[Sizes]) -> Tags<meta::StaticString<Sizes>...> {
+  return Tags<meta::StaticString<Sizes>...>{valueItem(names)...};
+}
+
+template <class>
+inline constexpr bool is_tag_v{};
+
+template <class... Names>
+inline constexpr bool is_tag_v<Tags<Names...>>{true};
 
 template <usize Count, class Function>
 constexpr auto withIndices(Function &&function) -> decltype(auto) {

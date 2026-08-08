@@ -17,12 +17,16 @@ constexpr auto fibonacci(u32 input) -> u32 {
   }
 }
 
-[[ = test, = Case{0, 0}, = Case{1, 1}, = Case{5, 5} ]] constexpr auto fibonacciCases(u32 input, u32 expected)
-    -> bool {
+[[ = test,
+  = group("math"),
+  = tag("fibonacci"),
+  = Case{0, 0},
+  = Case{1, 1},
+  = Case{5, 5} ]] constexpr auto fibonacciCases(u32 input, u32 expected) -> bool {
   return fibonacci(input) == expected;
 }
 
-[[= test]] auto voidCase() -> void {
+[[ = test, = group("demo") ]] auto voidCase() -> void {
   require(true);
 }
 

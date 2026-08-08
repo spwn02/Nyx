@@ -13,7 +13,7 @@ auto boundTo(TestEnvironment &expected) -> bool {
   return current and std::addressof(current->get()) == std::addressof(expected);
 }
 
-[[= test]] auto bindingRestoresPreviousEnvironment() -> void {
+[[ = test, = group("framework"), = tag("environment") ]] auto bindingRestoresPreviousEnvironment() -> void {
   TestEnvironment outer{};
   TestEnvironment inner{};
   bool innerBound{};

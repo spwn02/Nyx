@@ -7,7 +7,7 @@ using namespace Nyx::Test;
 
 namespace Tests::assertions {
 
-[[= test]] auto checksRecordDiagnostics() -> void {
+[[= test, =group("framework"), =tag("assertions")]] auto checksRecordDiagnostics() -> void {
   constexpr usize expectedAssertions{2};
   constexpr usize expectedFailures{1};
   const auto location = std::source_location::current();
@@ -34,7 +34,7 @@ namespace Tests::assertions {
   check(state.diagnostics.front().details.spans.front().label == "assertion"_exp);
 }
 
-[[= test]] auto successfulRequirementsAllowContinuation() -> void {
+[[= test, =group("framework"), =tag("assertions")]] auto successfulRequirementsAllowContinuation() -> void {
   constexpr usize expectedAssertions{1};
   i32 value{};
   TestState state{};
@@ -57,7 +57,7 @@ namespace Tests::assertions {
   check(state.diagnostics.empty());
 }
 
-[[= test]] auto failedRequirementsStopContinuation() -> void {
+[[= test, =group("framework"), =tag("assertions")]] auto failedRequirementsStopContinuation() -> void {
   constexpr usize expectedAssertions{1};
   constexpr usize expectedFailures{1};
   const auto location = std::source_location::current();

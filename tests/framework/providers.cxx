@@ -11,36 +11,56 @@ namespace Tests::providers {
 
 namespace ProviderSubjects {
 
-[[ = test, = arg<"input">(values(None, " ", "    ")) ]] auto optionalValues(Option<const char *> input)
-    -> void {
+[[
+  = test,
+  = group("framework"),
+  = tag("providers", "subjects"),
+  = arg<"input">(values(None, " ", "    "))
+]] auto
+optionalValues(Option<const char *> input) -> void {
   if (input)
     require(StringView{*input}.find(' ') == 0_exp);
   else
     require(not input);
 }
 
-[[ = test,
+[[
+  = test,
+  = group("framework"),
+  = tag("providers", "subjects"),
   = Case{2},
   = Case{5},
   = arg<"base">(fromCase),
-  = arg<"offset">(values(10, 20)) ]] auto caseAndValues(u32 base, u32 offset) -> void {
+  = arg<"offset">(values(10, 20))
+]] auto caseAndValues(u32 base, u32 offset) -> void {
   require(base > 0_exp);
   require(offset == 10_exp or offset == 20_exp);
 }
 
-[[ = test, = arg<"ctx">(context), = arg<"value">(values(3, 7)) ]] auto receivesProviderContext(
-    const Context &ctx,
-    u32 value) -> void {
+[[
+  = test,
+  = group("framework"),
+  = tag("providers", "subjects"),
+  = arg<"ctx">(context),
+  = arg<"value">(values(3, 7))
+]] auto
+receivesProviderContext(const Context &ctx, u32 value) -> void {
   require(ctx.testCase < 2_exp);
   require(value == 3_exp or value == 7_exp);
 }
 
-[[ = test, = arg<"path">(files(__FILE__)) ]] auto receivesFile(const Path &path) -> void {
+[[ = test, = group("framework"), = tag("providers", "subjects"), = arg<"path">(files(__FILE__)) ]] auto
+receivesFile(const Path &path) -> void {
   require(path == Path{__FILE__});
 }
 
-[[ = test, = arg<"path">(files("__nyx_missing_provider__/**/*.md")) ]] auto receivesNoFiles(const Path &path)
-    -> void {
+[[
+  = test,
+  = group("framework"),
+  = tag("providers", "subjects"),
+  = arg<"path">(files("__nyx_missing_provider__/**/*.md"))
+]] auto
+receivesNoFiles(const Path &path) -> void {
   require(path.empty());
 }
 
@@ -70,7 +90,7 @@ auto writeFile(const Path &path) -> void {
   return std::cref(*execution);
 }
 
-[[= test]] auto expandsValuesAndFileProviders() -> void {
+[[ = test, = group("framework"), = tag("providers") ]] auto expandsValuesAndFileProviders() -> void {
   constexpr usize expectedDescriptors{11};
   constexpr usize expectedPassed{10};
   constexpr usize expectedFailed{1};
@@ -104,7 +124,7 @@ auto writeFile(const Path &path) -> void {
   check(secondContext->get().descriptor.testCase == 1_exp);
 }
 
-[[= test]] auto matchesAndFiltersFiles() -> void {
+[[ = test, = group("framework"), = tag("providers") ]] auto matchesAndFiltersFiles() -> void {
   const Path root = temporaryDirectory();
   const auto cleanup = std::scope_exit([&root] -> void {
     std::error_code error;
