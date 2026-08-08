@@ -66,6 +66,65 @@ auto observePeak(usize value) -> void {
 
 } // namespace ParallelTests
 
+namespace ParallelFixtureTests {
+
+inline constexpr u32 expectedSharedValue{69};
+inline constexpr auto oneHour = std::chrono::hours{1};
+
+struct SharedFixture final {
+  u32 value{};
+};
+
+struct CaseFixture final {
+  usize instance{};
+  u32 sharedValue{};
+};
+
+// NOLINTBEGIN(cppcoreguidelines-avoid-non-const-global-variables)
+inline std::atomic<usize> sharedCreations{};
+inline std::atomic<usize> caseCreations{};
+// NOLINTEND(cppcoreguidelines-avoid-non-const-global-variables)
+
+auto reset() -> void {
+  sharedCreations.store(0, std::memory_order_relaxed);
+  caseCreations.store(0, std::memory_order_relaxed);
+}
+
+[[ = fixture, = once ]] auto sharedFixture() -> SharedFixture {
+  sharedCreations.fetch_add(1, std::memory_order_relaxed);
+  std::this_thread::sleep_for(std::chrono::milliseconds{10});
+  return SharedFixture{
+      .value = expectedSharedValue,
+  };
+}
+
+[[= fixture]] auto caseFixture(const SharedFixture &shared) -> CaseFixture {
+  return CaseFixture{
+      .instance = caseCreations.fetch_add(1, std::memory_order_relaxed) + 1,
+      .sharedValue = shared.value,
+  };
+}
+
+[[ = test,
+  = Case{1},
+  = Case{2},
+  = Case{3},
+  = Case{4},
+  = arg<"expectedCase">(fromCase) ]] auto resolvesFixtureScopesInParallel(u32 expectedCase,
+    const SharedFixture &shared,                         // NOLINT
+    const CaseFixture &caseFixtureValue) -> Task<void> { // NOLINT
+  co_await sleepFor(oneHour);
+
+  const Option<Ref<const Context>> context = currentContext();
+  require(context);
+  require(shared.value == expectedSharedValue);
+  require(caseFixtureValue.sharedValue == expectedSharedValue);
+  require(caseFixtureValue.instance != 0_exp);
+  check(context->get().testCase + 1 == expectedCase);
+}
+
+} // namespace ParallelFixtureTests
+
 namespace FailingTests {
 
 [[ = test, = Case{2, 2}, = Case{3, 2} ]] constexpr auto identityCases(u32 input, u32 expected) -> bool {
@@ -127,6 +186,28 @@ namespace FailingTests {
   check(ParallelTests::peak.load(std::memory_order_relaxed) >= workerCount);
   check(executions.front().descriptor.identifier == "runsConcurrently(1)");
   check(executions.back().descriptor.identifier == "runsConcurrently(4)");
+}
+
+[[= test]] auto preservesFixtureScopesAndVirtualTimeAcrossParallelCases() -> void {
+  constexpr usize workerCount{4};
+  constexpr usize expectedCases{4};
+  const auto passed = [](const TestExecution &execution) -> bool { return execution.passed(); };
+
+  ParallelFixtureTests::reset();
+  const Vec<TestExecution> executions = runAll<^^ParallelFixtureTests>(RunOptions{
+      .jobs = workerCount,
+      .timeMode = TimeMode::Virtual,
+  });
+
+  require(executions.size() == expectedCases);
+  require(std::ranges::all_of(executions, passed));
+  require(ParallelFixtureTests::sharedCreations.load(std::memory_order_relaxed) == 1_exp);
+  require(ParallelFixtureTests::caseCreations.load(std::memory_order_relaxed) == expectedCases);
+  require(std::ranges::all_of(executions, [](const TestExecution &execution) -> bool {
+    return execution.duration == ParallelFixtureTests::oneHour;
+  }));
+  check(executions.front().descriptor.identifier == "resolvesFixtureScopesInParallel(1)"_exp);
+  check(executions.back().descriptor.identifier == "resolvesFixtureScopesInParallel(4)"_exp);
 }
 
 } // namespace Tests::discovery

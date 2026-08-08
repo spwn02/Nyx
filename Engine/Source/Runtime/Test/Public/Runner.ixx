@@ -8,8 +8,8 @@ export namespace Nyx::Test {
 
 /// Configures execution of independent reflected test cases.
 ///
-/// jobs == 1 preserves declaration-order, single-threaded dispatch. Higher values only parallelize separate
-/// test cases; each case retains its own deterministic Task<T> run loop.
+/// jobs == 0 and jobs == 1 preserve declaration-order, single-threaded dispatch. Higher values only
+/// parallelize separate test cases; each case retains its own deterministic Task<T> run loop.
 struct RunOptions final {
   usize jobs{1};
 

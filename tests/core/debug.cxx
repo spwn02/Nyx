@@ -31,7 +31,7 @@ static constexpr f32 posY = 20;
 static constexpr f32 acceleration = 45;
 
 [[ = test, = trace ]] auto debug() -> void {
-  traceEvent("Formatting Vec2 ...");
+  traceEvent("formatting Vec2 ...");
 
   Vec2 vec2{
       .x = posX,
@@ -43,7 +43,7 @@ static constexpr f32 acceleration = 45;
   y: 20,
 })"_exp);
 
-  traceEvent("Formatting Group ...");
+  traceEvent("formatting Group ...");
 
   Group group{};
   group.p1.accelaration = acceleration;
