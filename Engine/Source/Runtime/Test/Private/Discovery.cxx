@@ -94,12 +94,12 @@ auto discover() -> Vec<TestDescriptor> {
 
 auto runAll(RunOptions options) -> Vec<TestExecution> {
   const Vec<SuiteEntry> suites = registeredSuites();
-  static_cast<void>(describeSuites(suites));
+  detail::RunSession session{};
 
-  Vec<TestExecution> executions{};
-  std::ranges::for_each(registeredSuites(), [&executions, &options](const SuiteEntry &suite) -> void {
-    executions.append_range(suite.execute(options) | std::views::as_rvalue);
-  });
+  std::ranges::for_each(
+      registeredSuites(), [&session](const SuiteEntry &suite) -> void { suite.plan(session); });
+
+  Vec<TestExecution> executions = detail::executePlannedCases(session, options);
   std::ranges::sort(executions, {}, [](const TestExecution &execution) -> const String & {
     return execution.descriptor.identifier;
   });

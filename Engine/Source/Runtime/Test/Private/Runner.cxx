@@ -9,37 +9,46 @@ namespace Nyx::Test::detail {
 
 namespace {
 
-[[nodiscard, maybe_unused]] constexpr auto workerCount(usize requested, usize workCount) -> usize {
+[[nodiscard]] constexpr auto workerCount(usize requested, usize workCount) -> usize {
   if (workCount == 0)
     return 0;
 
-  return std::min(std::max<usize>(requested, 1), workCount);
+  if (requested == 1)
+    return 1;
+
+  if (requested == 0) {
+    const usize available = std::thread::hardware_concurrency();
+    return std::min(std::max<usize>(available, 1), workCount);
+  }
+
+  return std::min(requested, workCount);
 }
 
 } // namespace
 
-auto executeWorkItems(Vec<WorkItem> workItems, const RunOptions &options) -> Vec<TestExecution> {
-  const usize workers = workerCount(options.jobs, workItems.size());
+auto executePlannedCases(RunSession &session, const RunOptions &options) -> Vec<TestExecution> {
+  Vec<PlannedCase> plannedCases = session.takePlannedCases();
+  const usize workers = workerCount(options.jobs, plannedCases.size());
 
   if (workers == 0)
     return {};
 
   if (workers == 1) {
-    return workItems | std::views::transform([&options](WorkItem &workItem) -> TestExecution {
-      return workItem.execute(options.timeMode);
+    return plannedCases | std::views::transform([&options](PlannedCase &plannedCase) -> TestExecution {
+      return plannedCase.execute(options.timeMode);
     }) | std::ranges::to<Vec<TestExecution>>();
   }
 
-  Vec<TestExecution> executions{workItems.size()};
+  Vec<TestExecution> executions{plannedCases.size()};
 
   std::atomic<usize> nextIndex{};
-  const auto executeNext = [&workItems, &executions, &nextIndex, &options] -> void {
+  const auto executeNext = [&plannedCases, &executions, &nextIndex, &options] -> void {
     while (true) {
       const usize index = nextIndex.fetch_add(1, std::memory_order_relaxed);
-      if (index >= workItems.size())
+      if (index >= plannedCases.size())
         return;
 
-      executions[index] = workItems[index].execute(options.timeMode);
+      executions[index] = plannedCases[index].execute(options.timeMode);
     }
   };
 

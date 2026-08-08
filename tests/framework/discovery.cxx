@@ -125,6 +125,106 @@ auto reset() -> void {
 
 } // namespace ParallelFixtureTests
 
+namespace CrossSuiteState {
+
+inline constexpr auto overlapTimeout = std::chrono::seconds{1};
+inline constexpr auto overlapWindow = std::chrono::milliseconds{10};
+
+// NOLINTBEGIN(cppcoreguidelines-avoid-non-const-global-variables)
+inline std::atomic<usize> active{};
+inline std::atomic<usize> peak{};
+inline std::atomic<usize> expectedWorkers{};
+inline std::atomic<usize> leftFixtureCreations{};
+inline std::atomic<usize> rightFixtureCreations{};
+inline std::atomic<usize> fixtureDestructions{};
+// NOLINTEND(cppcoreguidelines-avoid-non-const-global-variables)
+
+class LifetimeProbe final {
+public:
+  LifetimeProbe() = default;
+
+  ~LifetimeProbe() { // NOLINT
+    fixtureDestructions.fetch_add(1, std::memory_order_relaxed);
+  }
+
+  LifetimeProbe(const LifetimeProbe &) = delete ("LifetimeProbe is test-only state.");
+  auto operator=(const LifetimeProbe &) -> LifetimeProbe & = delete ("LifetimeProbe is test-only state.");
+  LifetimeProbe(LifetimeProbe &&) = delete ("LifetimeProbe is test-only state.");
+  auto operator=(LifetimeProbe &&) -> LifetimeProbe & = delete ("LifetimeProbe is test-only state.");
+};
+
+auto reset(usize workerCount) -> void {
+  active.store(0, std::memory_order_relaxed);
+  peak.store(0, std::memory_order_relaxed);
+  expectedWorkers.store(workerCount, std::memory_order_relaxed);
+  leftFixtureCreations.store(0, std::memory_order_relaxed);
+  rightFixtureCreations.store(0, std::memory_order_relaxed);
+  fixtureDestructions.store(0, std::memory_order_relaxed);
+}
+
+auto observePeak(usize value) -> void {
+  usize observed = peak.load(std::memory_order_relaxed);
+  while (observed < value and not peak.compare_exchange_weak(observed, value, std::memory_order_relaxed)) {
+    // pass
+  }
+}
+
+auto runConcurrently() -> void {
+  const usize current = active.fetch_add(1, std::memory_order_relaxed) + 1;
+  observePeak(current);
+  const auto cleanup = std::scope_exit([] -> void { active.fetch_sub(1, std::memory_order_relaxed); });
+  const auto deadline = std::chrono::steady_clock::now() + overlapTimeout;
+
+  while (active.load(std::memory_order_relaxed) < expectedWorkers.load(std::memory_order_relaxed) and
+         std::chrono::steady_clock::now() < deadline) {
+    std::this_thread::yield();
+  }
+
+  std::this_thread::sleep_for(overlapWindow);
+}
+
+} // namespace CrossSuiteState
+
+namespace CrossSuiteLeft {
+
+struct Fixture final {
+  std::shared_ptr<CrossSuiteState::LifetimeProbe> lifetime;
+};
+
+[[ = fixture, = once ]] auto fixture() -> Fixture {
+  CrossSuiteState::leftFixtureCreations.fetch_add(1, std::memory_order_relaxed);
+  return Fixture{
+      .lifetime = std::make_shared<CrossSuiteState::LifetimeProbe>(),
+  };
+}
+
+[[= test]] auto runsInLeftSuite(const Fixture &fixtureValue) -> void {
+  require(fixtureValue.lifetime);
+  CrossSuiteState::runConcurrently();
+}
+
+} // namespace CrossSuiteLeft
+
+namespace CrossSuiteRight {
+
+struct Fixture final {
+  std::shared_ptr<CrossSuiteState::LifetimeProbe> lifetime;
+};
+
+[[ = fixture, = once ]] auto fixture() -> Fixture {
+  CrossSuiteState::rightFixtureCreations.fetch_add(1, std::memory_order_relaxed);
+  return Fixture{
+      .lifetime = std::make_shared<CrossSuiteState::LifetimeProbe>(),
+  };
+}
+
+[[= test]] auto runsInRightSuite(const Fixture &fixtureValue) -> void {
+  require(fixtureValue.lifetime);
+  CrossSuiteState::runConcurrently();
+}
+
+} // namespace CrossSuiteRight
+
 namespace FailingTests {
 
 [[ = test, = Case{2, 2}, = Case{3, 2} ]] constexpr auto identityCases(u32 input, u32 expected) -> bool {
@@ -208,6 +308,33 @@ namespace FailingTests {
   }));
   check(executions.front().descriptor.identifier == "resolvesFixtureScopesInParallel(1)"_exp);
   check(executions.back().descriptor.identifier == "resolvesFixtureScopesInParallel(4)"_exp);
+}
+
+[[= test]] auto flattensIndependentSuitesAndUsesAutomaticWorkerCount() -> void {
+  constexpr usize expectedCases{2};
+  const usize available = std::max(static_cast<usize>(std::thread::hardware_concurrency()), usize{1});
+  const usize expectedWorkers = std::min(available, expectedCases);
+  const auto passed = [](const TestExecution &execution) -> bool { return execution.passed(); };
+  Vec<TestExecution> executions{};
+
+  CrossSuiteState::reset(expectedWorkers);
+  {
+    detail::RunSession session{};
+    detail::suiteEntry<^^CrossSuiteLeft, detail::DiscoveryConfiguration<>>.plan(session);
+    detail::suiteEntry<^^CrossSuiteRight, detail::DiscoveryConfiguration<>>.plan(session);
+    executions = detail::executePlannedCases(session, RunOptions{.jobs = 0});
+
+    require(executions.size() == expectedCases);
+    require(std::ranges::all_of(executions, passed));
+    require(CrossSuiteState::leftFixtureCreations.load(std::memory_order_relaxed) == 1_exp);
+    require(CrossSuiteState::rightFixtureCreations.load(std::memory_order_relaxed) == 1_exp);
+    require(CrossSuiteState::fixtureDestructions.load(std::memory_order_relaxed) == 0_exp);
+  }
+
+  require(CrossSuiteState::peak.load(std::memory_order_relaxed) == expectedWorkers);
+  require(CrossSuiteState::fixtureDestructions.load(std::memory_order_relaxed) == expectedCases);
+  check(executions.front().descriptor.identifier == "runsInLeftSuite"_exp);
+  check(executions.back().descriptor.identifier == "runsInRightSuite"_exp);
 }
 
 } // namespace Tests::discovery

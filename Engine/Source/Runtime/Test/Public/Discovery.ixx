@@ -31,12 +31,12 @@ inline constexpr StaticMemberFunctions staticMemberFunctions{};
 /// Immutable compile-time metadata emitted once for every registered suite.
 struct SuiteEntry final {
   using DescriptorFactory = Vec<TestDescriptor> (*)();
-  using ExecutionFactory = Vec<TestExecution> (*)(RunOptions);
+  using PlanFactory = void (*)(detail::RunSession &);
 
   StringView scope;
   std::source_location location;
   DescriptorFactory describe;
-  ExecutionFactory execute;
+  PlanFactory plan;
 };
 
 namespace detail {
@@ -293,21 +293,21 @@ auto noProviderExecution(TestDescriptor descriptor, TimeMode timeMode) -> TestEx
 }
 
 template <std::meta::info Namespace, std::meta::info Function, class CaseValues>
-auto appendProviderWorkItems(Vec<detail::WorkItem> &workItems,
+auto appendProviderWorkItems(Vec<detail::PlannedCase> &plannedCases,
     FixtureScope<Namespace> &suiteFixtures,
     const CaseValues &caseValues,
     StringView caseDescription,
     usize &testCaseIndex) -> void {
   const usize providerCount = detail::forEachProviderCombination<Function>(
-      [&workItems, &suiteFixtures, &caseValues, &caseDescription, &testCaseIndex](
+      [&plannedCases, &suiteFixtures, &caseValues, &caseDescription, &testCaseIndex](
           const auto &...providerValues) -> void {
         const String providerDescription = detail::providerDescription<Function>(providerValues...);
         const auto providerTuple = std::make_tuple(providerValues...);
         const TestDescriptor descriptor =
             makeTestDescriptor<Function>(testCaseIndex, caseDescription, StringView{providerDescription});
-        workItems.push_back(
-            detail::WorkItem{.execute = [descriptor, caseValues, providerTuple, &suiteFixtures](
-                                            TimeMode timeMode) -> TestExecution {
+        plannedCases.push_back(
+            detail::PlannedCase{.execute = [descriptor, caseValues, providerTuple, &suiteFixtures](
+                                               TimeMode timeMode) -> TestExecution {
               return run(
                   descriptor,
                   [caseValues, providerTuple, &suiteFixtures](const Context &context) -> decltype(auto) {
@@ -325,14 +325,14 @@ auto appendProviderWorkItems(Vec<detail::WorkItem> &workItems,
   const String providerDescription = detail::missingProviderDescription<Function>();
   const TestDescriptor descriptor =
       makeTestDescriptor<Function>(testCaseIndex, caseDescription, StringView{providerDescription});
-  workItems.push_back(detail::WorkItem{.execute = [descriptor](TimeMode timeMode) -> TestExecution {
+  plannedCases.push_back(detail::PlannedCase{.execute = [descriptor](TimeMode timeMode) -> TestExecution {
     return noProviderExecution<Function>(descriptor, timeMode);
   }});
   ++testCaseIndex;
 }
 
 template <std::meta::info Namespace, std::meta::info Function, std::meta::info Annotation>
-auto appendCaseWorkItems(Vec<detail::WorkItem> &workItems,
+auto appendCaseWorkItems(Vec<detail::PlannedCase> &plannedCases,
     FixtureScope<Namespace> &suiteFixtures,
     usize &testCaseIndex) -> void {
   using Ann = meta::TypeObject<Annotation>;
@@ -341,22 +341,22 @@ auto appendCaseWorkItems(Vec<detail::WorkItem> &workItems,
   const auto caseValueTuple = caseValues(testCase);
 
   appendProviderWorkItems<Namespace, Function>(
-      workItems, suiteFixtures, caseValueTuple, caseDescription, testCaseIndex);
+      plannedCases, suiteFixtures, caseValueTuple, caseDescription, testCaseIndex);
 }
 
 template <std::meta::info Namespace, std::meta::info Function>
-auto appendWorkItems(Vec<detail::WorkItem> &workItems, FixtureScope<Namespace> &suiteFixtures) -> void {
+auto appendWorkItems(Vec<detail::PlannedCase> &plannedCases, FixtureScope<Namespace> &suiteFixtures) -> void {
   usize testCaseIndex{};
 
   if constexpr (caseCount<Function>() == 0) {
     const Tuple<> caseValues{};
-    appendProviderWorkItems<Namespace, Function>(workItems, suiteFixtures, caseValues, {}, testCaseIndex);
+    appendProviderWorkItems<Namespace, Function>(plannedCases, suiteFixtures, caseValues, {}, testCaseIndex);
     return;
   }
 
   template for (constexpr std::meta::info annotation : meta::annotations<Function>) {
     if constexpr (isCase(annotation))
-      appendCaseWorkItems<Namespace, Function, annotation>(workItems, suiteFixtures, testCaseIndex);
+      appendCaseWorkItems<Namespace, Function, annotation>(plannedCases, suiteFixtures, testCaseIndex);
   }
 }
 
@@ -384,15 +384,15 @@ auto appendScopeDescriptors(Vec<TestDescriptor> &descriptors) -> void {
 }
 
 template <std::meta::info FixtureNamespace, std::meta::info Scope, class Configuration>
-auto appendScopeWorkItems(Vec<detail::WorkItem> &workItems, FixtureScope<FixtureNamespace> &suiteFixtures)
-    -> void {
+auto appendScopeWorkItems(Vec<detail::PlannedCase> &plannedCases,
+    FixtureScope<FixtureNamespace> &suiteFixtures) -> void {
   template for (constexpr std::meta::info member : meta::members<Scope, meta::AccessContext::unchecked()>) {
     if constexpr (std::meta::is_function(member) and isDiscoveredTest<Scope, member, Configuration>()) {
-      appendWorkItems<FixtureNamespace, member>(workItems, suiteFixtures);
+      appendWorkItems<FixtureNamespace, member>(plannedCases, suiteFixtures);
     }
 
     if constexpr (Configuration::recursive_ and std::meta::is_namespace(member))
-      appendScopeWorkItems<FixtureNamespace, member, Configuration>(workItems, suiteFixtures);
+      appendScopeWorkItems<FixtureNamespace, member, Configuration>(plannedCases, suiteFixtures);
   }
 }
 
@@ -404,13 +404,19 @@ template <std::meta::info Scope, class Configuration>
 }
 
 template <std::meta::info Scope, class Configuration>
-[[nodiscard]] auto runScope(RunOptions options) -> Vec<TestExecution> {
+auto appendScopePlan(detail::RunSession &session) -> void {
   static_assert(detail::fixtureDeclarationsAreValid<Scope>());
 
-  Vec<detail::WorkItem> workItems{};
-  FixtureScope<Scope> suiteFixtures{};
-  appendScopeWorkItems<Scope, Scope, Configuration>(workItems, suiteFixtures);
-  return detail::executeWorkItems(std::move(workItems), options);
+  detail::SuiteState &suite = session.appendSuite(qualifiedNameOf<Scope>());
+  FixtureScope<Scope> &suiteFixtures = suite.template emplace<FixtureScope<Scope>>();
+  appendScopeWorkItems<Scope, Scope, Configuration>(session.plannedCases(), suiteFixtures);
+}
+
+template <std::meta::info Scope, class Configuration>
+[[nodiscard]] auto runScope(RunOptions options) -> Vec<TestExecution> {
+  detail::RunSession session{};
+  appendScopePlan<Scope, Configuration>(session);
+  return detail::executePlannedCases(session, options);
 }
 
 template <std::meta::info Scope, class Configuration>
@@ -418,7 +424,7 @@ inline constinit const SuiteEntry suiteEntry{
     .scope = qualifiedNameOf<Scope>(),
     .location = scopeLocationOf<Scope>(),
     .describe = &describeScope<Scope, Configuration>,
-    .execute = &runScope<Scope, Configuration>,
+    .plan = &appendScopePlan<Scope, Configuration>,
 };
 
 template <std::meta::info Scope, class Configuration>
@@ -454,8 +460,8 @@ consteval auto registerSuite() -> void {
 /// ```
 ///
 /// The immediate invocation materializes one registration anchor for this Scope/options specialization. Its
-/// ordinary static initialization appends the immutable SuiteEntry before main(), without linker sections or
-/// a manifest. The translation unit containing discover() must be linked into the test executable.
+/// ordinary static initialization appends the immutable SuiteEntry before main(). The translation unit
+/// containing discover() must be linked into the test executable.
 template <std::meta::info Scope, detail::DiscoveryOption... Options>
 consteval auto discover(Options... /*unused*/) -> void {
   using Configuration = detail::DiscoveryConfiguration<std::remove_cvref_t<Options>...>;
