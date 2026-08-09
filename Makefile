@@ -1,4 +1,4 @@
-JOBS ?= 4
+JOBS ?= 16
 CLANGD ?= $(HOME)/.local/opt/clang-p2996/bin/clangd
 
 .PHONY: config build build-nproc clangd-check run tests pack ci clean

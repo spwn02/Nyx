@@ -101,7 +101,7 @@ struct[[= Nyx::debug::derive]] DataChunk {
 constexpr inline u32 signature = 0x56494430; // VID0
 
 struct[[= Nyx::debug::derive]] VideoChunk : DataChunk {
-  [[= Nyx::debug::rename<"signature">()]] u32 fourcc{signature};
+  [[= Nyx::debug::rename("signature")]] u32 fourcc{signature};
   [[= Nyx::debug::hide]] u32 version{1};
 };
 
@@ -149,9 +149,9 @@ enum class[[= Nyx::debug::derive]] Color : u8 {
 
 [[ = test, = group("core"), = tag("debug") ]] auto renamedEnum() -> void {
   enum class[[= Nyx::debug::derive]] Status : u8 {
-    Failed[[= Nyx::debug::rename<"failed">()]] = 1,
-    Skipped[[= Nyx::debug::rename<"skipped">()]],
-    Success[[= Nyx::debug::rename<"success">()]],
+    Failed[[= Nyx::debug::rename("failed")]] = 1,
+    Skipped[[= Nyx::debug::rename("skipped")]],
+    Success[[= Nyx::debug::rename("success")]],
   };
 
   check(std::format("{}", Status::Failed) == "failed"_exp);
@@ -171,7 +171,7 @@ enum class[[= Nyx::debug::derive]] Color : u8 {
 
 [[ = test, = group("core"), = tag("debug") ]] auto hiddenEnumWithDefaultEnumerator() -> void {
   enum class[[= Nyx::debug::derive]] HiddenEnum : u8 {
-    Default[[ = Nyx::debug::prefer, = Nyx::debug::rename<"default">() ]] = 1,
+    Default[[ = Nyx::debug::prefer, = Nyx::debug::rename("default") ]] = 1,
     Hidden[[= Nyx::debug::hide]],
     Work,
   };

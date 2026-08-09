@@ -17,39 +17,29 @@ export inline constexpr DebugHide hide{};
 struct DebugPrefer final {};
 export inline constexpr DebugPrefer prefer{};
 
-// template <usize N>
-// struct DebugRename {
-//   Array<char, N> name{};
-//
-//   /// String literal size deduction requires an array reference at this boundary.
-//   // NOLINTBEGIN(cppcoreguidelines-avoid-c-arrays, modernize-avoid-c-arrays)
-//   consteval DebugRename(const char (&str)[N])
-//       : name(std::to_array(str)) {
-//   }
-//   // NOLINTEND(cppcoreguidelines-avoid-c-arrays, modernize-avoid-c-arrays)
-//
-//   [[nodiscard]]
-//   constexpr auto apply() const -> StringView {
-//     return StringView{std::define_static_string(StringView{name.data(), N - 1}), N - 1};
-//   }
-// };
+template <usize Size>
+struct DebugRename {
+  meta::StaticString<Size> name_{};
 
-template <meta::StaticString Name>
-struct DebugRename final {
-  [[nodiscard]] static constexpr auto apply() -> StringView {
-    return Name.apply();
+  explicit constexpr DebugRename(meta::StaticString<Size> name)
+      : name_(std::move(name)) {
+  }
+
+  [[nodiscard]]
+  constexpr auto apply() const -> StringView {
+    return name_.apply();
   }
 };
 
-export template <meta::StaticString Name>
-consteval auto rename() -> DebugRename<Name> {
-  return DebugRename<Name>{};
+export template <usize Size>
+consteval auto rename(const char (&name)[Size]) -> DebugRename<Size> { // NOLINT
+  return DebugRename<Size>{meta::StaticString<Size>{name}};
 }
 
 template <class>
 inline constexpr bool is_debug_rename_v{};
-template <meta::StaticString Name>
-inline constexpr bool is_debug_rename_v<DebugRename<Name>>{true};
+template <usize Size>
+inline constexpr bool is_debug_rename_v<DebugRename<Size>>{true};
 
 template <class T>
 concept DebuggableAggr = Nyx::meta::has_annotation<DebugDerive, ^^T>() and not Enum<T>;
