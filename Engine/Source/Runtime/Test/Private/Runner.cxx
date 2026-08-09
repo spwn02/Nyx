@@ -152,7 +152,7 @@ auto executePlannedCases(RunSession &session, const RunOptions &options) -> Vec<
   });
   const u64 runSeed = options.seed ? *options.seed : randomSeed();
   const Vec<ScheduledCase> scheduledCases = scheduleCases(plannedCases.size(), options, runSeed);
-  const usize workers = workerCount(options.jobs, plannedCases.size());
+  const usize workers = workerCount(options.jobs, scheduledCases.size());
 
   if (workers == 0)
     return {};

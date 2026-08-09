@@ -8,7 +8,7 @@ using namespace Nyx::Test;
 auto main() -> int { // NOLINT
   const Vec<TestExecution> executions = runAll(
       TestSelection{
-          .tagsAny = {"runner"},
+          .tagsAny = {"json"},
           .group = "framework",
       },
       RunOptions{
@@ -28,4 +28,14 @@ auto main() -> int { // NOLINT
       },
   }
       .report(executions, std::cout);
+
+  {
+    const Path path = std::filesystem::current_path() / "tests" / "tests.json";
+    std::ofstream file{path};
+    if (file)
+      JsonReporter(JsonReporterOptions{
+                       .pretty = true,
+                   })
+          .report(executions, file);
+  }
 }

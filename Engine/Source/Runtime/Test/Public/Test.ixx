@@ -14,4 +14,5 @@ export import :Execution;
 export import :Fixtures;
 export import :Runner;
 export import :Reporting;
+export import :Json;
 export import :Discovery;
