@@ -369,6 +369,7 @@ auto writeReport(JsonWriter &writer, Span<const TestExecution> executions) -> vo
   writer.beginObject();
   writer.field("schema_version", [&writer] -> void { writer.number(schemaVersion); });
   writer.field("framework", [&writer] -> void { writer.text("Nyx.Test"); });
+  writer.field("kind", [&writer] -> void { writer.text("test_run"); });
   writer.field(
       "status", [&writer, &summary] -> void { writer.text(summary.passed() ? "passed" : "failed"); });
   writer.field("run_seed", [&writer, &executions] -> void {
@@ -382,6 +383,22 @@ auto writeReport(JsonWriter &writer, Span<const TestExecution> executions) -> vo
     writer.beginArray();
     std::ranges::for_each(executions, [&writer](const TestExecution &execution) -> void {
       writer.element([&writer, &execution] -> void { writeExecution(writer, execution); });
+    });
+    writer.endArray();
+  });
+  writer.endObject();
+}
+
+auto writeList(JsonWriter &writer, Span<const TestDescriptor> descriptors) -> void {
+  writer.beginObject();
+  writer.field("schema_version", [&writer] -> void { writer.number(schemaVersion); });
+  writer.field("framework", [&writer] -> void { writer.text("Nyx.Test"); });
+  writer.field("kind", [&writer] -> void { writer.text("test_list"); });
+  writer.field("count", [&writer, &descriptors] -> void { writer.number(descriptors.size()); });
+  writer.field("tests", [&writer, &descriptors] -> void {
+    writer.beginArray();
+    std::ranges::for_each(descriptors, [&writer](const TestDescriptor &descriptor) -> void {
+      writer.element([&writer, &descriptor] -> void { writeDescriptor(writer, descriptor); });
     });
     writer.endArray();
   });
@@ -404,6 +421,19 @@ auto JsonReporter::report(Span<const TestExecution> executions, std::ostream &ou
 auto JsonReporter::render(Span<const TestExecution> executions) const -> String {
   std::ostringstream output{};
   report(executions, output);
+  return output.str();
+}
+
+auto JsonReporter::reportList(Span<const TestDescriptor> descriptors, std::ostream &output) const -> void {
+  JsonWriter writer{output, options_};
+  writeList(writer, descriptors);
+  if (options_.pretty)
+    output << '\n';
+}
+
+auto JsonReporter::renderList(Span<const TestDescriptor> descriptors) const -> String {
+  std::ostringstream output{};
+  reportList(descriptors, output);
   return output.str();
 }
 

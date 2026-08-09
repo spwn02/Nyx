@@ -27,6 +27,11 @@ public:
 
   [[nodiscard]] auto render(Span<const TestExecution> executions) const -> String;
 
+  /// Emits selected descriptors using the stable Nyx.Test JSON list schema.
+  auto reportList(Span<const TestDescriptor> descriptors, std::ostream &output) const -> void;
+
+  [[nodiscard]] auto renderList(Span<const TestDescriptor> descriptors) const -> String;
+
 private:
   JsonReporterOptions options_{};
 };

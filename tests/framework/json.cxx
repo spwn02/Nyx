@@ -58,6 +58,7 @@ namespace Tests::json {
   check(output.ends_with("}\n"));
   check(output.contains(R"("schema_version": 1)"));
   check(output.contains(R"("framework": "Nyx.Test")"));
+  check(output.contains(R"("kind": "test_run")"));
   check(output.contains(R"("status": "failed")"));
   check(output.contains(R"("run_seed": 1234)"));
   check(output.contains(R"("seed": 5678)"));
@@ -76,6 +77,17 @@ namespace Tests::json {
 
   const String compact = JsonReporter{}.render(executions);
   check(compact.find('\n') == String::npos);
+
+  const Vec<TestDescriptor> descriptors = list<^^Tests::json>(TestSelection{
+      .tagsAny = {"json"},
+  });
+  const String listOutput = reporter.renderList(descriptors);
+
+  require(descriptors.size() == 1_exp);
+  check(listOutput.contains(R"("kind": "test_list")"));
+  check(listOutput.contains(R"("count": 1)"));
+  check(listOutput.contains(R"("identifier": "Tests::json::writesCompleteMachineReports")"));
+  check(listOutput.contains(R"("tags": [)"));
 }
 
 } // namespace Tests::json
