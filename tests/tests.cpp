@@ -6,9 +6,14 @@ using namespace Nyx;
 using namespace Nyx::Test;
 
 auto main() -> int { // NOLINT
-  const Vec<TestExecution> executions = runAll({
-      .jobs = 16,
-  });
+  const Vec<TestExecution> executions = runAll(
+      TestSelection{
+          .tagsAny = {"runner"},
+          .group = "framework",
+      },
+      RunOptions{
+          .jobs = 0,
+      });
   Reporter{
       ReporterOptions{
           .renderer =

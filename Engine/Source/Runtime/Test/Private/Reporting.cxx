@@ -119,7 +119,13 @@ auto Reporter::colorEnabled() const noexcept -> bool {
 }
 
 auto Reporter::shouldRenderTrace(const TestExecution &execution) const noexcept -> bool {
-  return options_.renderer.details == DetailMode::Trace and not execution.state.traces.empty();
+  if (execution.state.traces.empty())
+    return false;
+
+  if (options_.renderer.details == DetailMode::Trace or execution.traceMode == TraceMode::ForcedAll)
+    return true;
+
+  return execution.traceMode == TraceMode::ForcedFailures and execution.failed();
 }
 
 auto Reporter::renderFailure(const TestExecution &execution, std::ostream &output) const -> void {

@@ -5,6 +5,16 @@ import Nyx.Core;
 
 export namespace Nyx::Test {
 
+/// Chooses which test environments capture trace events for a run.
+///
+/// ForcedFailures captures every case but renders its trace only with a failure. ForcedAll additionally
+/// renders traces for passing cases. The test-level [[= trace]] annotation is always honored.
+enum class TraceMode : u8 {
+  Annotations,
+  ForcedFailures,
+  ForcedAll,
+};
+
 struct TestPolicy final {
   bool trace{};
   Option<String> expectedPanic;

@@ -32,6 +32,13 @@ struct TestExecution final {
   TestDescriptor descriptor;
   TestState state;
   std::chrono::steady_clock::duration duration{};
+  /// Root seed selected for the whole RunOptions invocation.
+  u64 runSeed{};
+  /// Per-case seed exposed through Context::seed.
+  u64 seed{};
+  /// Zero-based repeat index for this execution.
+  usize iteration{};
+  TraceMode traceMode{TraceMode::Annotations};
 
   [[nodiscard]] auto passed() const noexcept -> bool;
 
@@ -199,15 +206,18 @@ template <detail::TestInvocable Function>
 [[nodiscard]]
 auto run(TestDescriptor descriptor, Function &&function, TimeMode timeMode = TimeMode::Real)
     -> TestExecution {
+  const detail::InvocationSettings invocation = detail::currentInvocationSettings();
   TestEnvironment environment{};
   TestExecution execution{
       .descriptor = std::move(descriptor),
+      .seed = invocation.seed,
+      .iteration = invocation.iteration,
   };
 
   if (execution.descriptor.name.empty())
     execution.descriptor.name = execution.descriptor.identifier;
 
-  if (execution.descriptor.policy.trace)
+  if (execution.descriptor.policy.trace or invocation.forceTrace)
     environment.enableTrace();
 
   environment.recordTrace(std::format("enabled tracing for: {} ...", execution.descriptor.name));
@@ -224,6 +234,8 @@ auto run(TestDescriptor descriptor, Function &&function, TimeMode timeMode = Tim
         .name = StringView{execution.descriptor.name},
         .description = StringView{execution.descriptor.description},
         .testCase = execution.descriptor.testCase,
+        .seed = execution.seed,
+        .iteration = execution.iteration,
         .stopToken = environment.stopToken(),
         .location = execution.descriptor.location,
     };

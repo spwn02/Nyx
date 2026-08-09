@@ -9,8 +9,11 @@ namespace Nyx::Test {
 
 namespace {
 
-// NOLINTNEXTLINE(cppcoreguidelines-avoid-non-const-global-variables, readability-identifier-naming)
+// NOLINTBEGIN(cppcoreguidelines-avoid-non-const-global-variables, readability-identifier-naming)
 thread_local const Context *currentContext_{};
+
+thread_local const detail::InvocationSettings *currentInvocationSettings_{};
+// NOLINTEND(cppcoreguidelines-avoid-non-const-global-variables, readability-identifier-naming)
 
 } // namespace
 
@@ -28,6 +31,22 @@ auto currentContext() noexcept -> Option<Ref<const Context>> {
     return None;
 
   return std::cref(*currentContext_);
+}
+
+detail::InvocationBinding::InvocationBinding(const InvocationSettings &settings) noexcept
+    : previous_(currentInvocationSettings_) {
+  currentInvocationSettings_ = std::addressof(settings);
+}
+
+detail::InvocationBinding::~InvocationBinding() noexcept {
+  currentInvocationSettings_ = previous_;
+}
+
+auto detail::currentInvocationSettings() noexcept -> InvocationSettings {
+  if (currentInvocationSettings_ == nullptr)
+    return {};
+
+  return *currentInvocationSettings_;
 }
 
 } // namespace Nyx::Test

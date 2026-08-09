@@ -1,0 +1,219 @@
+import std;
+
+import Nyx.Core;
+import Nyx.Test;
+
+using namespace Nyx;
+using namespace Nyx::Test;
+
+// NOLINTBEGIN(cppcoreguidelines-avoid-magic-numbers, readability-magic-numbers)
+namespace Tests::runner {
+
+namespace RepeatSubjects {
+
+// NOLINTBEGIN(cppcoreguidelines-avoid-non-const-global-variables)
+inline Vec<u64> observedSeeds{};
+inline Vec<usize> observedIterations{};
+// NOLINTEND(cppcoreguidelines-avoid-non-const-global-variables)
+
+auto reset() -> void {
+  observedSeeds.clear();
+  observedIterations.clear();
+}
+
+[[ = test, = group("framework"), = tag("runner", "subjects", "repeat"), = arg<"context">(context) ]] auto
+first(const Context &context) -> void {
+  observedSeeds.push_back(context.seed);
+  observedIterations.push_back(context.iteration);
+}
+
+[[ = test, = group("framework"), = tag("runner", "subjects", "repeat"), = arg<"context">(context) ]] auto
+second(const Context &context) -> void {
+  observedSeeds.push_back(context.seed);
+  observedIterations.push_back(context.iteration);
+}
+
+} // namespace RepeatSubjects
+
+namespace OrderSubjects {
+
+[[ = test, = group("framework"), = tag("runner", "subjects", "order") ]] auto alpha() -> void {
+}
+[[ = test, = group("framework"), = tag("runner", "subjects", "order") ]] auto beta() -> void {
+}
+[[ = test, = group("framework"), = tag("runner", "subjects", "order") ]] auto gamma() -> void {
+}
+[[ = test, = group("framework"), = tag("runner", "subjects", "order") ]] auto delta() -> void {
+}
+[[ = test, = group("framework"), = tag("runner", "subjects", "order") ]] auto epsilon() -> void {
+}
+
+} // namespace OrderSubjects
+
+namespace FailFastSubjects {
+
+// NOLINTNEXTLINE(cppcoreguidelines-avoid-non-const-global-variables)
+inline usize calls{};
+
+auto reset() -> void {
+  calls = 0;
+}
+
+[[ = test, = group("framework"), = tag("runner", "subjects", "failfast") ]] auto passes() -> void {
+  ++calls;
+}
+
+[[ = test, = group("framework"), = tag("runner", "subjects", "failfast") ]] auto fails() -> bool {
+  ++calls;
+  return false;
+}
+
+[[ = test, = group("framework"), = tag("runner", "subjects", "failfast") ]] auto unreached() -> void {
+  ++calls;
+}
+
+} // namespace FailFastSubjects
+
+namespace TraceSubjects {
+
+[[ = test, = group("framework"), = tag("runner", "subjects", "trace") ]] auto passing() -> void {
+  traceEvent("passing trace");
+}
+
+[[ = test, = group("framework"), = tag("runner", "subjects", "trace") ]] auto failing() -> bool {
+  traceEvent("failing trace");
+  return false;
+}
+
+} // namespace TraceSubjects
+
+[[ = test, = group("framework"), = tag("runner") ]] auto repeatsCasesWithStableContextSeeds() -> void {
+  constexpr u64 seed{0xA11CE};
+  constexpr usize expectedExecutions{4};
+  const RunOptions options{
+      .repeat = 2,
+      .seed = seed,
+  };
+
+  RepeatSubjects::reset();
+  const Vec<TestExecution> firstRun = runAll<^^RepeatSubjects>(options);
+  const Vec<u64> firstObservedSeeds = RepeatSubjects::observedSeeds;
+  const Vec<usize> firstObservedIterations = RepeatSubjects::observedIterations;
+
+  RepeatSubjects::reset();
+  const Vec<TestExecution> secondRun = runAll<^^RepeatSubjects>(options);
+
+  require(firstRun.size() == expectedExecutions);
+  require(secondRun.size() == expectedExecutions);
+  require(std::ranges::equal(
+      firstRun, secondRun, [](const TestExecution &left, const TestExecution &right) -> bool {
+        return left.descriptor.name == right.descriptor.name and left.seed == right.seed and
+               left.iteration == right.iteration;
+      }));
+  require(std::ranges::equal(
+      firstObservedSeeds, firstRun, std::ranges::equal_to{}, std::identity{}, &TestExecution::seed));
+  require(std::ranges::equal(firstObservedIterations,
+      firstRun,
+      std::ranges::equal_to{},
+      std::identity{},
+      &TestExecution::iteration));
+  check(firstRun[0].descriptor.name == "first"_exp);
+  check(firstRun[1].descriptor.name == "second"_exp);
+  check(firstRun[2].descriptor.name == "first"_exp);
+  check(firstRun[3].descriptor.name == "second"_exp);
+  check(firstRun[0].iteration == 0_exp);
+  check(firstRun[2].iteration == 1_exp);
+  check(firstRun[0].runSeed == seed);
+  check(firstRun[0].seed != firstRun[2].seed);
+}
+
+[[ = test, = group("framework"), = tag("runner") ]] auto shufflesCasesReproducibly() -> void {
+  constexpr u64 seed{0x5EED};
+  const RunOptions options{
+      .order = ExecutionOrder::Shuffled,
+      .seed = seed,
+  };
+  const Vec<TestExecution> firstRun = runAll<^^OrderSubjects>(options);
+  const Vec<TestExecution> secondRun = runAll<^^OrderSubjects>(options);
+
+  require(firstRun.size() == 5_exp);
+  require(std::ranges::equal(
+      firstRun, secondRun, [](const TestExecution &left, const TestExecution &right) -> bool {
+        return left.descriptor.name == right.descriptor.name and left.seed == right.seed;
+      }));
+  check(firstRun[0].descriptor.name == "alpha"_exp);
+  check(firstRun[1].descriptor.name == "delta"_exp);
+  check(firstRun[2].descriptor.name == "epsilon"_exp);
+  check(firstRun[3].descriptor.name == "beta"_exp);
+  check(firstRun[4].descriptor.name == "gamma"_exp);
+}
+
+[[ = test, = group("framework"), = tag("runner") ]] auto stopsSerialDispatchAfterTheFirstFailure() -> void {
+  FailFastSubjects::reset();
+  const Vec<TestExecution> executions = runAll<^^FailFastSubjects>(RunOptions{
+      .failFast = true,
+  });
+
+  require(executions.size() == 2_exp);
+  require(executions.back().failed());
+  require(FailFastSubjects::calls == 2_exp);
+  check(executions.front().descriptor.name == "passes"_exp);
+  check(executions.back().descriptor.name == "fails"_exp);
+}
+
+[[ = test, = group("framework"), = tag("runner") ]] auto
+defaultTraceCapturesEveryCaseAndRendersFailuresByDefault() -> void {
+  const Vec<TestExecution> executions = runAll<^^TraceSubjects>();
+  Reporter reporter{
+      ReporterOptions{
+          .renderer =
+              RendererOptions{
+                  .color = ColorMode::Never,
+                  .terminal = false,
+                  .showSource = false,
+              },
+          .showPassedTests = true,
+          .showSummary = false,
+      },
+  };
+  std::ostringstream output{};
+
+  static_cast<void>(reporter.report(executions, output));
+
+  require(executions.size() == 2_exp);
+  require(std::ranges::all_of(
+      executions, [](const TestExecution &execution) -> bool { return not execution.state.traces.empty(); }));
+  check(executions.front().traceMode == TraceMode::ForcedFailures);
+  check(not output.str().contains("passing trace"));
+  check(output.str().contains("failing trace"));
+}
+
+[[ = test, = group("framework"), = tag("runner") ]] auto forceTraceCanRenderSuccessfulCases() -> void {
+  const Vec<TestExecution> executions = runAll<^^TraceSubjects>(RunOptions{
+      .traceMode = TraceMode::ForcedAll,
+  });
+  Reporter reporter{
+      ReporterOptions{
+          .renderer =
+              RendererOptions{
+                  .color = ColorMode::Never,
+                  .terminal = false,
+                  .showSource = false,
+              },
+          .showSummary = false,
+      },
+  };
+  std::ostringstream output{};
+
+  static_cast<void>(reporter.report(executions, output));
+
+  require(executions.size() == 2_exp);
+  check(output.str().contains("passing trace"));
+}
+
+} // namespace Tests::runner
+// NOLINTEND(cppcoreguidelines-avoid-magic-numbers, readability-magic-numbers)
+
+consteval {
+  discover<^^Tests::runner>();
+}
