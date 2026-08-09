@@ -109,17 +109,20 @@ private:
 }
 
 auto executeCase(PlannedCase &plannedCase,
-    ResourceLane &lane,
+    ResourceLane *lane,
     const ScheduledCase &scheduledCase,
     const RunOptions &options,
     u64 runSeed) -> TestExecution {
+  std::unique_lock<std::mutex> lock{};
+  if (lane != nullptr)
+    lock = std::unique_lock<std::mutex>{lane->mutex()};
+
   const InvocationSettings settings{
       .seed = scheduledCase.seed,
       .iteration = scheduledCase.iteration,
       .forceTrace = forceTrace(options.traceMode),
   };
   const InvocationBinding binding{settings};
-  const std::scoped_lock lock{lane.mutex()};
   TestExecution execution = plannedCase.execute(TestDescriptor{plannedCase.descriptor}, options.timeMode);
   execution.runSeed = runSeed;
   execution.traceMode = options.traceMode;
@@ -141,15 +144,18 @@ auto executeCase(PlannedCase &plannedCase,
   return std::min(requested, workCount);
 }
 
+[[nodiscard]] auto laneFor(Vec<UPtr<ResourceLane>> &resourceLanes, usize plannedCase) noexcept
+    -> ResourceLane * {
+  if (resourceLanes.empty())
+    return nullptr;
+
+  return resourceLanes[plannedCase].get();
+}
+
 } // namespace
 
 auto executePlannedCases(RunSession &session, const RunOptions &options) -> Vec<TestExecution> {
   Vec<PlannedCase> plannedCases = session.takePlannedCases();
-  Vec<UPtr<ResourceLane>> resourceLanes{};
-  resourceLanes.reserve(plannedCases.size());
-  std::ranges::for_each(plannedCases, [&resourceLanes](const PlannedCase & /*ignored*/) -> void {
-    resourceLanes.push_back(std::make_unique<ResourceLane>());
-  });
   const u64 runSeed = options.seed ? *options.seed : randomSeed();
   const Vec<ScheduledCase> scheduledCases = scheduleCases(plannedCases.size(), options, runSeed);
   const usize workers = workerCount(options.jobs, scheduledCases.size());
@@ -157,6 +163,13 @@ auto executePlannedCases(RunSession &session, const RunOptions &options) -> Vec<
   if (workers == 0)
     return {};
 
+  Vec<UPtr<ResourceLane>> resourceLanes{};
+  if (options.repeat > 1) {
+    resourceLanes.reserve(plannedCases.size());
+    std::ranges::for_each(plannedCases, [&resourceLanes](const PlannedCase & /*ignored*/) -> void {
+      resourceLanes.push_back(std::make_unique<ResourceLane>());
+    });
+  }
   if (workers == 1) {
     Vec<TestExecution> executions{};
     executions.reserve(scheduledCases.size());
@@ -166,7 +179,7 @@ auto executePlannedCases(RunSession &session, const RunOptions &options) -> Vec<
         return;
 
       TestExecution execution = executeCase(plannedCases[scheduledCase.plannedCase],
-          *resourceLanes[scheduledCase.plannedCase],
+          laneFor(resourceLanes, scheduledCase.plannedCase),
           scheduledCase,
           options,
           runSeed);
@@ -194,7 +207,7 @@ auto executePlannedCases(RunSession &session, const RunOptions &options) -> Vec<
 
       const ScheduledCase &scheduledCase = scheduledCases[index];
       TestExecution execution = executeCase(plannedCases[scheduledCase.plannedCase],
-          *resourceLanes[scheduledCase.plannedCase],
+          laneFor(resourceLanes, scheduledCase.plannedCase),
           scheduledCase,
           options,
           runSeed);

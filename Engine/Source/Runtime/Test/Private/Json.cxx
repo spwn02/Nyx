@@ -80,6 +80,7 @@ public:
       // NOLINTBEGIN(cppcoreguidelines-avoid-magic-numbers, readability-magic-numbers)
       if (code < 0x20) {
         output_ << "\\u00" << hexadecimal[code >> 4] << hexadecimal[code & 0x0F];
+        return;
       }
       // NOLINTEND(cppcoreguidelines-avoid-magic-numbers, readability-magic-numbers)
 
@@ -307,7 +308,7 @@ auto writeState(JsonWriter &writer, const TestState &state) -> void {
   writer.field("assertions", [&writer, &state] -> void { writer.number(state.assertions); });
   writer.field("failed_assertions", [&writer, &state] -> void { writer.number(state.failedAssertions); });
   writer.field("errors", [&writer, &state] -> void { writer.number(state.errors); });
-  writer.field("aborted", [&writer, &state] -> void { writer.number(state.aborted); });
+  writer.field("aborted", [&writer, &state] -> void { writer.boolean(state.aborted); });
   writer.field("diagnostics", [&writer, &state] -> void {
     writer.beginArray();
     std::ranges::for_each(state.diagnostics, [&writer](const Diagnostic &diagnostic) -> void {

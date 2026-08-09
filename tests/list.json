@@ -1854,50 +1854,6 @@
       }
     },
     {
-      "identifier": "Tests::reflection::cliFail([\"NyxEngine\", \"-c\"])",
-      "name": "cliFail",
-      "description": "",
-      "test_case": 0,
-      "location": {
-        "file": "/home/spawn/dev/cpp/Nyx/tests/core/reflection.cxx",
-        "line": 185,
-        "column": 9
-      },
-      "metadata": {
-        "group": "experimental",
-        "tags": [
-          "reflection"
-        ]
-      },
-      "policy": {
-        "trace": false,
-        "expected_panic": "Expected argument following",
-        "timeout_ns": null
-      }
-    },
-    {
-      "identifier": "Tests::reflection::cliFail([\"NyxEngine\", \"-c\"])",
-      "name": "cliFail",
-      "description": "",
-      "test_case": 1,
-      "location": {
-        "file": "/home/spawn/dev/cpp/Nyx/tests/core/reflection.cxx",
-        "line": 185,
-        "column": 9
-      },
-      "metadata": {
-        "group": "experimental",
-        "tags": [
-          "reflection"
-        ]
-      },
-      "policy": {
-        "trace": false,
-        "expected_panic": "Expected argument following",
-        "timeout_ns": null
-      }
-    },
-    {
       "identifier": "Tests::reflection::enumToString(0, red)",
       "name": "enumToString",
       "description": "",
@@ -2153,6 +2109,50 @@
         "group": "framework",
         "tags": [
           "runner"
+        ]
+      },
+      "policy": {
+        "trace": false,
+        "expected_panic": null,
+        "timeout_ns": null
+      }
+    },
+    {
+      "identifier": "Tests::stress::cleansEveryParallelTimeoutExactlyOnce",
+      "name": "cleansEveryParallelTimeoutExactlyOnce",
+      "description": "",
+      "test_case": 0,
+      "location": {
+        "file": "/home/spawn/dev/cpp/Nyx/tests/framework/stress.cxx",
+        "line": 146,
+        "column": 58
+      },
+      "metadata": {
+        "group": "framework",
+        "tags": [
+          "stress"
+        ]
+      },
+      "policy": {
+        "trace": false,
+        "expected_panic": null,
+        "timeout_ns": null
+      }
+    },
+    {
+      "identifier": "Tests::stress::preservesRepeatedAsyncLifecycle",
+      "name": "preservesRepeatedAsyncLifecycle",
+      "description": "",
+      "test_case": 0,
+      "location": {
+        "file": "/home/spawn/dev/cpp/Nyx/tests/framework/stress.cxx",
+        "line": 122,
+        "column": 58
+      },
+      "metadata": {
+        "group": "framework",
+        "tags": [
+          "stress"
         ]
       },
       "policy": {

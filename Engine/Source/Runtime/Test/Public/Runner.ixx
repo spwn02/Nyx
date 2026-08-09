@@ -133,6 +133,11 @@ public:
     return plannedCases_;
   }
 
+  /// Reserves contiguous storage before the reflected executable plan is materialized.
+  auto reservePlannedCases(usize count) -> void {
+    plannedCases_.reserve(count);
+  }
+
   [[nodiscard]] auto takePlannedCases() -> Vec<PlannedCase> {
     return std::move(plannedCases_);
   }

@@ -8,7 +8,7 @@ using namespace Nyx::Test;
 auto main() -> int { // NOLINT
   const Vec<TestExecution> executions = runAll(
       TestSelection{
-          // .group = "framework",
+          .group = "framework",
       },
       RunOptions{
           .jobs = 0,

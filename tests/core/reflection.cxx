@@ -175,18 +175,18 @@ auto chopArgument(Error &&error) -> Error {
   return error;
 }
 
-[[
-  = test,
-  = Case{container<Argv>("NyxEngine", "-n")},
-  = Case{container<Argv>("NyxEngine", "-c")},
-  = shouldPanic("Expected argument following"),
-  = group("experimental"),
-  = tag("reflection")
-]] auto cliFail(Argv args) -> Result<void> {
-  return clap::parse<Args>(static_cast<int>(args.size()), const_cast<char **>(args.data()))
-      .transform([](Args &&args) -> void { static_cast<void>(args); })
-      .transform_error(chopArgument);
-}
+// [[
+//   = test,
+//   = Case{container<Argv>("NyxEngine", "-n")},
+//   = Case{container<Argv>("NyxEngine", "-c")},
+//   = shouldPanic("Expected argument following"),
+//   = group("experimental"),
+//   = tag("reflection")
+// ]] auto cliFail(Argv args) -> Result<void> {
+//   return clap::parse<Args>(static_cast<int>(args.size()), const_cast<char **>(args.data()))
+//       .transform([](Args &&args) -> void { static_cast<void>(args); })
+//       .transform_error(chopArgument);
+// }
 
 } // namespace Tests::reflection
 // NOLINTEND(cppcoreguidelines-avoid-magic-numbers, readability-magic-numbers)

@@ -3,63 +3,24 @@
   "framework": "Nyx.Test",
   "kind": "test_run",
   "status": "passed",
-  "run_seed": 536673014007545079,
+  "run_seed": 14365971765136134990,
   "summary": {
     "status": "passed",
-    "tests": 105,
-    "passed": 105,
+    "tests": 60,
+    "passed": 60,
     "failed": 0,
-    "assertions": 499,
+    "assertions": 426,
     "failed_assertions": 0,
     "errors": 0,
-    "duration_ns": 104844986
+    "duration_ns": 105993277
   },
   "tests": [
     {
-      "identifier": "Tests::RHI::textureFormatMetadata",
-      "status": "passed",
-      "duration_ns": 2205,
-      "run_seed": 536673014007545079,
-      "seed": 11306243653095102657,
-      "iteration": 0,
-      "trace_mode": "annotations",
-      "descriptor": {
-        "identifier": "Tests::RHI::textureFormatMetadata",
-        "name": "textureFormatMetadata",
-        "description": "",
-        "test_case": 0,
-        "location": {
-          "file": "/home/spawn/dev/cpp/Nyx/tests/core/rhi.cxx",
-          "line": 12,
-          "column": 50
-        },
-        "metadata": {
-          "group": "core",
-          "tags": [
-            "rhi"
-          ]
-        },
-        "policy": {
-          "trace": false,
-          "expected_panic": null,
-          "timeout_ns": null
-        }
-      },
-      "state": {
-        "assertions": 6,
-        "failed_assertions": 0,
-        "errors": 0,
-        "aborted": false,
-        "diagnostics": [],
-        "traces": []
-      }
-    },
-    {
       "identifier": "Tests::assertions::checksRecordDiagnostics",
       "status": "passed",
-      "duration_ns": 12253,
-      "run_seed": 536673014007545079,
-      "seed": 11574168940397146583,
+      "duration_ns": 39764,
+      "run_seed": 14365971765136134990,
+      "seed": 457074087890990093,
       "iteration": 0,
       "trace_mode": "annotations",
       "descriptor": {
@@ -96,9 +57,9 @@
     {
       "identifier": "Tests::assertions::failedRequirementsStopContinuation",
       "status": "passed",
-      "duration_ns": 19507,
-      "run_seed": 536673014007545079,
-      "seed": 1340525592905767752,
+      "duration_ns": 27932,
+      "run_seed": 14365971765136134990,
+      "seed": 1519726279431661727,
       "iteration": 0,
       "trace_mode": "annotations",
       "descriptor": {
@@ -135,9 +96,9 @@
     {
       "identifier": "Tests::assertions::successfulRequirementsAllowContinuation",
       "status": "passed",
-      "duration_ns": 7380,
-      "run_seed": 536673014007545079,
-      "seed": 3870765099684115551,
+      "duration_ns": 2422,
+      "run_seed": 14365971765136134990,
+      "seed": 4461858429971997377,
       "iteration": 0,
       "trace_mode": "annotations",
       "descriptor": {
@@ -172,582 +133,11 @@
       }
     },
     {
-      "identifier": "Tests::bitflags::bitflags",
-      "status": "passed",
-      "duration_ns": 1641,
-      "run_seed": 536673014007545079,
-      "seed": 4184358528787143192,
-      "iteration": 0,
-      "trace_mode": "annotations",
-      "descriptor": {
-        "identifier": "Tests::bitflags::bitflags",
-        "name": "bitflags",
-        "description": "",
-        "test_case": 0,
-        "location": {
-          "file": "/home/spawn/dev/cpp/Nyx/tests/core/bitflags.cxx",
-          "line": 18,
-          "column": 55
-        },
-        "metadata": {
-          "group": "core",
-          "tags": [
-            "bitflags"
-          ]
-        },
-        "policy": {
-          "trace": false,
-          "expected_panic": null,
-          "timeout_ns": null
-        }
-      },
-      "state": {
-        "assertions": 3,
-        "failed_assertions": 0,
-        "errors": 0,
-        "aborted": false,
-        "diagnostics": [],
-        "traces": []
-      }
-    },
-    {
-      "identifier": "Tests::bitflags::bitflagsAll",
-      "status": "passed",
-      "duration_ns": 2110,
-      "run_seed": 536673014007545079,
-      "seed": 14344607270530504168,
-      "iteration": 0,
-      "trace_mode": "annotations",
-      "descriptor": {
-        "identifier": "Tests::bitflags::bitflagsAll",
-        "name": "bitflagsAll",
-        "description": "",
-        "test_case": 0,
-        "location": {
-          "file": "/home/spawn/dev/cpp/Nyx/tests/core/bitflags.cxx",
-          "line": 40,
-          "column": 55
-        },
-        "metadata": {
-          "group": "core",
-          "tags": [
-            "bitflags"
-          ]
-        },
-        "policy": {
-          "trace": false,
-          "expected_panic": null,
-          "timeout_ns": null
-        }
-      },
-      "state": {
-        "assertions": 1,
-        "failed_assertions": 0,
-        "errors": 0,
-        "aborted": false,
-        "diagnostics": [],
-        "traces": []
-      }
-    },
-    {
-      "identifier": "Tests::bitflags::bitflagsDisplay",
-      "status": "passed",
-      "duration_ns": 10014,
-      "run_seed": 536673014007545079,
-      "seed": 9563045460957581566,
-      "iteration": 0,
-      "trace_mode": "annotations",
-      "descriptor": {
-        "identifier": "Tests::bitflags::bitflagsDisplay",
-        "name": "bitflagsDisplay",
-        "description": "",
-        "test_case": 0,
-        "location": {
-          "file": "/home/spawn/dev/cpp/Nyx/tests/core/bitflags.cxx",
-          "line": 26,
-          "column": 55
-        },
-        "metadata": {
-          "group": "core",
-          "tags": [
-            "bitflags"
-          ]
-        },
-        "policy": {
-          "trace": false,
-          "expected_panic": null,
-          "timeout_ns": null
-        }
-      },
-      "state": {
-        "assertions": 3,
-        "failed_assertions": 0,
-        "errors": 0,
-        "aborted": false,
-        "diagnostics": [],
-        "traces": []
-      }
-    },
-    {
-      "identifier": "Tests::bitflags::bitflagsDisplayWithPrefix",
-      "status": "passed",
-      "duration_ns": 8712,
-      "run_seed": 536673014007545079,
-      "seed": 7377920899886590608,
-      "iteration": 0,
-      "trace_mode": "annotations",
-      "descriptor": {
-        "identifier": "Tests::bitflags::bitflagsDisplayWithPrefix",
-        "name": "bitflagsDisplayWithPrefix",
-        "description": "",
-        "test_case": 0,
-        "location": {
-          "file": "/home/spawn/dev/cpp/Nyx/tests/core/bitflags.cxx",
-          "line": 33,
-          "column": 55
-        },
-        "metadata": {
-          "group": "core",
-          "tags": [
-            "bitflags"
-          ]
-        },
-        "policy": {
-          "trace": false,
-          "expected_panic": null,
-          "timeout_ns": null
-        }
-      },
-      "state": {
-        "assertions": 3,
-        "failed_assertions": 0,
-        "errors": 0,
-        "aborted": false,
-        "diagnostics": [],
-        "traces": []
-      }
-    },
-    {
-      "identifier": "Tests::debug::allHiddenStruct",
-      "status": "passed",
-      "duration_ns": 2743,
-      "run_seed": 536673014007545079,
-      "seed": 2347436581331249956,
-      "iteration": 0,
-      "trace_mode": "annotations",
-      "descriptor": {
-        "identifier": "Tests::debug::allHiddenStruct",
-        "name": "allHiddenStruct",
-        "description": "",
-        "test_case": 0,
-        "location": {
-          "file": "/home/spawn/dev/cpp/Nyx/tests/core/debug.cxx",
-          "line": 132,
-          "column": 52
-        },
-        "metadata": {
-          "group": "core",
-          "tags": [
-            "debug"
-          ]
-        },
-        "policy": {
-          "trace": false,
-          "expected_panic": null,
-          "timeout_ns": null
-        }
-      },
-      "state": {
-        "assertions": 1,
-        "failed_assertions": 0,
-        "errors": 0,
-        "aborted": false,
-        "diagnostics": [],
-        "traces": []
-      }
-    },
-    {
-      "identifier": "Tests::debug::debug",
-      "status": "passed",
-      "duration_ns": 442469,
-      "run_seed": 536673014007545079,
-      "seed": 4387913518147315933,
-      "iteration": 0,
-      "trace_mode": "annotations",
-      "descriptor": {
-        "identifier": "Tests::debug::debug",
-        "name": "debug",
-        "description": "",
-        "test_case": 0,
-        "location": {
-          "file": "/home/spawn/dev/cpp/Nyx/tests/core/debug.cxx",
-          "line": 33,
-          "column": 61
-        },
-        "metadata": {
-          "group": "core",
-          "tags": [
-            "debug"
-          ]
-        },
-        "policy": {
-          "trace": true,
-          "expected_panic": null,
-          "timeout_ns": null
-        }
-      },
-      "state": {
-        "assertions": 4,
-        "failed_assertions": 0,
-        "errors": 0,
-        "aborted": false,
-        "diagnostics": [],
-        "traces": [
-          {
-            "message": "enabled tracing for: debug ...",
-            "location": {
-              "file": "/home/spawn/dev/cpp/Nyx/Engine/Source/Runtime/Test/Public/Execution.ixx",
-              "line": 223,
-              "column": 15
-            }
-          },
-          {
-            "message": "formatting Vec2 ...",
-            "location": {
-              "file": "/home/spawn/dev/cpp/Nyx/tests/core/debug.cxx",
-              "line": 34,
-              "column": 3
-            }
-          },
-          {
-            "message": "formatting Group ...",
-            "location": {
-              "file": "/home/spawn/dev/cpp/Nyx/tests/core/debug.cxx",
-              "line": 46,
-              "column": 3
-            }
-          }
-        ]
-      }
-    },
-    {
-      "identifier": "Tests::debug::emptyNestedStruct",
-      "status": "passed",
-      "duration_ns": 52916,
-      "run_seed": 536673014007545079,
-      "seed": 4849185492405112693,
-      "iteration": 0,
-      "trace_mode": "annotations",
-      "descriptor": {
-        "identifier": "Tests::debug::emptyNestedStruct",
-        "name": "emptyNestedStruct",
-        "description": "",
-        "test_case": 0,
-        "location": {
-          "file": "/home/spawn/dev/cpp/Nyx/tests/core/debug.cxx",
-          "line": 123,
-          "column": 52
-        },
-        "metadata": {
-          "group": "core",
-          "tags": [
-            "debug"
-          ]
-        },
-        "policy": {
-          "trace": false,
-          "expected_panic": null,
-          "timeout_ns": null
-        }
-      },
-      "state": {
-        "assertions": 1,
-        "failed_assertions": 0,
-        "errors": 0,
-        "aborted": false,
-        "diagnostics": [],
-        "traces": []
-      }
-    },
-    {
-      "identifier": "Tests::debug::emptyStruct",
-      "status": "passed",
-      "duration_ns": 3941,
-      "run_seed": 536673014007545079,
-      "seed": 7395175164195769785,
-      "iteration": 0,
-      "trace_mode": "annotations",
-      "descriptor": {
-        "identifier": "Tests::debug::emptyStruct",
-        "name": "emptyStruct",
-        "description": "",
-        "test_case": 0,
-        "location": {
-          "file": "/home/spawn/dev/cpp/Nyx/tests/core/debug.cxx",
-          "line": 114,
-          "column": 52
-        },
-        "metadata": {
-          "group": "core",
-          "tags": [
-            "debug"
-          ]
-        },
-        "policy": {
-          "trace": false,
-          "expected_panic": null,
-          "timeout_ns": null
-        }
-      },
-      "state": {
-        "assertions": 1,
-        "failed_assertions": 0,
-        "errors": 0,
-        "aborted": false,
-        "diagnostics": [],
-        "traces": []
-      }
-    },
-    {
-      "identifier": "Tests::debug::enumDisplay",
-      "status": "passed",
-      "duration_ns": 4524,
-      "run_seed": 536673014007545079,
-      "seed": 4347709894902536655,
-      "iteration": 0,
-      "trace_mode": "annotations",
-      "descriptor": {
-        "identifier": "Tests::debug::enumDisplay",
-        "name": "enumDisplay",
-        "description": "",
-        "test_case": 0,
-        "location": {
-          "file": "/home/spawn/dev/cpp/Nyx/tests/core/debug.cxx",
-          "line": 143,
-          "column": 52
-        },
-        "metadata": {
-          "group": "core",
-          "tags": [
-            "debug"
-          ]
-        },
-        "policy": {
-          "trace": false,
-          "expected_panic": null,
-          "timeout_ns": null
-        }
-      },
-      "state": {
-        "assertions": 4,
-        "failed_assertions": 0,
-        "errors": 0,
-        "aborted": false,
-        "diagnostics": [],
-        "traces": []
-      }
-    },
-    {
-      "identifier": "Tests::debug::hiddenEnum",
-      "status": "passed",
-      "duration_ns": 3781,
-      "run_seed": 536673014007545079,
-      "seed": 13874620182252750604,
-      "iteration": 0,
-      "trace_mode": "annotations",
-      "descriptor": {
-        "identifier": "Tests::debug::hiddenEnum",
-        "name": "hiddenEnum",
-        "description": "",
-        "test_case": 0,
-        "location": {
-          "file": "/home/spawn/dev/cpp/Nyx/tests/core/debug.cxx",
-          "line": 162,
-          "column": 52
-        },
-        "metadata": {
-          "group": "core",
-          "tags": [
-            "debug"
-          ]
-        },
-        "policy": {
-          "trace": false,
-          "expected_panic": null,
-          "timeout_ns": null
-        }
-      },
-      "state": {
-        "assertions": 1,
-        "failed_assertions": 0,
-        "errors": 0,
-        "aborted": false,
-        "diagnostics": [],
-        "traces": []
-      }
-    },
-    {
-      "identifier": "Tests::debug::hiddenEnumWithDefaultEnumerator",
-      "status": "passed",
-      "duration_ns": 11590,
-      "run_seed": 536673014007545079,
-      "seed": 5108712679773326981,
-      "iteration": 0,
-      "trace_mode": "annotations",
-      "descriptor": {
-        "identifier": "Tests::debug::hiddenEnumWithDefaultEnumerator",
-        "name": "hiddenEnumWithDefaultEnumerator",
-        "description": "",
-        "test_case": 0,
-        "location": {
-          "file": "/home/spawn/dev/cpp/Nyx/tests/core/debug.cxx",
-          "line": 172,
-          "column": 52
-        },
-        "metadata": {
-          "group": "core",
-          "tags": [
-            "debug"
-          ]
-        },
-        "policy": {
-          "trace": false,
-          "expected_panic": null,
-          "timeout_ns": null
-        }
-      },
-      "state": {
-        "assertions": 1,
-        "failed_assertions": 0,
-        "errors": 0,
-        "aborted": false,
-        "diagnostics": [],
-        "traces": []
-      }
-    },
-    {
-      "identifier": "Tests::debug::renamedEnum",
-      "status": "passed",
-      "duration_ns": 12046,
-      "run_seed": 536673014007545079,
-      "seed": 14619565506293218718,
-      "iteration": 0,
-      "trace_mode": "annotations",
-      "descriptor": {
-        "identifier": "Tests::debug::renamedEnum",
-        "name": "renamedEnum",
-        "description": "",
-        "test_case": 0,
-        "location": {
-          "file": "/home/spawn/dev/cpp/Nyx/tests/core/debug.cxx",
-          "line": 150,
-          "column": 52
-        },
-        "metadata": {
-          "group": "core",
-          "tags": [
-            "debug"
-          ]
-        },
-        "policy": {
-          "trace": false,
-          "expected_panic": null,
-          "timeout_ns": null
-        }
-      },
-      "state": {
-        "assertions": 3,
-        "failed_assertions": 0,
-        "errors": 0,
-        "aborted": false,
-        "diagnostics": [],
-        "traces": []
-      }
-    },
-    {
-      "identifier": "Tests::debug::structWithRenamedMembers",
-      "status": "passed",
-      "duration_ns": 17311,
-      "run_seed": 536673014007545079,
-      "seed": 876925626980611863,
-      "iteration": 0,
-      "trace_mode": "annotations",
-      "descriptor": {
-        "identifier": "Tests::debug::structWithRenamedMembers",
-        "name": "structWithRenamedMembers",
-        "description": "",
-        "test_case": 0,
-        "location": {
-          "file": "/home/spawn/dev/cpp/Nyx/tests/core/debug.cxx",
-          "line": 108,
-          "column": 52
-        },
-        "metadata": {
-          "group": "core",
-          "tags": [
-            "debug"
-          ]
-        },
-        "policy": {
-          "trace": false,
-          "expected_panic": null,
-          "timeout_ns": null
-        }
-      },
-      "state": {
-        "assertions": 1,
-        "failed_assertions": 0,
-        "errors": 0,
-        "aborted": false,
-        "diagnostics": [],
-        "traces": []
-      }
-    },
-    {
-      "identifier": "Tests::debug::structsWithHiddenMembers",
-      "status": "passed",
-      "duration_ns": 18810,
-      "run_seed": 536673014007545079,
-      "seed": 493325224289294486,
-      "iteration": 0,
-      "trace_mode": "annotations",
-      "descriptor": {
-        "identifier": "Tests::debug::structsWithHiddenMembers",
-        "name": "structsWithHiddenMembers",
-        "description": "",
-        "test_case": 0,
-        "location": {
-          "file": "/home/spawn/dev/cpp/Nyx/tests/core/debug.cxx",
-          "line": 92,
-          "column": 52
-        },
-        "metadata": {
-          "group": "core",
-          "tags": [
-            "debug"
-          ]
-        },
-        "policy": {
-          "trace": false,
-          "expected_panic": null,
-          "timeout_ns": null
-        }
-      },
-      "state": {
-        "assertions": 1,
-        "failed_assertions": 0,
-        "errors": 0,
-        "aborted": false,
-        "diagnostics": [],
-        "traces": []
-      }
-    },
-    {
       "identifier": "Tests::diagnostics::diagnostics",
       "status": "passed",
-      "duration_ns": 122448,
-      "run_seed": 536673014007545079,
-      "seed": 5485210220089588814,
+      "duration_ns": 500557,
+      "run_seed": 14365971765136134990,
+      "seed": 3200353514927319891,
       "iteration": 0,
       "trace_mode": "annotations",
       "descriptor": {
@@ -784,9 +174,9 @@
     {
       "identifier": "Tests::discovery::discoversEachDeclarativeCase",
       "status": "passed",
-      "duration_ns": 17902,
-      "run_seed": 536673014007545079,
-      "seed": 1530370464755762802,
+      "duration_ns": 5010,
+      "run_seed": 14365971765136134990,
+      "seed": 3689955283057712913,
       "iteration": 0,
       "trace_mode": "annotations",
       "descriptor": {
@@ -823,9 +213,9 @@
     {
       "identifier": "Tests::discovery::dispatchesIndependentCasesInParallel",
       "status": "passed",
-      "duration_ns": 21036799,
-      "run_seed": 536673014007545079,
-      "seed": 9686488928541363761,
+      "duration_ns": 20651309,
+      "run_seed": 14365971765136134990,
+      "seed": 18091314311039258441,
       "iteration": 0,
       "trace_mode": "annotations",
       "descriptor": {
@@ -862,9 +252,9 @@
     {
       "identifier": "Tests::discovery::dispatchesParameterisedTests",
       "status": "passed",
-      "duration_ns": 143475,
-      "run_seed": 536673014007545079,
-      "seed": 15220126601022142012,
+      "duration_ns": 98537,
+      "run_seed": 14365971765136134990,
+      "seed": 8251068905680662205,
       "iteration": 0,
       "trace_mode": "annotations",
       "descriptor": {
@@ -901,9 +291,9 @@
     {
       "identifier": "Tests::discovery::flattensIndependentSuitesAndUsesAutomaticWorkerCount",
       "status": "passed",
-      "duration_ns": 12925474,
-      "run_seed": 536673014007545079,
-      "seed": 16824118027742308425,
+      "duration_ns": 12144536,
+      "run_seed": 14365971765136134990,
+      "seed": 5437074348349389563,
       "iteration": 0,
       "trace_mode": "annotations",
       "descriptor": {
@@ -940,9 +330,9 @@
     {
       "identifier": "Tests::discovery::preservesCaseIdentityForFailures",
       "status": "passed",
-      "duration_ns": 73704,
-      "run_seed": 536673014007545079,
-      "seed": 16112359166514648705,
+      "duration_ns": 163928,
+      "run_seed": 14365971765136134990,
+      "seed": 6138265262567056327,
       "iteration": 0,
       "trace_mode": "annotations",
       "descriptor": {
@@ -979,9 +369,9 @@
     {
       "identifier": "Tests::discovery::preservesFixtureScopesAndVirtualTimeAcrossParallelCases",
       "status": "passed",
-      "duration_ns": 12401552,
-      "run_seed": 536673014007545079,
-      "seed": 12878515662879050290,
+      "duration_ns": 11305818,
+      "run_seed": 14365971765136134990,
+      "seed": 8932576819006484574,
       "iteration": 0,
       "trace_mode": "annotations",
       "descriptor": {
@@ -1018,9 +408,9 @@
     {
       "identifier": "Tests::discovery::selectsTestsByQualifiedNameGroupAndTags",
       "status": "passed",
-      "duration_ns": 115499,
-      "run_seed": 536673014007545079,
-      "seed": 16072568262245828507,
+      "duration_ns": 116677,
+      "run_seed": 14365971765136134990,
+      "seed": 7741657870582191339,
       "iteration": 0,
       "trace_mode": "annotations",
       "descriptor": {
@@ -1057,9 +447,9 @@
     {
       "identifier": "Tests::environment::bindingRestoresPreviousEnvironment",
       "status": "passed",
-      "duration_ns": 3113,
-      "run_seed": 536673014007545079,
-      "seed": 13106678881946544108,
+      "duration_ns": 1923,
+      "run_seed": 14365971765136134990,
+      "seed": 3630603973132027808,
       "iteration": 0,
       "trace_mode": "annotations",
       "descriptor": {
@@ -1094,395 +484,11 @@
       }
     },
     {
-      "identifier": "Tests::error::empty",
-      "status": "passed",
-      "duration_ns": 4674,
-      "run_seed": 536673014007545079,
-      "seed": 11627588537169470286,
-      "iteration": 0,
-      "trace_mode": "annotations",
-      "descriptor": {
-        "identifier": "Tests::error::empty",
-        "name": "empty",
-        "description": "",
-        "test_case": 0,
-        "location": {
-          "file": "/home/spawn/dev/cpp/Nyx/tests/core/error.cxx",
-          "line": 23,
-          "column": 69
-        },
-        "metadata": {
-          "group": "Core",
-          "tags": [
-            "error"
-          ]
-        },
-        "policy": {
-          "trace": false,
-          "expected_panic": "",
-          "timeout_ns": null
-        }
-      },
-      "state": {
-        "assertions": 0,
-        "failed_assertions": 0,
-        "errors": 0,
-        "aborted": false,
-        "diagnostics": [],
-        "traces": []
-      }
-    },
-    {
-      "identifier": "Tests::error::errorFunction",
-      "status": "passed",
-      "duration_ns": 2697,
-      "run_seed": 536673014007545079,
-      "seed": 3782189050143079734,
-      "iteration": 0,
-      "trace_mode": "annotations",
-      "descriptor": {
-        "identifier": "Tests::error::errorFunction",
-        "name": "errorFunction",
-        "description": "",
-        "test_case": 0,
-        "location": {
-          "file": "/home/spawn/dev/cpp/Nyx/tests/core/error.cxx",
-          "line": 19,
-          "column": 52
-        },
-        "metadata": {
-          "group": "Core",
-          "tags": [
-            "error"
-          ]
-        },
-        "policy": {
-          "trace": false,
-          "expected_panic": null,
-          "timeout_ns": null
-        }
-      },
-      "state": {
-        "assertions": 1,
-        "failed_assertions": 0,
-        "errors": 0,
-        "aborted": false,
-        "diagnostics": [],
-        "traces": []
-      }
-    },
-    {
-      "identifier": "Tests::error::errorLocation",
-      "status": "passed",
-      "duration_ns": 2424,
-      "run_seed": 536673014007545079,
-      "seed": 2153130733595337027,
-      "iteration": 0,
-      "trace_mode": "annotations",
-      "descriptor": {
-        "identifier": "Tests::error::errorLocation",
-        "name": "errorLocation",
-        "description": "",
-        "test_case": 0,
-        "location": {
-          "file": "/home/spawn/dev/cpp/Nyx/tests/core/error.cxx",
-          "line": 64,
-          "column": 52
-        },
-        "metadata": {
-          "group": "core",
-          "tags": [
-            "debug"
-          ]
-        },
-        "policy": {
-          "trace": false,
-          "expected_panic": null,
-          "timeout_ns": null
-        }
-      },
-      "state": {
-        "assertions": 3,
-        "failed_assertions": 0,
-        "errors": 0,
-        "aborted": false,
-        "diagnostics": [],
-        "traces": []
-      }
-    },
-    {
-      "identifier": "Tests::error::errorStoresMessage",
-      "status": "passed",
-      "duration_ns": 5194,
-      "run_seed": 536673014007545079,
-      "seed": 8714321188848634512,
-      "iteration": 0,
-      "trace_mode": "annotations",
-      "descriptor": {
-        "identifier": "Tests::error::errorStoresMessage",
-        "name": "errorStoresMessage",
-        "description": "",
-        "test_case": 0,
-        "location": {
-          "file": "/home/spawn/dev/cpp/Nyx/tests/core/error.cxx",
-          "line": 14,
-          "column": 52
-        },
-        "metadata": {
-          "group": "Core",
-          "tags": [
-            "error"
-          ]
-        },
-        "policy": {
-          "trace": false,
-          "expected_panic": null,
-          "timeout_ns": null
-        }
-      },
-      "state": {
-        "assertions": 1,
-        "failed_assertions": 0,
-        "errors": 0,
-        "aborted": false,
-        "diagnostics": [],
-        "traces": []
-      }
-    },
-    {
-      "identifier": "Tests::error::fail",
-      "status": "passed",
-      "duration_ns": 8423,
-      "run_seed": 536673014007545079,
-      "seed": 11350632880590477835,
-      "iteration": 0,
-      "trace_mode": "annotations",
-      "descriptor": {
-        "identifier": "Tests::error::fail",
-        "name": "fail",
-        "description": "",
-        "test_case": 0,
-        "location": {
-          "file": "/home/spawn/dev/cpp/Nyx/tests/core/error.cxx",
-          "line": 10,
-          "column": 77
-        },
-        "metadata": {
-          "group": "Core",
-          "tags": [
-            "error"
-          ]
-        },
-        "policy": {
-          "trace": false,
-          "expected_panic": "Failed",
-          "timeout_ns": null
-        }
-      },
-      "state": {
-        "assertions": 0,
-        "failed_assertions": 0,
-        "errors": 0,
-        "aborted": false,
-        "diagnostics": [],
-        "traces": []
-      }
-    },
-    {
-      "identifier": "Tests::error::releaseError",
-      "status": "passed",
-      "duration_ns": 12474,
-      "run_seed": 536673014007545079,
-      "seed": 13523548646733927636,
-      "iteration": 0,
-      "trace_mode": "annotations",
-      "descriptor": {
-        "identifier": "Tests::error::releaseError",
-        "name": "releaseError",
-        "description": "",
-        "test_case": 0,
-        "location": {
-          "file": "/home/spawn/dev/cpp/Nyx/tests/core/error.cxx",
-          "line": 72,
-          "column": 61
-        },
-        "metadata": {
-          "group": "core",
-          "tags": [
-            "debug"
-          ]
-        },
-        "policy": {
-          "trace": true,
-          "expected_panic": null,
-          "timeout_ns": null
-        }
-      },
-      "state": {
-        "assertions": 5,
-        "failed_assertions": 0,
-        "errors": 0,
-        "aborted": false,
-        "diagnostics": [],
-        "traces": [
-          {
-            "message": "enabled tracing for: releaseError ...",
-            "location": {
-              "file": "/home/spawn/dev/cpp/Nyx/Engine/Source/Runtime/Test/Public/Execution.ixx",
-              "line": 223,
-              "column": 15
-            }
-          },
-          {
-            "message": "instantiated the first error",
-            "location": {
-              "file": "/home/spawn/dev/cpp/Nyx/tests/core/error.cxx",
-              "line": 74,
-              "column": 3
-            }
-          },
-          {
-            "message": "transfered ownership of the first error to the second",
-            "location": {
-              "file": "/home/spawn/dev/cpp/Nyx/tests/core/error.cxx",
-              "line": 77,
-              "column": 3
-            }
-          },
-          {
-            "message": "appended first error",
-            "location": {
-              "file": "/home/spawn/dev/cpp/Nyx/tests/core/error.cxx",
-              "line": 83,
-              "column": 3
-            }
-          }
-        ]
-      }
-    },
-    {
-      "identifier": "Tests::error::stackTrace",
-      "status": "passed",
-      "duration_ns": 81065,
-      "run_seed": 536673014007545079,
-      "seed": 6038134963064803314,
-      "iteration": 0,
-      "trace_mode": "annotations",
-      "descriptor": {
-        "identifier": "Tests::error::stackTrace",
-        "name": "stackTrace",
-        "description": "",
-        "test_case": 0,
-        "location": {
-          "file": "/home/spawn/dev/cpp/Nyx/tests/core/error.cxx",
-          "line": 53,
-          "column": 52
-        },
-        "metadata": {
-          "group": "core",
-          "tags": [
-            "debug"
-          ]
-        },
-        "policy": {
-          "trace": false,
-          "expected_panic": null,
-          "timeout_ns": null
-        }
-      },
-      "state": {
-        "assertions": 2,
-        "failed_assertions": 0,
-        "errors": 0,
-        "aborted": false,
-        "diagnostics": [],
-        "traces": []
-      }
-    },
-    {
-      "identifier": "Tests::example::divideFail(5, 0)",
-      "status": "passed",
-      "duration_ns": 10916,
-      "run_seed": 536673014007545079,
-      "seed": 10049566915859138317,
-      "iteration": 0,
-      "trace_mode": "annotations",
-      "descriptor": {
-        "identifier": "Tests::example::divideFail(5, 0)",
-        "name": "divideFail",
-        "description": "",
-        "test_case": 0,
-        "location": {
-          "file": "/home/spawn/dev/cpp/Nyx/tests/framework/example.cxx",
-          "line": 22,
-          "column": 108
-        },
-        "metadata": {
-          "group": "example",
-          "tags": [
-            "math"
-          ]
-        },
-        "policy": {
-          "trace": false,
-          "expected_panic": "Cannot divide by zero!",
-          "timeout_ns": null
-        }
-      },
-      "state": {
-        "assertions": 0,
-        "failed_assertions": 0,
-        "errors": 0,
-        "aborted": false,
-        "diagnostics": [],
-        "traces": []
-      }
-    },
-    {
-      "identifier": "Tests::example::dividePass(5, 2)",
-      "status": "passed",
-      "duration_ns": 3224,
-      "run_seed": 536673014007545079,
-      "seed": 16509720944784680359,
-      "iteration": 0,
-      "trace_mode": "annotations",
-      "descriptor": {
-        "identifier": "Tests::example::dividePass(5, 2)",
-        "name": "dividePass",
-        "description": "",
-        "test_case": 0,
-        "location": {
-          "file": "/home/spawn/dev/cpp/Nyx/tests/framework/example.cxx",
-          "line": 17,
-          "column": 68
-        },
-        "metadata": {
-          "group": "example",
-          "tags": [
-            "math"
-          ]
-        },
-        "policy": {
-          "trace": false,
-          "expected_panic": null,
-          "timeout_ns": null
-        }
-      },
-      "state": {
-        "assertions": 1,
-        "failed_assertions": 0,
-        "errors": 0,
-        "aborted": false,
-        "diagnostics": [],
-        "traces": []
-      }
-    },
-    {
       "identifier": "Tests::executions::awaitsNestedAsyncTasks",
       "status": "passed",
-      "duration_ns": 10317,
-      "run_seed": 536673014007545079,
-      "seed": 2065692359679112477,
+      "duration_ns": 22968,
+      "run_seed": 14365971765136134990,
+      "seed": 17552818296176885375,
       "iteration": 0,
       "trace_mode": "annotations",
       "descriptor": {
@@ -1519,9 +525,9 @@
     {
       "identifier": "Tests::executions::capturesAsyncExceptionsAtTheTestBoundary",
       "status": "passed",
-      "duration_ns": 46000,
-      "run_seed": 536673014007545079,
-      "seed": 15003683680335824250,
+      "duration_ns": 59513,
+      "run_seed": 14365971765136134990,
+      "seed": 1578935032642547192,
       "iteration": 0,
       "trace_mode": "annotations",
       "descriptor": {
@@ -1558,9 +564,9 @@
     {
       "identifier": "Tests::executions::capturesAsyncFatalRequirementsAtTheTestBoundary",
       "status": "passed",
-      "duration_ns": 35193,
-      "run_seed": 536673014007545079,
-      "seed": 12386772795437241609,
+      "duration_ns": 56463,
+      "run_seed": 14365971765136134990,
+      "seed": 11852573811321767816,
       "iteration": 0,
       "trace_mode": "annotations",
       "descriptor": {
@@ -1597,9 +603,9 @@
     {
       "identifier": "Tests::executions::capturesFatalRequirementsAtTheTestBoundary",
       "status": "passed",
-      "duration_ns": 21397,
-      "run_seed": 536673014007545079,
-      "seed": 12526069567730831740,
+      "duration_ns": 112985,
+      "run_seed": 14365971765136134990,
+      "seed": 10388712035570774471,
       "iteration": 0,
       "trace_mode": "annotations",
       "descriptor": {
@@ -1636,9 +642,9 @@
     {
       "identifier": "Tests::executions::capturesUnhandledExceptions",
       "status": "passed",
-      "duration_ns": 88151,
-      "run_seed": 536673014007545079,
-      "seed": 1532961408555676471,
+      "duration_ns": 68312,
+      "run_seed": 14365971765136134990,
+      "seed": 10512735774342433485,
       "iteration": 0,
       "trace_mode": "annotations",
       "descriptor": {
@@ -1675,9 +681,9 @@
     {
       "identifier": "Tests::executions::executesVoidTestsInAnEnvironment",
       "status": "passed",
-      "duration_ns": 8738,
-      "run_seed": 536673014007545079,
-      "seed": 12312194213690199151,
+      "duration_ns": 7822,
+      "run_seed": 14365971765136134990,
+      "seed": 1467347185728023342,
       "iteration": 0,
       "trace_mode": "annotations",
       "descriptor": {
@@ -1714,9 +720,9 @@
     {
       "identifier": "Tests::executions::normalizesAsyncReturnValues",
       "status": "passed",
-      "duration_ns": 37465,
-      "run_seed": 536673014007545079,
-      "seed": 16624251174555745830,
+      "duration_ns": 30153,
+      "run_seed": 14365971765136134990,
+      "seed": 16065395517465651044,
       "iteration": 0,
       "trace_mode": "annotations",
       "descriptor": {
@@ -1753,9 +759,9 @@
     {
       "identifier": "Tests::executions::normalizesBooleanReturnValues",
       "status": "passed",
-      "duration_ns": 27785,
-      "run_seed": 536673014007545079,
-      "seed": 9310314552126840292,
+      "duration_ns": 6689,
+      "run_seed": 14365971765136134990,
+      "seed": 14692745854406009958,
       "iteration": 0,
       "trace_mode": "annotations",
       "descriptor": {
@@ -1792,9 +798,9 @@
     {
       "identifier": "Tests::executions::normalizesResultReturnValues",
       "status": "passed",
-      "duration_ns": 21973,
-      "run_seed": 536673014007545079,
-      "seed": 11544154496308693860,
+      "duration_ns": 36792,
+      "run_seed": 14365971765136134990,
+      "seed": 14496355353872409112,
       "iteration": 0,
       "trace_mode": "annotations",
       "descriptor": {
@@ -1831,9 +837,9 @@
     {
       "identifier": "Tests::executions::preservesTaskLocalBindingsAcrossAsyncResumption",
       "status": "passed",
-      "duration_ns": 8992,
-      "run_seed": 536673014007545079,
-      "seed": 13930090547390326278,
+      "duration_ns": 10481,
+      "run_seed": 14365971765136134990,
+      "seed": 591658461142035094,
       "iteration": 0,
       "trace_mode": "annotations",
       "descriptor": {
@@ -1870,9 +876,9 @@
     {
       "identifier": "Tests::executions::reportsAggregateResults",
       "status": "passed",
-      "duration_ns": 368500,
-      "run_seed": 536673014007545079,
-      "seed": 1975944051167309178,
+      "duration_ns": 113538,
+      "run_seed": 14365971765136134990,
+      "seed": 18332831686908014384,
       "iteration": 0,
       "trace_mode": "annotations",
       "descriptor": {
@@ -1909,9 +915,9 @@
     {
       "identifier": "Tests::expressions::compactLiteralsUseTheAssertionLocation",
       "status": "passed",
-      "duration_ns": 41726,
-      "run_seed": 536673014007545079,
-      "seed": 5291008926037826120,
+      "duration_ns": 35060,
+      "run_seed": 14365971765136134990,
+      "seed": 393004414993213598,
       "iteration": 0,
       "trace_mode": "annotations",
       "descriptor": {
@@ -1948,9 +954,9 @@
     {
       "identifier": "Tests::expressions::comparisonsExposeValuesAndLocations",
       "status": "passed",
-      "duration_ns": 18710,
-      "run_seed": 536673014007545079,
-      "seed": 1203068648677075532,
+      "duration_ns": 34012,
+      "run_seed": 14365971765136134990,
+      "seed": 2965657574748252352,
       "iteration": 0,
       "trace_mode": "annotations",
       "descriptor": {
@@ -1987,9 +993,9 @@
     {
       "identifier": "Tests::expressions::literalOperatorsProduceExpressions",
       "status": "passed",
-      "duration_ns": 2948,
-      "run_seed": 536673014007545079,
-      "seed": 8245695244327911548,
+      "duration_ns": 3789,
+      "run_seed": 14365971765136134990,
+      "seed": 5095551211146620608,
       "iteration": 0,
       "trace_mode": "annotations",
       "descriptor": {
@@ -2026,9 +1032,9 @@
     {
       "identifier": "Tests::expressions::requiredExpressionsAbortTheTest",
       "status": "passed",
-      "duration_ns": 30652,
-      "run_seed": 536673014007545079,
-      "seed": 15934261174139436206,
+      "duration_ns": 26484,
+      "run_seed": 14365971765136134990,
+      "seed": 10510245610346574380,
       "iteration": 0,
       "trace_mode": "annotations",
       "descriptor": {
@@ -2065,9 +1071,9 @@
     {
       "identifier": "Tests::expressions::returnedExpressionsPreserveTheirDiagnostics",
       "status": "passed",
-      "duration_ns": 75968,
-      "run_seed": 536673014007545079,
-      "seed": 17531942432690849813,
+      "duration_ns": 21666,
+      "run_seed": 14365971765136134990,
+      "seed": 15638703313198129044,
       "iteration": 0,
       "trace_mode": "annotations",
       "descriptor": {
@@ -2104,9 +1110,9 @@
     {
       "identifier": "Tests::expressions::stringDifferencesVisualizeWhitespace",
       "status": "passed",
-      "duration_ns": 100384,
-      "run_seed": 536673014007545079,
-      "seed": 16506927658645951939,
+      "duration_ns": 21168,
+      "run_seed": 14365971765136134990,
+      "seed": 12478769015531940485,
       "iteration": 0,
       "trace_mode": "annotations",
       "descriptor": {
@@ -2143,9 +1149,9 @@
     {
       "identifier": "Tests::expressions::utilityComparatorsProduceExpressions",
       "status": "passed",
-      "duration_ns": 108600,
-      "run_seed": 536673014007545079,
-      "seed": 3563049045278471163,
+      "duration_ns": 48152,
+      "run_seed": 14365971765136134990,
+      "seed": 10583854400251670367,
       "iteration": 0,
       "trace_mode": "annotations",
       "descriptor": {
@@ -2180,128 +1186,11 @@
       }
     },
     {
-      "identifier": "Tests::fibonacciCases(0, 0)",
-      "status": "passed",
-      "duration_ns": 889,
-      "run_seed": 536673014007545079,
-      "seed": 10780936311820255856,
-      "iteration": 0,
-      "trace_mode": "annotations",
-      "descriptor": {
-        "identifier": "Tests::fibonacciCases(0, 0)",
-        "name": "fibonacciCases",
-        "description": "",
-        "test_case": 0,
-        "location": {
-          "file": "/home/spawn/dev/cpp/Nyx/tests/framework/demo.cxx",
-          "line": 25,
-          "column": 34
-        },
-        "metadata": {
-          "group": "math",
-          "tags": [
-            "fibonacci"
-          ]
-        },
-        "policy": {
-          "trace": false,
-          "expected_panic": null,
-          "timeout_ns": null
-        }
-      },
-      "state": {
-        "assertions": 1,
-        "failed_assertions": 0,
-        "errors": 0,
-        "aborted": false,
-        "diagnostics": [],
-        "traces": []
-      }
-    },
-    {
-      "identifier": "Tests::fibonacciCases(1, 1)",
-      "status": "passed",
-      "duration_ns": 2186,
-      "run_seed": 536673014007545079,
-      "seed": 3533788841042714712,
-      "iteration": 0,
-      "trace_mode": "annotations",
-      "descriptor": {
-        "identifier": "Tests::fibonacciCases(1, 1)",
-        "name": "fibonacciCases",
-        "description": "",
-        "test_case": 1,
-        "location": {
-          "file": "/home/spawn/dev/cpp/Nyx/tests/framework/demo.cxx",
-          "line": 25,
-          "column": 34
-        },
-        "metadata": {
-          "group": "math",
-          "tags": [
-            "fibonacci"
-          ]
-        },
-        "policy": {
-          "trace": false,
-          "expected_panic": null,
-          "timeout_ns": null
-        }
-      },
-      "state": {
-        "assertions": 1,
-        "failed_assertions": 0,
-        "errors": 0,
-        "aborted": false,
-        "diagnostics": [],
-        "traces": []
-      }
-    },
-    {
-      "identifier": "Tests::fibonacciCases(5, 5)",
-      "status": "passed",
-      "duration_ns": 938,
-      "run_seed": 536673014007545079,
-      "seed": 5750915509275332503,
-      "iteration": 0,
-      "trace_mode": "annotations",
-      "descriptor": {
-        "identifier": "Tests::fibonacciCases(5, 5)",
-        "name": "fibonacciCases",
-        "description": "",
-        "test_case": 2,
-        "location": {
-          "file": "/home/spawn/dev/cpp/Nyx/tests/framework/demo.cxx",
-          "line": 25,
-          "column": 34
-        },
-        "metadata": {
-          "group": "math",
-          "tags": [
-            "fibonacci"
-          ]
-        },
-        "policy": {
-          "trace": false,
-          "expected_panic": null,
-          "timeout_ns": null
-        }
-      },
-      "state": {
-        "assertions": 1,
-        "failed_assertions": 0,
-        "errors": 0,
-        "aborted": false,
-        "diagnostics": [],
-        "traces": []
-      }
-    },
-    {
       "identifier": "Tests::fixtures::directRunInjectsContext",
       "status": "passed",
-      "duration_ns": 5516,
-      "run_seed": 536673014007545079,
-      "seed": 8440186042780732842,
+      "duration_ns": 17789,
+      "run_seed": 14365971765136134990,
+      "seed": 17368058944499548443,
       "iteration": 0,
       "trace_mode": "annotations",
       "descriptor": {
@@ -2338,9 +1227,9 @@
     {
       "identifier": "Tests::fixtures::reflectedFixtureDependenciesRespectScopeLifetimes",
       "status": "passed",
-      "duration_ns": 173624,
-      "run_seed": 536673014007545079,
-      "seed": 1920884957467954024,
+      "duration_ns": 163844,
+      "run_seed": 14365971765136134990,
+      "seed": 11871447557252349746,
       "iteration": 0,
       "trace_mode": "annotations",
       "descriptor": {
@@ -2377,9 +1266,9 @@
     {
       "identifier": "Tests::fixtures::reflectedInjectionUsesFixtureScopes",
       "status": "passed",
-      "duration_ns": 329132,
-      "run_seed": 536673014007545079,
-      "seed": 10738165691054031786,
+      "duration_ns": 322877,
+      "run_seed": 14365971765136134990,
+      "seed": 12531611961189829915,
       "iteration": 0,
       "trace_mode": "annotations",
       "descriptor": {
@@ -2414,310 +1303,11 @@
       }
     },
     {
-      "identifier": "Tests::fs::createFileWithoutWriteMode",
-      "status": "passed",
-      "duration_ns": 15209,
-      "run_seed": 536673014007545079,
-      "seed": 13471456317528862821,
-      "iteration": 0,
-      "trace_mode": "annotations",
-      "descriptor": {
-        "identifier": "Tests::fs::createFileWithoutWriteMode",
-        "name": "createFileWithoutWriteMode",
-        "description": "",
-        "test_case": 0,
-        "location": {
-          "file": "/home/spawn/dev/cpp/Nyx/tests/core/fs.cxx",
-          "line": 22,
-          "column": 49
-        },
-        "metadata": {
-          "group": "core",
-          "tags": [
-            "fs"
-          ]
-        },
-        "policy": {
-          "trace": false,
-          "expected_panic": null,
-          "timeout_ns": null
-        }
-      },
-      "state": {
-        "assertions": 2,
-        "failed_assertions": 0,
-        "errors": 0,
-        "aborted": false,
-        "diagnostics": [],
-        "traces": []
-      }
-    },
-    {
-      "identifier": "Tests::fs::fileDoesNotExist",
-      "status": "passed",
-      "duration_ns": 15037,
-      "run_seed": 536673014007545079,
-      "seed": 8893409438047949846,
-      "iteration": 0,
-      "trace_mode": "annotations",
-      "descriptor": {
-        "identifier": "Tests::fs::fileDoesNotExist",
-        "name": "fileDoesNotExist",
-        "description": "",
-        "test_case": 0,
-        "location": {
-          "file": "/home/spawn/dev/cpp/Nyx/tests/core/fs.cxx",
-          "line": 33,
-          "column": 49
-        },
-        "metadata": {
-          "group": "core",
-          "tags": [
-            "fs"
-          ]
-        },
-        "policy": {
-          "trace": false,
-          "expected_panic": null,
-          "timeout_ns": null
-        }
-      },
-      "state": {
-        "assertions": 2,
-        "failed_assertions": 0,
-        "errors": 0,
-        "aborted": false,
-        "diagnostics": [],
-        "traces": []
-      }
-    },
-    {
-      "identifier": "Tests::fs::fileIsDirectory",
-      "status": "passed",
-      "duration_ns": 31770,
-      "run_seed": 536673014007545079,
-      "seed": 15976642022533173516,
-      "iteration": 0,
-      "trace_mode": "annotations",
-      "descriptor": {
-        "identifier": "Tests::fs::fileIsDirectory",
-        "name": "fileIsDirectory",
-        "description": "",
-        "test_case": 0,
-        "location": {
-          "file": "/home/spawn/dev/cpp/Nyx/tests/core/fs.cxx",
-          "line": 11,
-          "column": 49
-        },
-        "metadata": {
-          "group": "core",
-          "tags": [
-            "fs"
-          ]
-        },
-        "policy": {
-          "trace": false,
-          "expected_panic": null,
-          "timeout_ns": null
-        }
-      },
-      "state": {
-        "assertions": 2,
-        "failed_assertions": 0,
-        "errors": 0,
-        "aborted": false,
-        "diagnostics": [],
-        "traces": []
-      }
-    },
-    {
-      "identifier": "Tests::fs::fileOperations",
-      "status": "passed",
-      "duration_ns": 435661,
-      "run_seed": 536673014007545079,
-      "seed": 16178873409618762990,
-      "iteration": 0,
-      "trace_mode": "annotations",
-      "descriptor": {
-        "identifier": "Tests::fs::fileOperations",
-        "name": "fileOperations",
-        "description": "",
-        "test_case": 0,
-        "location": {
-          "file": "/home/spawn/dev/cpp/Nyx/tests/core/fs.cxx",
-          "line": 64,
-          "column": 58
-        },
-        "metadata": {
-          "group": "core",
-          "tags": [
-            "fs"
-          ]
-        },
-        "policy": {
-          "trace": true,
-          "expected_panic": null,
-          "timeout_ns": null
-        }
-      },
-      "state": {
-        "assertions": 11,
-        "failed_assertions": 0,
-        "errors": 0,
-        "aborted": false,
-        "diagnostics": [],
-        "traces": [
-          {
-            "message": "enabled tracing for: fileOperations ...",
-            "location": {
-              "file": "/home/spawn/dev/cpp/Nyx/Engine/Source/Runtime/Test/Public/Execution.ixx",
-              "line": 223,
-              "column": 15
-            }
-          },
-          {
-            "message": "created file: /home/spawn/dev/cpp/Nyx/tests/foo.txt",
-            "location": {
-              "file": "/home/spawn/dev/cpp/Nyx/tests/core/fs.cxx",
-              "line": 76,
-              "column": 5
-            }
-          },
-          {
-            "message": "appended 1 ... ",
-            "location": {
-              "file": "/home/spawn/dev/cpp/Nyx/tests/core/fs.cxx",
-              "line": 99,
-              "column": 7
-            }
-          },
-          {
-            "message": "appended 2 ... ",
-            "location": {
-              "file": "/home/spawn/dev/cpp/Nyx/tests/core/fs.cxx",
-              "line": 101,
-              "column": 7
-            }
-          },
-          {
-            "message": "appended file: /home/spawn/dev/cpp/Nyx/tests/foo.txt",
-            "location": {
-              "file": "/home/spawn/dev/cpp/Nyx/tests/core/fs.cxx",
-              "line": 105,
-              "column": 5
-            }
-          },
-          {
-            "message": "read file: /home/spawn/dev/cpp/Nyx/tests/foo.txt",
-            "location": {
-              "file": "/home/spawn/dev/cpp/Nyx/tests/core/fs.cxx",
-              "line": 120,
-              "column": 5
-            }
-          },
-          {
-            "message": "truncated file: /home/spawn/dev/cpp/Nyx/tests/foo.txt",
-            "location": {
-              "file": "/home/spawn/dev/cpp/Nyx/tests/core/fs.cxx",
-              "line": 134,
-              "column": 5
-            }
-          },
-          {
-            "message": "deleted file: /home/spawn/dev/cpp/Nyx/tests/foo.txt",
-            "location": {
-              "file": "/home/spawn/dev/cpp/Nyx/tests/core/fs.cxx",
-              "line": 145,
-              "column": 5
-            }
-          }
-        ]
-      }
-    },
-    {
-      "identifier": "Tests::fs::readWriteNotChosen",
-      "status": "passed",
-      "duration_ns": 18131,
-      "run_seed": 536673014007545079,
-      "seed": 11240315257619139778,
-      "iteration": 0,
-      "trace_mode": "annotations",
-      "descriptor": {
-        "identifier": "Tests::fs::readWriteNotChosen",
-        "name": "readWriteNotChosen",
-        "description": "",
-        "test_case": 0,
-        "location": {
-          "file": "/home/spawn/dev/cpp/Nyx/tests/core/fs.cxx",
-          "line": 45,
-          "column": 49
-        },
-        "metadata": {
-          "group": "core",
-          "tags": [
-            "fs"
-          ]
-        },
-        "policy": {
-          "trace": false,
-          "expected_panic": null,
-          "timeout_ns": null
-        }
-      },
-      "state": {
-        "assertions": 2,
-        "failed_assertions": 0,
-        "errors": 0,
-        "aborted": false,
-        "diagnostics": [],
-        "traces": []
-      }
-    },
-    {
-      "identifier": "Tests::fs::truncateFileWithoutWriteMode",
-      "status": "passed",
-      "duration_ns": 59504,
-      "run_seed": 536673014007545079,
-      "seed": 13186938850387644485,
-      "iteration": 0,
-      "trace_mode": "annotations",
-      "descriptor": {
-        "identifier": "Tests::fs::truncateFileWithoutWriteMode",
-        "name": "truncateFileWithoutWriteMode",
-        "description": "",
-        "test_case": 0,
-        "location": {
-          "file": "/home/spawn/dev/cpp/Nyx/tests/core/fs.cxx",
-          "line": 55,
-          "column": 49
-        },
-        "metadata": {
-          "group": "core",
-          "tags": [
-            "fs"
-          ]
-        },
-        "policy": {
-          "trace": false,
-          "expected_panic": null,
-          "timeout_ns": null
-        }
-      },
-      "state": {
-        "assertions": 2,
-        "failed_assertions": 0,
-        "errors": 0,
-        "aborted": false,
-        "diagnostics": [],
-        "traces": []
-      }
-    },
-    {
       "identifier": "Tests::json::writesCompleteMachineReports",
       "status": "passed",
-      "duration_ns": 476881,
-      "run_seed": 536673014007545079,
-      "seed": 3458259028112635121,
+      "duration_ns": 685820,
+      "run_seed": 14365971765136134990,
+      "seed": 6561906445893118229,
       "iteration": 0,
       "trace_mode": "annotations",
       "descriptor": {
@@ -2744,7 +1334,7 @@
         }
       },
       "state": {
-        "assertions": 28,
+        "assertions": 29,
         "failed_assertions": 0,
         "errors": 0,
         "aborted": false,
@@ -2755,9 +1345,9 @@
     {
       "identifier": "Tests::lifecycle::clearsRunLoopTicketsWhenDrivingFails",
       "status": "passed",
-      "duration_ns": 42812,
-      "run_seed": 536673014007545079,
-      "seed": 6824136121314136798,
+      "duration_ns": 18040,
+      "run_seed": 14365971765136134990,
+      "seed": 14929225402001115249,
       "iteration": 0,
       "trace_mode": "annotations",
       "descriptor": {
@@ -2794,9 +1384,9 @@
     {
       "identifier": "Tests::lifecycle::doesNotResumeADoublyScheduledCoroutineBeforeItsTimer",
       "status": "passed",
-      "duration_ns": 11520,
-      "run_seed": 536673014007545079,
-      "seed": 11249939454443931544,
+      "duration_ns": 12357,
+      "run_seed": 14365971765136134990,
+      "seed": 16885600051452646948,
       "iteration": 0,
       "trace_mode": "annotations",
       "descriptor": {
@@ -2833,9 +1423,9 @@
     {
       "identifier": "Tests::lifecycle::reportsAStrandedAsyncTask",
       "status": "passed",
-      "duration_ns": 65764,
-      "run_seed": 536673014007545079,
-      "seed": 11356350444770533781,
+      "duration_ns": 37617,
+      "run_seed": 14365971765136134990,
+      "seed": 8455017144581914957,
       "iteration": 0,
       "trace_mode": "annotations",
       "descriptor": {
@@ -2872,9 +1462,9 @@
     {
       "identifier": "Tests::lifecycle::reportsAndCleansPendingWorkAfterATaskCompletes",
       "status": "passed",
-      "duration_ns": 36138,
-      "run_seed": 536673014007545079,
-      "seed": 5455423838547044415,
+      "duration_ns": 33429,
+      "run_seed": 14365971765136134990,
+      "seed": 17381941741862932485,
       "iteration": 0,
       "trace_mode": "annotations",
       "descriptor": {
@@ -2911,9 +1501,9 @@
     {
       "identifier": "Tests::lifecycle::reportsOnlyTheTimeoutWhenCancellationCannotResumeATask",
       "status": "passed",
-      "duration_ns": 25095,
-      "run_seed": 536673014007545079,
-      "seed": 16097203455315583205,
+      "duration_ns": 59076,
+      "run_seed": 14365971765136134990,
+      "seed": 5664798041172340201,
       "iteration": 0,
       "trace_mode": "annotations",
       "descriptor": {
@@ -2950,9 +1540,9 @@
     {
       "identifier": "Tests::lifecycle::restoresTaskLocalBindingsAfterAsyncAbort",
       "status": "passed",
-      "duration_ns": 34502,
-      "run_seed": 536673014007545079,
-      "seed": 17166819106253886299,
+      "duration_ns": 57697,
+      "run_seed": 14365971765136134990,
+      "seed": 7231543708008000799,
       "iteration": 0,
       "trace_mode": "annotations",
       "descriptor": {
@@ -2989,9 +1579,9 @@
     {
       "identifier": "Tests::lifecycle::runsCancellationCleanupExactlyOnce",
       "status": "passed",
-      "duration_ns": 19882,
-      "run_seed": 536673014007545079,
-      "seed": 10509887004888002376,
+      "duration_ns": 20142,
+      "run_seed": 14365971765136134990,
+      "seed": 7869452965999388737,
       "iteration": 0,
       "trace_mode": "annotations",
       "descriptor": {
@@ -3028,9 +1618,9 @@
     {
       "identifier": "Tests::policies::appliesDeclarativePolicies",
       "status": "passed",
-      "duration_ns": 2282390,
-      "run_seed": 536673014007545079,
-      "seed": 11571190899030387088,
+      "duration_ns": 2369623,
+      "run_seed": 14365971765136134990,
+      "seed": 3601898390714972694,
       "iteration": 0,
       "trace_mode": "annotations",
       "descriptor": {
@@ -3067,9 +1657,9 @@
     {
       "identifier": "Tests::policies::cancelsIgnoredTimeoutAtNextYield",
       "status": "passed",
-      "duration_ns": 25163666,
-      "run_seed": 536673014007545079,
-      "seed": 18162116418141524503,
+      "duration_ns": 25156885,
+      "run_seed": 14365971765136134990,
+      "seed": 12347925294254709085,
       "iteration": 0,
       "trace_mode": "annotations",
       "descriptor": {
@@ -3106,9 +1696,9 @@
     {
       "identifier": "Tests::policies::exposesStopTokenAtTimeoutBoundary",
       "status": "passed",
-      "duration_ns": 25143538,
-      "run_seed": 536673014007545079,
-      "seed": 3257152040535958014,
+      "duration_ns": 25088607,
+      "run_seed": 14365971765136134990,
+      "seed": 3959946761177710800,
       "iteration": 0,
       "trace_mode": "annotations",
       "descriptor": {
@@ -3145,9 +1735,9 @@
     {
       "identifier": "Tests::policies::keepsThePanicCallSite",
       "status": "passed",
-      "duration_ns": 79118,
-      "run_seed": 536673014007545079,
-      "seed": 14382075854886734646,
+      "duration_ns": 23718,
+      "run_seed": 14365971765136134990,
+      "seed": 3375239365477671041,
       "iteration": 0,
       "trace_mode": "annotations",
       "descriptor": {
@@ -3184,9 +1774,9 @@
     {
       "identifier": "Tests::policies::preservesFailuresBeforeAnExpectedPanic",
       "status": "passed",
-      "duration_ns": 109564,
-      "run_seed": 536673014007545079,
-      "seed": 33342019868411043,
+      "duration_ns": 62558,
+      "run_seed": 14365971765136134990,
+      "seed": 1019166233426266993,
       "iteration": 0,
       "trace_mode": "annotations",
       "descriptor": {
@@ -3223,9 +1813,9 @@
     {
       "identifier": "Tests::policies::rendersCapturedTrace",
       "status": "passed",
-      "duration_ns": 45166,
-      "run_seed": 536673014007545079,
-      "seed": 1525684168117801421,
+      "duration_ns": 58604,
+      "run_seed": 14365971765136134990,
+      "seed": 9768583742516220290,
       "iteration": 0,
       "trace_mode": "annotations",
       "descriptor": {
@@ -3260,518 +1850,11 @@
       }
     },
     {
-      "identifier": "Tests::reflection::cli([\"NyxEngine\", \"-n\", \"Spawn\", \"-c\", \"3\"])",
-      "status": "passed",
-      "duration_ns": 34814,
-      "run_seed": 536673014007545079,
-      "seed": 11394284884230639312,
-      "iteration": 0,
-      "trace_mode": "annotations",
-      "descriptor": {
-        "identifier": "Tests::reflection::cli([\"NyxEngine\", \"-n\", \"Spawn\", \"-c\", \"3\"])",
-        "name": "cli",
-        "description": "",
-        "test_case": 3,
-        "location": {
-          "file": "/home/spawn/dev/cpp/Nyx/tests/core/reflection.cxx",
-          "line": 168,
-          "column": 9
-        },
-        "metadata": {
-          "group": "experimental",
-          "tags": [
-            "reflection"
-          ]
-        },
-        "policy": {
-          "trace": false,
-          "expected_panic": null,
-          "timeout_ns": null
-        }
-      },
-      "state": {
-        "assertions": 1,
-        "failed_assertions": 0,
-        "errors": 0,
-        "aborted": false,
-        "diagnostics": [],
-        "traces": []
-      }
-    },
-    {
-      "identifier": "Tests::reflection::cli([\"NyxEngine\", \"-n\", \"Spawn\"])",
-      "status": "passed",
-      "duration_ns": 43739,
-      "run_seed": 536673014007545079,
-      "seed": 8495524318747591279,
-      "iteration": 0,
-      "trace_mode": "annotations",
-      "descriptor": {
-        "identifier": "Tests::reflection::cli([\"NyxEngine\", \"-n\", \"Spawn\"])",
-        "name": "cli",
-        "description": "",
-        "test_case": 2,
-        "location": {
-          "file": "/home/spawn/dev/cpp/Nyx/tests/core/reflection.cxx",
-          "line": 168,
-          "column": 9
-        },
-        "metadata": {
-          "group": "experimental",
-          "tags": [
-            "reflection"
-          ]
-        },
-        "policy": {
-          "trace": false,
-          "expected_panic": null,
-          "timeout_ns": null
-        }
-      },
-      "state": {
-        "assertions": 1,
-        "failed_assertions": 0,
-        "errors": 0,
-        "aborted": false,
-        "diagnostics": [],
-        "traces": []
-      }
-    },
-    {
-      "identifier": "Tests::reflection::cli([\"NyxEngine\"])",
-      "status": "passed",
-      "duration_ns": 28311,
-      "run_seed": 536673014007545079,
-      "seed": 15820641428991212543,
-      "iteration": 0,
-      "trace_mode": "annotations",
-      "descriptor": {
-        "identifier": "Tests::reflection::cli([\"NyxEngine\"])",
-        "name": "cli",
-        "description": "",
-        "test_case": 1,
-        "location": {
-          "file": "/home/spawn/dev/cpp/Nyx/tests/core/reflection.cxx",
-          "line": 168,
-          "column": 9
-        },
-        "metadata": {
-          "group": "experimental",
-          "tags": [
-            "reflection"
-          ]
-        },
-        "policy": {
-          "trace": false,
-          "expected_panic": null,
-          "timeout_ns": null
-        }
-      },
-      "state": {
-        "assertions": 1,
-        "failed_assertions": 0,
-        "errors": 0,
-        "aborted": false,
-        "diagnostics": [],
-        "traces": []
-      }
-    },
-    {
-      "identifier": "Tests::reflection::cli([])",
-      "status": "passed",
-      "duration_ns": 16157,
-      "run_seed": 536673014007545079,
-      "seed": 4955629589225820325,
-      "iteration": 0,
-      "trace_mode": "annotations",
-      "descriptor": {
-        "identifier": "Tests::reflection::cli([])",
-        "name": "cli",
-        "description": "",
-        "test_case": 0,
-        "location": {
-          "file": "/home/spawn/dev/cpp/Nyx/tests/core/reflection.cxx",
-          "line": 168,
-          "column": 9
-        },
-        "metadata": {
-          "group": "experimental",
-          "tags": [
-            "reflection"
-          ]
-        },
-        "policy": {
-          "trace": false,
-          "expected_panic": null,
-          "timeout_ns": null
-        }
-      },
-      "state": {
-        "assertions": 1,
-        "failed_assertions": 0,
-        "errors": 0,
-        "aborted": false,
-        "diagnostics": [],
-        "traces": []
-      }
-    },
-    {
-      "identifier": "Tests::reflection::cliFail([\"NyxEngine\", \"-c\"])",
-      "status": "passed",
-      "duration_ns": 37067,
-      "run_seed": 536673014007545079,
-      "seed": 3991558930231557047,
-      "iteration": 0,
-      "trace_mode": "annotations",
-      "descriptor": {
-        "identifier": "Tests::reflection::cliFail([\"NyxEngine\", \"-c\"])",
-        "name": "cliFail",
-        "description": "",
-        "test_case": 1,
-        "location": {
-          "file": "/home/spawn/dev/cpp/Nyx/tests/core/reflection.cxx",
-          "line": 185,
-          "column": 9
-        },
-        "metadata": {
-          "group": "experimental",
-          "tags": [
-            "reflection"
-          ]
-        },
-        "policy": {
-          "trace": false,
-          "expected_panic": "Expected argument following",
-          "timeout_ns": null
-        }
-      },
-      "state": {
-        "assertions": 0,
-        "failed_assertions": 0,
-        "errors": 0,
-        "aborted": false,
-        "diagnostics": [],
-        "traces": []
-      }
-    },
-    {
-      "identifier": "Tests::reflection::cliFail([\"NyxEngine\", \"-c\"])",
-      "status": "passed",
-      "duration_ns": 47971,
-      "run_seed": 536673014007545079,
-      "seed": 11447102834677548175,
-      "iteration": 0,
-      "trace_mode": "annotations",
-      "descriptor": {
-        "identifier": "Tests::reflection::cliFail([\"NyxEngine\", \"-c\"])",
-        "name": "cliFail",
-        "description": "",
-        "test_case": 0,
-        "location": {
-          "file": "/home/spawn/dev/cpp/Nyx/tests/core/reflection.cxx",
-          "line": 185,
-          "column": 9
-        },
-        "metadata": {
-          "group": "experimental",
-          "tags": [
-            "reflection"
-          ]
-        },
-        "policy": {
-          "trace": false,
-          "expected_panic": "Expected argument following",
-          "timeout_ns": null
-        }
-      },
-      "state": {
-        "assertions": 0,
-        "failed_assertions": 0,
-        "errors": 0,
-        "aborted": false,
-        "diagnostics": [],
-        "traces": []
-      }
-    },
-    {
-      "identifier": "Tests::reflection::enumToString(0, red)",
-      "status": "passed",
-      "duration_ns": 3712,
-      "run_seed": 536673014007545079,
-      "seed": 10746020468380240210,
-      "iteration": 0,
-      "trace_mode": "annotations",
-      "descriptor": {
-        "identifier": "Tests::reflection::enumToString(0, red)",
-        "name": "enumToString",
-        "description": "",
-        "test_case": 0,
-        "location": {
-          "file": "/home/spawn/dev/cpp/Nyx/tests/core/reflection.cxx",
-          "line": 37,
-          "column": 9
-        },
-        "metadata": {
-          "group": "experimental",
-          "tags": [
-            "reflection"
-          ]
-        },
-        "policy": {
-          "trace": false,
-          "expected_panic": null,
-          "timeout_ns": null
-        }
-      },
-      "state": {
-        "assertions": 1,
-        "failed_assertions": 0,
-        "errors": 0,
-        "aborted": false,
-        "diagnostics": [],
-        "traces": []
-      }
-    },
-    {
-      "identifier": "Tests::reflection::enumToString(1, green)",
-      "status": "passed",
-      "duration_ns": 7005,
-      "run_seed": 536673014007545079,
-      "seed": 10770997656887493585,
-      "iteration": 0,
-      "trace_mode": "annotations",
-      "descriptor": {
-        "identifier": "Tests::reflection::enumToString(1, green)",
-        "name": "enumToString",
-        "description": "",
-        "test_case": 1,
-        "location": {
-          "file": "/home/spawn/dev/cpp/Nyx/tests/core/reflection.cxx",
-          "line": 37,
-          "column": 9
-        },
-        "metadata": {
-          "group": "experimental",
-          "tags": [
-            "reflection"
-          ]
-        },
-        "policy": {
-          "trace": false,
-          "expected_panic": null,
-          "timeout_ns": null
-        }
-      },
-      "state": {
-        "assertions": 1,
-        "failed_assertions": 0,
-        "errors": 0,
-        "aborted": false,
-        "diagnostics": [],
-        "traces": []
-      }
-    },
-    {
-      "identifier": "Tests::reflection::enumToString(2, blue)",
-      "status": "passed",
-      "duration_ns": 1340,
-      "run_seed": 536673014007545079,
-      "seed": 7585467974504434568,
-      "iteration": 0,
-      "trace_mode": "annotations",
-      "descriptor": {
-        "identifier": "Tests::reflection::enumToString(2, blue)",
-        "name": "enumToString",
-        "description": "",
-        "test_case": 2,
-        "location": {
-          "file": "/home/spawn/dev/cpp/Nyx/tests/core/reflection.cxx",
-          "line": 37,
-          "column": 9
-        },
-        "metadata": {
-          "group": "experimental",
-          "tags": [
-            "reflection"
-          ]
-        },
-        "policy": {
-          "trace": false,
-          "expected_panic": null,
-          "timeout_ns": null
-        }
-      },
-      "state": {
-        "assertions": 1,
-        "failed_assertions": 0,
-        "errors": 0,
-        "aborted": false,
-        "diagnostics": [],
-        "traces": []
-      }
-    },
-    {
-      "identifier": "Tests::reflection::enumToString(69, <unnamed>)",
-      "status": "passed",
-      "duration_ns": 1204,
-      "run_seed": 536673014007545079,
-      "seed": 1375190422602750987,
-      "iteration": 0,
-      "trace_mode": "annotations",
-      "descriptor": {
-        "identifier": "Tests::reflection::enumToString(69, <unnamed>)",
-        "name": "enumToString",
-        "description": "",
-        "test_case": 3,
-        "location": {
-          "file": "/home/spawn/dev/cpp/Nyx/tests/core/reflection.cxx",
-          "line": 37,
-          "column": 9
-        },
-        "metadata": {
-          "group": "experimental",
-          "tags": [
-            "reflection"
-          ]
-        },
-        "policy": {
-          "trace": false,
-          "expected_panic": null,
-          "timeout_ns": null
-        }
-      },
-      "state": {
-        "assertions": 1,
-        "failed_assertions": 0,
-        "errors": 0,
-        "aborted": false,
-        "diagnostics": [],
-        "traces": []
-      }
-    },
-    {
-      "identifier": "Tests::reflection::listMembers(Vec2 { x: 0, y: 0 }, x: 0; y: 0)",
-      "status": "passed",
-      "duration_ns": 11269,
-      "run_seed": 536673014007545079,
-      "seed": 18251079436437724903,
-      "iteration": 0,
-      "trace_mode": "annotations",
-      "descriptor": {
-        "identifier": "Tests::reflection::listMembers(Vec2 { x: 0, y: 0 }, x: 0; y: 0)",
-        "name": "listMembers",
-        "description": "",
-        "test_case": 0,
-        "location": {
-          "file": "/home/spawn/dev/cpp/Nyx/tests/core/reflection.cxx",
-          "line": 67,
-          "column": 9
-        },
-        "metadata": {
-          "group": "experimental",
-          "tags": [
-            "reflection"
-          ]
-        },
-        "policy": {
-          "trace": false,
-          "expected_panic": null,
-          "timeout_ns": null
-        }
-      },
-      "state": {
-        "assertions": 1,
-        "failed_assertions": 0,
-        "errors": 0,
-        "aborted": false,
-        "diagnostics": [],
-        "traces": []
-      }
-    },
-    {
-      "identifier": "Tests::reflection::listMembers(Vec2 { x: 34, y: 35 }, x: 34; y: 35)",
-      "status": "passed",
-      "duration_ns": 53348,
-      "run_seed": 536673014007545079,
-      "seed": 6632818645171664452,
-      "iteration": 0,
-      "trace_mode": "annotations",
-      "descriptor": {
-        "identifier": "Tests::reflection::listMembers(Vec2 { x: 34, y: 35 }, x: 34; y: 35)",
-        "name": "listMembers",
-        "description": "",
-        "test_case": 2,
-        "location": {
-          "file": "/home/spawn/dev/cpp/Nyx/tests/core/reflection.cxx",
-          "line": 67,
-          "column": 9
-        },
-        "metadata": {
-          "group": "experimental",
-          "tags": [
-            "reflection"
-          ]
-        },
-        "policy": {
-          "trace": false,
-          "expected_panic": null,
-          "timeout_ns": null
-        }
-      },
-      "state": {
-        "assertions": 1,
-        "failed_assertions": 0,
-        "errors": 0,
-        "aborted": false,
-        "diagnostics": [],
-        "traces": []
-      }
-    },
-    {
-      "identifier": "Tests::reflection::listMembers(Vec2 { x: 69, y: 0 }, x: 69; y: 0)",
-      "status": "passed",
-      "duration_ns": 15942,
-      "run_seed": 536673014007545079,
-      "seed": 17736830116245652551,
-      "iteration": 0,
-      "trace_mode": "annotations",
-      "descriptor": {
-        "identifier": "Tests::reflection::listMembers(Vec2 { x: 69, y: 0 }, x: 69; y: 0)",
-        "name": "listMembers",
-        "description": "",
-        "test_case": 1,
-        "location": {
-          "file": "/home/spawn/dev/cpp/Nyx/tests/core/reflection.cxx",
-          "line": 67,
-          "column": 9
-        },
-        "metadata": {
-          "group": "experimental",
-          "tags": [
-            "reflection"
-          ]
-        },
-        "policy": {
-          "trace": false,
-          "expected_panic": null,
-          "timeout_ns": null
-        }
-      },
-      "state": {
-        "assertions": 1,
-        "failed_assertions": 0,
-        "errors": 0,
-        "aborted": false,
-        "diagnostics": [],
-        "traces": []
-      }
-    },
-    {
       "identifier": "Tests::runner::defaultTraceCapturesEveryCaseAndRendersFailuresByDefault",
       "status": "passed",
-      "duration_ns": 84999,
-      "run_seed": 536673014007545079,
-      "seed": 15767952912544129566,
+      "duration_ns": 181960,
+      "run_seed": 14365971765136134990,
+      "seed": 14345822038009256223,
       "iteration": 0,
       "trace_mode": "annotations",
       "descriptor": {
@@ -3808,9 +1891,9 @@
     {
       "identifier": "Tests::runner::forceTraceCanRenderSuccessfulCases",
       "status": "passed",
-      "duration_ns": 94794,
-      "run_seed": 536673014007545079,
-      "seed": 17305558321279836093,
+      "duration_ns": 98404,
+      "run_seed": 14365971765136134990,
+      "seed": 5534425761942022879,
       "iteration": 0,
       "trace_mode": "annotations",
       "descriptor": {
@@ -3847,9 +1930,9 @@
     {
       "identifier": "Tests::runner::repeatsCasesWithStableContextSeeds",
       "status": "passed",
-      "duration_ns": 707048,
-      "run_seed": 536673014007545079,
-      "seed": 2325627507286580017,
+      "duration_ns": 249460,
+      "run_seed": 14365971765136134990,
+      "seed": 3389892631199561817,
       "iteration": 0,
       "trace_mode": "annotations",
       "descriptor": {
@@ -3886,9 +1969,9 @@
     {
       "identifier": "Tests::runner::shufflesCasesReproducibly",
       "status": "passed",
-      "duration_ns": 100802,
-      "run_seed": 536673014007545079,
-      "seed": 5986227962866973600,
+      "duration_ns": 166121,
+      "run_seed": 14365971765136134990,
+      "seed": 735245524617168508,
       "iteration": 0,
       "trace_mode": "annotations",
       "descriptor": {
@@ -3925,9 +2008,9 @@
     {
       "identifier": "Tests::runner::stopsSerialDispatchAfterTheFirstFailure",
       "status": "passed",
-      "duration_ns": 61445,
-      "run_seed": 536673014007545079,
-      "seed": 12938103532774485644,
+      "duration_ns": 76552,
+      "run_seed": 14365971765136134990,
+      "seed": 2812369733291576014,
       "iteration": 0,
       "trace_mode": "annotations",
       "descriptor": {
@@ -3962,11 +2045,89 @@
       }
     },
     {
+      "identifier": "Tests::stress::cleansEveryParallelTimeoutExactlyOnce",
+      "status": "passed",
+      "duration_ns": 2435173,
+      "run_seed": 14365971765136134990,
+      "seed": 8546114681388848624,
+      "iteration": 0,
+      "trace_mode": "annotations",
+      "descriptor": {
+        "identifier": "Tests::stress::cleansEveryParallelTimeoutExactlyOnce",
+        "name": "cleansEveryParallelTimeoutExactlyOnce",
+        "description": "",
+        "test_case": 0,
+        "location": {
+          "file": "/home/spawn/dev/cpp/Nyx/tests/framework/stress.cxx",
+          "line": 146,
+          "column": 58
+        },
+        "metadata": {
+          "group": "framework",
+          "tags": [
+            "stress"
+          ]
+        },
+        "policy": {
+          "trace": false,
+          "expected_panic": null,
+          "timeout_ns": null
+        }
+      },
+      "state": {
+        "assertions": 4,
+        "failed_assertions": 0,
+        "errors": 0,
+        "aborted": false,
+        "diagnostics": [],
+        "traces": []
+      }
+    },
+    {
+      "identifier": "Tests::stress::preservesRepeatedAsyncLifecycle",
+      "status": "passed",
+      "duration_ns": 2584626,
+      "run_seed": 14365971765136134990,
+      "seed": 15590533771661299034,
+      "iteration": 0,
+      "trace_mode": "annotations",
+      "descriptor": {
+        "identifier": "Tests::stress::preservesRepeatedAsyncLifecycle",
+        "name": "preservesRepeatedAsyncLifecycle",
+        "description": "",
+        "test_case": 0,
+        "location": {
+          "file": "/home/spawn/dev/cpp/Nyx/tests/framework/stress.cxx",
+          "line": 122,
+          "column": 58
+        },
+        "metadata": {
+          "group": "framework",
+          "tags": [
+            "stress"
+          ]
+        },
+        "policy": {
+          "trace": false,
+          "expected_panic": null,
+          "timeout_ns": null
+        }
+      },
+      "state": {
+        "assertions": 5,
+        "failed_assertions": 0,
+        "errors": 0,
+        "aborted": false,
+        "diagnostics": [],
+        "traces": []
+      }
+    },
+    {
       "identifier": "Tests::virtualTime::equalDeadlineTimersKeepSchedulingOrder",
       "status": "passed",
-      "duration_ns": 11952,
-      "run_seed": 536673014007545079,
-      "seed": 7939648448731159351,
+      "duration_ns": 35481,
+      "run_seed": 14365971765136134990,
+      "seed": 12985286161414455301,
       "iteration": 0,
       "trace_mode": "annotations",
       "descriptor": {
@@ -4003,9 +2164,9 @@
     {
       "identifier": "Tests::virtualTime::runOptionsPropagateVirtualTime",
       "status": "passed",
-      "duration_ns": 56991,
-      "run_seed": 536673014007545079,
-      "seed": 14710904300060201957,
+      "duration_ns": 47085,
+      "run_seed": 14365971765136134990,
+      "seed": 16147656628154783062,
       "iteration": 0,
       "trace_mode": "annotations",
       "descriptor": {
@@ -4042,9 +2203,9 @@
     {
       "identifier": "Tests::virtualTime::virtualTimeCompletesOneHourWithoutWaiting",
       "status": "passed",
-      "duration_ns": 18441,
-      "run_seed": 536673014007545079,
-      "seed": 2177634905184255143,
+      "duration_ns": 15516,
+      "run_seed": 14365971765136134990,
+      "seed": 3418284061756633539,
       "iteration": 0,
       "trace_mode": "annotations",
       "descriptor": {
@@ -4081,9 +2242,9 @@
     {
       "identifier": "Tests::virtualTime::virtualTimeFlowsThroughNestedTasks",
       "status": "passed",
-      "duration_ns": 34727,
-      "run_seed": 536673014007545079,
-      "seed": 2813418897098190061,
+      "duration_ns": 17979,
+      "run_seed": 14365971765136134990,
+      "seed": 16118927852395526891,
       "iteration": 0,
       "trace_mode": "annotations",
       "descriptor": {
@@ -4120,9 +2281,9 @@
     {
       "identifier": "Tests::virtualTime::virtualTimeoutRunsCoroutineCleanup",
       "status": "passed",
-      "duration_ns": 41999,
-      "run_seed": 536673014007545079,
-      "seed": 2376540809706528176,
+      "duration_ns": 89196,
+      "run_seed": 14365971765136134990,
+      "seed": 1548978319689661119,
       "iteration": 0,
       "trace_mode": "annotations",
       "descriptor": {
@@ -4159,9 +2320,9 @@
     {
       "identifier": "Tests::virtualTime::virtualTimeoutWinsTimerTie",
       "status": "passed",
-      "duration_ns": 46054,
-      "run_seed": 536673014007545079,
-      "seed": 11211407803455585141,
+      "duration_ns": 32581,
+      "run_seed": 14365971765136134990,
+      "seed": 3983977079018873207,
       "iteration": 0,
       "trace_mode": "annotations",
       "descriptor": {
@@ -4188,43 +2349,6 @@
       },
       "state": {
         "assertions": 7,
-        "failed_assertions": 0,
-        "errors": 0,
-        "aborted": false,
-        "diagnostics": [],
-        "traces": []
-      }
-    },
-    {
-      "identifier": "Tests::voidCase",
-      "status": "passed",
-      "duration_ns": 1713,
-      "run_seed": 536673014007545079,
-      "seed": 12488626889043101103,
-      "iteration": 0,
-      "trace_mode": "annotations",
-      "descriptor": {
-        "identifier": "Tests::voidCase",
-        "name": "voidCase",
-        "description": "",
-        "test_case": 0,
-        "location": {
-          "file": "/home/spawn/dev/cpp/Nyx/tests/framework/demo.cxx",
-          "line": 29,
-          "column": 36
-        },
-        "metadata": {
-          "group": "demo",
-          "tags": []
-        },
-        "policy": {
-          "trace": false,
-          "expected_panic": null,
-          "timeout_ns": null
-        }
-      },
-      "state": {
-        "assertions": 1,
         "failed_assertions": 0,
         "errors": 0,
         "aborted": false,

@@ -461,11 +461,55 @@ auto appendScopeWorkItems(Vec<detail::PlannedCase> &plannedCases,
   }
 }
 
+template <std::meta::info Function>
+consteval auto hasDynamicProviders() -> bool {
+  template for (constexpr std::meta::info parameter : meta::parameters<Function>) {
+    if constexpr (isProviderParameter<Function, parameter>() and
+                  providerKindOf<Function, parameter>() == ProviderKind::Files)
+      return true;
+  }
+
+  return false;
+}
+
+template <std::meta::info Scope, class Configuration>
+consteval auto scopeHasDynamicProviders() -> bool {
+  bool dynamic{};
+
+  template for (constexpr std::meta::info member : meta::members<Scope, meta::AccessContext::unchecked()>) {
+    if constexpr (std::meta::is_function(member) and isDiscoveredTest<Scope, member, Configuration>()) {
+      if constexpr (hasDynamicProviders<member>())
+        dynamic = true;
+    }
+
+    if constexpr (Configuration::recursive_ and std::meta::is_namespace(member))
+      dynamic = dynamic or scopeHasDynamicProviders<member, Configuration>();
+  }
+
+  return dynamic;
+}
+
+template <std::meta::info Scope, class Configuration>
+[[nodiscard]] auto cachedScopeDescriptors() -> const Vec<TestDescriptor> & {
+  static_assert(not scopeHasDynamicProviders<Scope, Configuration>());
+
+  static const Vec<TestDescriptor> descriptors_ = [] -> Vec<TestDescriptor> {
+    Vec<TestDescriptor> result{};
+    appendScopeDescriptors<Scope, Configuration>(result);
+    return result;
+  }();
+  return descriptors_;
+}
+
 template <std::meta::info Scope, class Configuration>
 [[nodiscard]] auto describeScope() -> Vec<TestDescriptor> {
-  Vec<TestDescriptor> descriptors{};
-  appendScopeDescriptors<Scope, Configuration>(descriptors);
-  return descriptors;
+  if constexpr (scopeHasDynamicProviders<Scope, Configuration>()) {
+    Vec<TestDescriptor> descriptors{};
+    appendScopeDescriptors<Scope, Configuration>(descriptors);
+    return descriptors;
+  } else {
+    return cachedScopeDescriptors<Scope, Configuration>();
+  }
 }
 
 template <std::meta::info Scope, class Configuration>
@@ -478,6 +522,8 @@ auto appendScopePlan(detail::RunSession &session) -> void {
   static_assert(detail::fixtureDeclarationsAreValid<Scope>());
 
   detail::SuiteState &suite = session.appendSuite(qualifiedNameOf<Scope>());
+  if constexpr (not scopeHasDynamicProviders<Scope, Configuration>())
+    session.reservePlannedCases(cachedScopeDescriptors<Scope, Configuration>().size());
   FixtureScope<Scope> &suiteFixtures = suite.template emplace<FixtureScope<Scope>>();
   appendScopeWorkItems<Scope, Scope, Configuration>(session.plannedCases(), suiteFixtures);
 }

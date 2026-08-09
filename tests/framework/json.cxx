@@ -13,7 +13,7 @@ namespace Tests::json {
   const auto location = std::source_location::current();
   TestExecution passing = run(
       TestDescriptor{
-          .identifier = "json\"passing\n",
+          .identifier = "json\"passing\n\001",
           .description = "machine report",
           .policy =
               TestPolicy{
@@ -56,6 +56,7 @@ namespace Tests::json {
   require(executions.size() == 2_exp);
   check(output.starts_with("{\n"));
   check(output.ends_with("}\n"));
+  check(output.contains(R"(json\"passing\n\u0001)"));
   check(output.contains(R"("schema_version": 1)"));
   check(output.contains(R"("framework": "Nyx.Test")"));
   check(output.contains(R"("kind": "test_run")"));
