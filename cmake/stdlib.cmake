@@ -97,7 +97,6 @@ target_compile_options(NyxExperimentalStd INTERFACE
   -freflection-latest -nostdinc++
   "-isystem${NYX_LIBCXX_TARGET_INCLUDE}"
   "-isystem${NYX_STDLIB_GENERATED_INCLUDE}"
-  "-isystem${NYX_LIBCXX_SOURCE_INCLUDE}"
   "-fmodule-file=std=${NYX_STDLIB_MODULE}"
 )
 target_link_options(NyxExperimentalStd INTERFACE

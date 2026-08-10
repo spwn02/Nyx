@@ -1,7 +1,7 @@
-if(LINUX)
-  message(STATUS "On Linux!")
+if(NYX_BUILD_PLATFORM STREQUAL "Linux")
+  message(STATUS "Nyx launch target: Linux")
 else()
-  message(FATAL_ERROR "Your OS is currently unsupported!")
+  message(FATAL_ERROR "NyxEngine has no launch source for ${NYX_BUILD_PLATFORM}")
 endif()
 
 add_executable(NyxEngine "Private/Linux/main.cpp")

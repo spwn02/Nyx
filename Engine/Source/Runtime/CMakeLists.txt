@@ -1,4 +1,5 @@
 # Engine
+add_subdirectory(Build)
 add_subdirectory(Core)
 add_subdirectory(Log)
 add_subdirectory(Event)

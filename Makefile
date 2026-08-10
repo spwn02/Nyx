@@ -1,31 +1,30 @@
 JOBS ?= 16
-CLANGD ?= $(HOME)/.local/opt/clang-p2996/bin/clangd
 
-.PHONY: config build build-nproc clangd-check run tests pack ci clean
+.PHONY: config config-tests build build-nproc run tests pack ci clean
 
 config:
 	cmake --preset debug
 
+config-tests:
+	cmake --preset development-tests
+
 build: config
-	cmake --build --preset default --parallel $(JOBS) --target NyxEngine
+	cmake --build --preset debug --parallel $(JOBS) --target NyxEngine
 
 build-nproc: config
-	cmake --build --preset default --parallel $$(nproc) --target NyxEngine
-
-clangd-check: config
-	$(CLANGD) --check=Engine/Source/Runtime/Launch/Private/Linux/main.cpp --compile-commands-dir=build
+	cmake --build --preset debug --parallel $$(nproc) --target NyxEngine
 
 run: build
-	./build/Engine/Source/Runtime/Launch/NyxEngine
+	./build/debug/Engine/Source/Runtime/Launch/NyxEngine
 
 # Tests
-tests: config
-	cmake --build --preset default --parallel $(JOBS) --target unit_tests
-	./build/tests/unit_tests
+tests: config-tests
+	cmake --build --preset development-tests --parallel $(JOBS) --target unit_tests
+	./build/development-tests/tests/unit_tests
 
 # Packing
 pack: build
-	cpack --config ./build/CPackConfig.cmake -C Debug
+	cpack --config ./build/debug/CPackConfig.cmake -C Debug
 
 ci:
 	$(MAKE) config

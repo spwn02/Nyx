@@ -20,6 +20,9 @@ set(CMAKE_FIND_PACKAGE_PREFER_CONFIG ON)
 set(CMAKE_FIND_ROOT_PATH_MODE_PACKAGE ONLY)
 set(CMAKE_FIND_ROOT_PATH_MODE_INCLUDE ONLY)
 
+include(build)
+nyx_initialize_build_configuration()
+
 include(compiler)
 
 # Source
@@ -31,9 +34,12 @@ include(stdlib)
 add_subdirectory("${CMAKE_CURRENT_SOURCE_DIR}/Engine/Source/Runtime")
 
 # Testing
-enable_testing()
-include(CTest)
-add_subdirectory(tests)
+if (NYX_BUILD_TESTS)
+  enable_testing()
+  add_subdirectory(tests)
+endif()
+
+nyx_verify_platform_macro_boundary(ROOT "${CMAKE_CURRENT_SOURCE_DIR}")
 
 # CPack
 set(CPACK_PACKAGE_NAME "NyxEngine")

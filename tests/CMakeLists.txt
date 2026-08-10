@@ -17,3 +17,5 @@ target_link_libraries(unit_tests
 )
 
 add_dependencies(unit_tests nyx_std_module)
+
+add_test(NAME unit_tests COMMAND unit_tests)

@@ -20,16 +20,53 @@
     },
     {
       "name": "debug",
-      "displayName": "Bloomberg Clang P2996 Debug",
-      "description": "Experimental C++26 reflection build",
+      "displayName": "Nyx Debug",
+      "description": "Unoptimized development build without test runtime emission",
       "inherits": "vcpkg",
-      "binaryDir": "${sourceDir}/build",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Debug",
-
+        "NYX_BUILD_PROFILE": "Debug",
         "VCPKG_CHAINLOAD_TOOLCHAIN_FILE": "${sourceDir}/cmake/toolchains/clang-p2996.cmake",
         "VCPKG_TARGET_TRIPLET": "x64-linux-p2996",
-
+        "CMAKE_DISABLE_PRECOMPILE_HEADERS": "ON"
+      }
+    },
+    {
+      "name": "development",
+      "displayName": "Nyx Development",
+      "description": "Optimized development build without test runtime emission",
+      "inherits": "vcpkg",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "RelWithDebInfo",
+        "NYX_BUILD_PROFILE": "Development",
+        "VCPKG_CHAINLOAD_TOOLCHAIN_FILE": "${sourceDir}/cmake/toolchains/clang-p2996.cmake",
+        "VCPKG_TARGET_TRIPLET": "x64-linux-p2996",
+        "CMAKE_DISABLE_PRECOMPILE_HEADERS": "ON"
+      }
+    },
+    {
+      "name": "development-tests",
+      "displayName": "Nyx Development Tests",
+      "description": "Isolated exception-enabled Nyx.Test build",
+      "inherits": "vcpkg",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "NYX_BUILD_PROFILE": "DevelopmentTests",
+        "VCPKG_CHAINLOAD_TOOLCHAIN_FILE": "${sourceDir}/cmake/toolchains/clang-p2996.cmake",
+        "VCPKG_TARGET_TRIPLET": "x64-linux-p2996",
+        "CMAKE_DISABLE_PRECOMPILE_HEADERS": "ON"
+      }
+    },
+    {
+      "name": "release",
+      "displayName": "Nyx Release",
+      "description": "Optimized production build",
+      "inherits": "vcpkg",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "NYX_BUILD_PROFILE": "Release",
+        "VCPKG_CHAINLOAD_TOOLCHAIN_FILE": "${sourceDir}/cmake/toolchains/clang-p2996.cmake",
+        "VCPKG_TARGET_TRIPLET": "x64-linux-p2996",
         "CMAKE_DISABLE_PRECOMPILE_HEADERS": "ON"
       }
     }
@@ -39,12 +76,39 @@
       "name": "default",
       "configurePreset": "debug",
       "jobs": 4
+    },
+    {
+      "name": "debug",
+      "configurePreset": "debug",
+      "jobs": 4
+    },
+    {
+      "name": "development",
+      "configurePreset": "development",
+      "jobs": 4
+    },
+    {
+      "name": "development-tests",
+      "configurePreset": "development-tests",
+      "jobs": 4
+    },
+    {
+      "name": "release",
+      "configurePreset": "release",
+      "jobs": 4
     }
   ],
   "testPresets": [
     {
       "name": "default",
-      "configurePreset": "debug",
+      "configurePreset": "development-tests",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "development-tests",
+      "configurePreset": "development-tests",
       "output": {
         "outputOnFailure": true
       }
