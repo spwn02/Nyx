@@ -30,7 +30,7 @@ auto containsHighlighted(const Vec<DiagnosticFragment> &fragments, StringView te
     diagnostic = environment.state().diagnostics.front();
   };
 
-  check(eq(diagnostic.details.spans.front().location.line(), location.line()));
+  check(diagnostic.details.spans.front().location.line() == location.line());
   check(diagnostic.details.spans.front().label == "assertion"_exp);
 }
 
@@ -60,8 +60,8 @@ auto containsHighlighted(const Vec<DiagnosticFragment> &fragments, StringView te
     notes = environment.state().diagnostics.front().details.notes;
   };
 
-  require(notes.size() == 3);
-  check(containsHighlighted(notes[1].fragments, "∅"));
+  require(notes.size() == 2);
+  check(containsHighlighted(notes.front().fragments, "∅"));
   check(containsHighlighted(notes.back().fragments, "·"));
 }
 
@@ -92,13 +92,20 @@ auto containsHighlighted(const Vec<DiagnosticFragment> &fragments, StringView te
   require(state.failedAssertions == 2_exp);
   require(state.diagnostics.size() == 2_exp);
   check(state.diagnostics.front().description() == "assertion failed"_exp);
-  check(state.diagnostics.front().details.notes.front().message ==
-        "condition: values are not within tolerance"_exp);
-  check(state.diagnostics.back().details.notes.front().message ==
-        "condition: value does not contain the expected element"_exp);
+
+  const auto &nearExpansion = std::get<NearExpansion>(state.diagnostics.front().details.expansion);
+  check(nearExpansion.left == "1"_exp);
+  check(nearExpansion.right == "1.2"_exp);
+  check(nearExpansion.tolerance == "0.1"_exp);
+
+  const auto &containsExpansion = std::get<ContainsExpansion>(state.diagnostics.back().details.expansion);
+  check(containsExpansion.needle == "\"Test\""_exp);
+  check(containsExpansion.container == "\"Nyx\""_exp);
+
   check(rangeFailure.diagnostic);
-  check(rangeFailure.diagnostic->details.notes[1].message == "range: [1, 2, 3]"_exp);
-  check(rangeFailure.diagnostic->details.notes.back().message == "expected: 4"_exp);
+  const auto &rangeExpansion = std::get<ContainsExpansion>(rangeFailure.diagnostic->details.expansion);
+  check(rangeExpansion.container == "[1, 2, 3]"_exp);
+  check(rangeExpansion.needle == "4"_exp);
 }
 
 [[ = test, = group("framework"), = tag("expressions") ]] auto requiredExpressionsAbortTheTest() -> void {
@@ -114,6 +121,7 @@ auto containsHighlighted(const Vec<DiagnosticFragment> &fragments, StringView te
       continued = true;
     } catch (const TestAbort &) { // NOLINT(bugprone-empty-catch)
     }
+
     state = environment.state();
   }
 
@@ -121,7 +129,11 @@ auto containsHighlighted(const Vec<DiagnosticFragment> &fragments, StringView te
   require(state.aborted);
   require(state.failedAssertions == 1_exp);
   check(state.diagnostics.front().description() == "requirement failed"_exp);
-  check(state.diagnostics.front().details.notes.front().message == "condition: values are not equal"_exp);
+
+  const auto &expansion = std::get<BinaryExpansion>(state.diagnostics.front().details.expansion);
+  check(expansion.left == "2"_exp);
+  check(expansion.operatorName == "!="_exp);
+  check(expansion.right == "3"_exp);
   check(state.diagnostics.front().details.spans.front().label == "requirement"_exp);
 }
 
@@ -133,8 +145,9 @@ auto containsHighlighted(const Vec<DiagnosticFragment> &fragments, StringView te
   require(execution.state.failedAssertions == 1_exp);
   require(execution.state.errors == 0_exp);
   check(execution.state.diagnostics.front().description() == "assertion failed"_exp);
-  check(execution.state.diagnostics.front().details.notes.front().message ==
-        "condition: values are not equal"_exp);
+
+  const auto &expansion = std::get<BinaryExpansion>(execution.state.diagnostics.front().details.expansion);
+  check(expansion.operatorName == "!="_exp);
 }
 
 [[ = test, = group("framework"), = tag("expressions") ]] auto comparisonsExposeValuesAndLocations() -> void {
@@ -161,12 +174,16 @@ auto containsHighlighted(const Vec<DiagnosticFragment> &fragments, StringView te
   check(state.diagnostics.front().description() == "assertion failed"_exp);
   check(state.diagnostics.front().details.spans.front().location.line() == location.line());
   check(state.diagnostics.front().details.spans.front().label == "assertion"_exp);
-  check(state.diagnostics.front().details.notes.front().message == "condition: values are not equal"_exp);
-  check(state.diagnostics.front().details.notes[1].message == "answer: 2"_exp);
-  check(state.diagnostics.front().details.notes.back().message == "right: 3"_exp);
+
+  const auto &expansion = std::get<BinaryExpansion>(state.diagnostics.front().details.expansion);
+  check(expansion.left == "2"_exp);
+  check(expansion.operatorName == "!="_exp);
+  check(expansion.right == "3"_exp);
+  check(state.diagnostics.front().details.notes.size() == 1_exp);
+  check(state.diagnostics.front().details.notes.front().message == "answer: 2"_exp);
 }
 
-} // namespace Tests
+} // namespace Tests::expressions
 // NOLINTEND(cppcoreguidelines-avoid-magic-numbers, readability-magic-numbers)
 
 consteval {

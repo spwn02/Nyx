@@ -84,6 +84,14 @@ constexpr auto labelOf(const Captured<Value> &captured, StringView /*fallback*/)
   return captured.label;
 }
 
+// NOLINTBEGIN(readability-identifier-naming)
+template <class>
+inline constexpr bool is_captured_v{};
+
+template <class Value>
+inline constexpr bool is_captured_v<Captured<Value>>{true};
+// NOLINTEND(readability-identifier-naming)
+
 auto appendFragment(Vec<DiagnosticFragment> &fragments, String text, bool highlighted) -> void {
   if (text.empty())
     return;
@@ -105,7 +113,7 @@ auto appendFragment(Vec<DiagnosticFragment> &fragments, String text, bool highli
     case '\t': return "⇥";
     case '\n': return "↵";
     case '\r': return "␍";
-    default: return String{1, value};
+    default: return String(1, value); // NOLINT
   }
 }
 
@@ -171,25 +179,28 @@ template <class Value>
   }
 }
 
-[[nodiscard]] auto makeFailure(StringView description, Option<std::source_location> location) -> Diagnostic {
+[[nodiscard]] auto makeFailure(StringView /*description*/, Option<std::source_location> location)
+    -> Diagnostic {
   Diagnostic diagnostic{};
   diagnostic.header.code = DiagnosticCode::AssertionFailed;
-  diagnostic.addNote(std::format("condition: {}", description));
 
   if (location)
-    diagnostic.addSpan(makeSpan({}, SpanKind::Primary, *location));
+    diagnostic.addSpan(makeSpan({}, SpanKind::Primary, *location, SpanSelection::Point));
 
   return diagnostic;
 }
 
+template <class Value>
+auto addCaptureNote(Diagnostic &diagnostic, const Value &value) -> void {
+  using Type = std::remove_cvref_t<Value>;
+  if constexpr (is_captured_v<Type>)
+    diagnostic.addNote(std::format("{}: {}", labelOf(value, "value"), valueText(valueOf(value))));
+}
+
 template <class Left, class Right>
-auto addValueNotes(Diagnostic &diagnostic,
-    StringView leftLabel,
-    const Left &left,
-    StringView rightLabel,
-    const Right &right) -> void {
-  diagnostic.addNote(std::format("{}: {}", leftLabel, valueText(left)));
-  diagnostic.addNote(std::format("{}: {}", rightLabel, valueText(right)));
+auto addCaptureNotes(Diagnostic &diagnostic, const Left &left, const Right &right) -> void {
+  addCaptureNote(diagnostic, left);
+  addCaptureNote(diagnostic, right);
 }
 
 auto addStringNote(Diagnostic &diagnostic, StringView label, StringView value, usize prefix, usize suffix)
@@ -229,6 +240,7 @@ auto addStringDifference(Diagnostic &diagnostic,
 template <class Left, class Right>
 auto comparisonExpression(bool passed,
     StringView description,
+    StringView operatorName,
     const Left &left,
     const Right &right,
     Option<std::source_location> location,
@@ -241,6 +253,11 @@ auto comparisonExpression(bool passed,
   Diagnostic diagnostic = makeFailure(description, location);
   const auto &leftValue = valueOf(left);
   const auto &rightValue = valueOf(right);
+  diagnostic.addExpansion(BinaryExpansion{
+      .left = valueText(leftValue),
+      .operatorName = String{operatorName},
+      .right = valueText(rightValue),
+  });
 
   if constexpr (StringLike<std::remove_cvref_t<decltype(leftValue)>> and
                 StringLike<std::remove_cvref_t<decltype(rightValue)>>) {
@@ -248,10 +265,10 @@ auto comparisonExpression(bool passed,
       addStringDifference(diagnostic, labelOf(left, "left"), leftValue, labelOf(right, "right"), rightValue);
 
     } else {
-      addValueNotes(diagnostic, labelOf(left, "left"), leftValue, labelOf(right, "right"), rightValue);
+      addCaptureNotes(diagnostic, left, right);
     }
   } else {
-    addValueNotes(diagnostic, labelOf(left, "left"), leftValue, labelOf(right, "right"), rightValue);
+    addCaptureNotes(diagnostic, left, right);
   }
 
   return Expression{
@@ -269,6 +286,7 @@ auto equal(const Left &left, const Right &right, Option<std::source_location> lo
                 StringLike<std::remove_cvref_t<decltype(rightValue)>>) {
     return comparisonExpression(StringView{leftValue} == StringView{rightValue},
         "values are not equal",
+        "!=",
         left,
         right,
         std::move(location),
@@ -277,8 +295,12 @@ auto equal(const Left &left, const Right &right, Option<std::source_location> lo
     static_assert(
         requires { static_cast<bool>(leftValue == rightValue); },
         "Nyx::Test::eq requires a bool-testable equality comparison.");
-    return comparisonExpression(
-        static_cast<bool>(leftValue == rightValue), "values are not equal", left, right, std::move(location));
+    return comparisonExpression(static_cast<bool>(leftValue == rightValue),
+        "values are not equal",
+        "!=",
+        left,
+        right,
+        std::move(location));
   }
 }
 
@@ -291,6 +313,7 @@ auto notEquals(const Left &left, const Right &right, Option<std::source_location
                 StringLike<std::remove_cvref_t<decltype(rightValue)>>) {
     return comparisonExpression(StringView{leftValue} != StringView{rightValue},
         "values are equal",
+        "==",
         left,
         right,
         std::move(location));
@@ -298,8 +321,12 @@ auto notEquals(const Left &left, const Right &right, Option<std::source_location
     static_assert(
         requires { static_cast<bool>(leftValue != rightValue); },
         "Nyx::Test::neq requires a bool-testable inequality comparison.");
-    return comparisonExpression(
-        static_cast<bool>(leftValue != rightValue), "values are equal", left, right, std::move(location));
+    return comparisonExpression(static_cast<bool>(leftValue != rightValue),
+        "values are equal",
+        "==",
+        left,
+        right,
+        std::move(location));
   }
 }
 
@@ -307,6 +334,7 @@ template <class Left, class Right, class Predicate>
 auto ordered(const Left &left,
     const Right &right,
     StringView description,
+    StringView operatorName,
     Predicate predicate,
     Option<std::source_location> location) -> Expression {
   const auto &leftValue = valueOf(left);
@@ -314,8 +342,12 @@ auto ordered(const Left &left,
   static_assert(
       requires { static_cast<bool>(predicate(leftValue, rightValue)); },
       "Nyx::Test ordering comparisons require a bool-testable predicate.");
-  return comparisonExpression(
-      static_cast<bool>(predicate(leftValue, rightValue)), description, left, right, std::move(location));
+  return comparisonExpression(static_cast<bool>(predicate(leftValue, rightValue)),
+      description,
+      operatorName,
+      left,
+      right,
+      std::move(location));
 }
 
 } // namespace detail
@@ -338,7 +370,8 @@ template <class Left, class Right>
 [[nodiscard]] auto less(const Left &left,
     const Right &right,
     std::source_location location = std::source_location::current()) -> Expression {
-  return detail::ordered(left, right, "left value is not less than right value", std::less<>{}, location);
+  return detail::ordered(
+      left, right, "left value is not less than right value", "<", std::less<>{}, location);
 }
 
 template <class Left, class Right>
@@ -346,7 +379,7 @@ template <class Left, class Right>
     const Right &right,
     std::source_location location = std::source_location::current()) -> Expression {
   return detail::ordered(
-      left, right, "left value is not greater than right value", std::greater<>{}, location);
+      left, right, "left value is not greater than right value", ">", std::greater<>{}, location);
 }
 
 template <class Left, class Right>
@@ -354,7 +387,7 @@ template <class Left, class Right>
     const Right &right,
     std::source_location location = std::source_location::current()) -> Expression {
   return detail::ordered(
-      left, right, "left value is greater than right value", std::less_equal<>{}, location);
+      left, right, "left value is greater than right value", "<=", std::less_equal<>{}, location);
 }
 
 template <class Left, class Right>
@@ -362,7 +395,7 @@ template <class Left, class Right>
     const Right &right,
     std::source_location location = std::source_location::current()) -> Expression {
   return detail::ordered(
-      left, right, "left value is less than right value", std::greater_equal<>{}, location);
+      left, right, "left value is less than right value", ">=", std::greater_equal<>{}, location);
 }
 
 template <class Left, class Right, class Tolerance>
@@ -389,10 +422,15 @@ template <class Left, class Right, class Tolerance>
     };
 
   Diagnostic diagnostic = detail::makeFailure("values are not within tolerance", location);
-  detail::addValueNotes(
-      diagnostic, detail::labelOf(left, "left"), leftValue, detail::labelOf(right, "right"), rightValue);
-  diagnostic.addNote(std::format("tolerance: {}", detail::valueText(toleranceValue)));
-  diagnostic.addNote(std::format("difference: {}", difference));
+  diagnostic.addExpansion(NearExpansion{
+      .left = detail::valueText(leftValue),
+      .right = detail::valueText(rightValue),
+      .tolerance = detail::valueText(toleranceValue),
+      .difference = std::format("{}", difference),
+  });
+  detail::addCaptureNote(diagnostic, left);
+  detail::addCaptureNote(diagnostic, right);
+  detail::addCaptureNote(diagnostic, tolerance);
   return Expression{
       .passed = false,
       .diagnostic = std::move(diagnostic),
@@ -424,11 +462,12 @@ template <class Range, class Value>
     };
 
   Diagnostic diagnostic = detail::makeFailure("value does not contain the expected element", location);
-  detail::addValueNotes(diagnostic,
-      detail::labelOf(range, "range"),
-      rangeValue,
-      detail::labelOf(value, "expected"),
-      expectedValue);
+  diagnostic.addExpansion(ContainsExpansion{
+      .needle = detail::valueText(expectedValue),
+      .container = detail::valueText(rangeValue),
+  });
+  detail::addCaptureNote(diagnostic, range);
+  detail::addCaptureNote(diagnostic, value);
   return Expression{
       .passed = false,
       .diagnostic = std::move(diagnostic),
@@ -447,22 +486,25 @@ template <class Left, class Right>
 
 template <class Left, class Right>
 [[nodiscard]] auto operator<(const Left &left, const Expected<Right> &right) -> Expression {
-  return detail::ordered(left, right, "left value is not less than right value", std::less<>{}, None);
+  return detail::ordered(left, right, "left value is not less than right value", "<", std::less<>{}, None);
 }
 
 template <class Left, class Right>
 [[nodiscard]] auto operator>(const Left &left, const Expected<Right> &right) -> Expression {
-  return detail::ordered(left, right, "left value is not greater than right value", std::greater<>{}, None);
+  return detail::ordered(
+      left, right, "left value is not greater than right value", ">", std::greater<>{}, None);
 }
 
 template <class Left, class Right>
 [[nodiscard]] auto operator<=(const Left &left, const Expected<Right> &right) -> Expression {
-  return detail::ordered(left, right, "left value is greater than right value", std::less_equal<>{}, None);
+  return detail::ordered(
+      left, right, "left value is greater than right value", "<=", std::less_equal<>{}, None);
 }
 
 template <class Left, class Right>
 [[nodiscard]] auto operator>=(const Left &left, const Expected<Right> &right) -> Expression {
-  return detail::ordered(left, right, "left value is less than right value", std::greater_equal<>{}, None);
+  return detail::ordered(
+      left, right, "left value is less than right value", ">=", std::greater_equal<>{}, None);
 }
 
 } // namespace Nyx::Test

@@ -1,3 +1,5 @@
+#include <cstddef>
+
 import std;
 
 import Nyx.Core;
@@ -9,7 +11,7 @@ using namespace Nyx::Test;
 // NOLINTBEGIN(cppcoreguidelines-avoid-magic-numbers, readability-magic-numbers)
 namespace Tests {
 
-constexpr auto fibonacci(u32 input) -> u32 {
+constexpr auto fibonacci(u32 input) noexcept -> u32 {
   switch (input) {
     case 0: return 0;
     case 1: return 1;
@@ -17,12 +19,16 @@ constexpr auto fibonacci(u32 input) -> u32 {
   }
 }
 
-[[ = test,
+[[
+  = test,
   = group("math"),
   = tag("fibonacci"),
   = Case{0, 0},
   = Case{1, 1},
-  = Case{5, 5} ]] constexpr auto fibonacciCases(u32 input, u32 expected) -> bool {
+  = Case{5, 5},
+  = arg<"input">(fromCase),
+  = arg<"expected">(fromCase)
+]] constexpr auto fibonacciCases(const Context &ctx, u32 input, u32 expected) noexcept -> bool {
   return fibonacci(input) == expected;
 }
 

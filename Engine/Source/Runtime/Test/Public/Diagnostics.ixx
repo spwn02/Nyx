@@ -31,18 +31,57 @@ enum class[[ = debug::derive, = diagnostics::prefix("NYX") ]] DiagnosticCode : u
   ExpectedPanicNotObserved[[= diagnostics::message("expected panic was not observed")]] = 14,
   ProviderProducedNoValues[[= diagnostics::message("provider produced no values")]] = 15,
   TaskStranded[[= diagnostics::message("asynchronous task was stranded")]] = 16,
+  ResourceCleanupFailed[[= diagnostics::message("test resource cleanup failed")]] = 17,
 };
 
+/// Legacy rendering shorthand retained for source compatibility.
+/// TODO: Completely switch to the new API
 enum class[[= debug::derive]] DetailMode : u8 {
   None,
   Failures,
   Trace,
 };
 
+/// Identifies the portion of a diagnostic that a renderer may display.
+enum class[[ = bitflags, = debug::derive ]] DiagnosticSection : u8 {
+  None = 0,
+  Header = 1 << 0,
+  Source = 1 << 1,
+  PrimarySpan = 1 << 2,
+  SecondarySpans = 1 << 3,
+  Notes = 1 << 4,
+  Attachments = 1 << 5,
+  Trace = 1 << 6,
+  Profile = 1 << 7,
+};
+
+using DiagnosticSections = DiagnosticSection;
+
+/// A one-based source position used by resolved diagnostic ranges.
+struct SourcePosition final {
+  usize line{};
+  usize column{};
+};
+
+/// A source range resolved from a source plan by a report-local SourceManager.
+struct SourceRange final {
+  Path file;
+  SourcePosition begin;
+  SourcePosition end; // exclusive
+};
+
+/// Describes how a source span should be expanded by the source resolver.
+enum class[[= debug::derive]] SpanSelection : u8 {
+  Point,
+  Invocation,
+  EnclosingExpression,
+  EnclosingStatement,
+  Declaration,
+};
+
 struct SourceSpan final {
   std::source_location location;
-  /// One-past-the-end, one-based source column. Zero denotes a one-column marker.
-  usize endColumn{};
+  SpanSelection selection{SpanSelection::Point};
   SpanKind kind{SpanKind::Primary};
   String label;
 };
@@ -50,7 +89,7 @@ struct SourceSpan final {
 [[nodiscard]] auto makeSpan(String label = {},
     SpanKind = SpanKind::Primary,
     std::source_location location = std::source_location::current(),
-    usize endColumn = 0) -> SourceSpan;
+    SpanSelection selection = SpanSelection::Point) -> SourceSpan;
 
 [[nodiscard]] auto isPrimarySpan(const SourceSpan &span) noexcept -> bool;
 
@@ -71,6 +110,29 @@ struct DiagnosticAttachment final {
   String content;
 };
 
+/// Structured data describing a failed assertion expansion.
+struct BinaryExpansion final {
+  String left;
+  String operatorName;
+  String right;
+};
+
+/// Structured data describing a failed membership assertion.
+struct ContainsExpansion final {
+  String needle;
+  String container;
+};
+
+/// Structure data describing a failed approximate comparison.
+struct NearExpansion final {
+  String left;
+  String right;
+  String tolerance;
+  String difference;
+};
+
+using DiagnosticExpansion = std::variant<std::monostate, BinaryExpansion, ContainsExpansion, NearExpansion>;
+
 struct DiagnosticHeader final {
   DiagnosticCode code{};
   Option<String> descriptionOverride;
@@ -80,6 +142,7 @@ struct DiagnosticDetails final {
   Vec<SourceSpan> spans;
   Vec<DiagnosticNote> notes;
   Vec<DiagnosticAttachment> attachments;
+  DiagnosticExpansion expansion;
 };
 
 struct Diagnostic final {
@@ -104,6 +167,8 @@ struct Diagnostic final {
       Option<SourceSpan> noteSpan = None) -> Diagnostic &;
 
   auto addAttachment(String name, String content) -> Diagnostic &;
+
+  auto addExpansion(DiagnosticExpansion expansion) -> Diagnostic &;
 };
 
 [[nodiscard]] constexpr auto diagnosticCode(DiagnosticCode code) -> String {

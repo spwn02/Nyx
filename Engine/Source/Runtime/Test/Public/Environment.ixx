@@ -3,6 +3,7 @@ export module Nyx.Test:Environment;
 import std;
 import Nyx.Core;
 import :Diagnostics;
+import :Resources;
 
 export namespace Nyx::Test {
 
@@ -53,12 +54,25 @@ public:
 
   [[nodiscard]] auto stopRequested() const noexcept -> bool;
 
+  [[nodiscard]] auto resources() noexcept -> TestResources &;
+
+  [[nodiscard]] auto profileSink() noexcept -> profiling::ProfileSink &;
+
+  auto finalize(std::source_location location = std::source_location::current()) -> void;
+
+  [[nodiscard]] auto resourceSnapshot() const noexcept -> ResourceSnapshot;
+
+  [[nodiscard]] auto profileSnapshot() const noexcept -> profiling::ProfileSnapshot;
+
   [[nodiscard]] auto takeState() && noexcept -> TestState;
 
 private:
   TestState state_{};
   std::stop_source stopSource_;
+  TestResources resources_;
+  profiling::ProfileSink profile_;
   bool traceEnabled_{};
+  bool finalized_{};
 };
 
 /// Internal control flow used by require(). The test boundary catches this type and still finalize the
@@ -88,6 +102,8 @@ private:
 };
 
 [[nodiscard]] auto currentEnvironment() noexcept -> Option<Ref<TestEnvironment>>;
+
+[[nodiscard]] auto currentResources() noexcept -> Option<Ref<TestResources>>;
 
 /// Records a user-defined trace event when the current test has [[=trace]].
 /// It does not affect assertion counts and is otherwise a no-op.

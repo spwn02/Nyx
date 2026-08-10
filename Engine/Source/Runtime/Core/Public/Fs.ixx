@@ -6,48 +6,34 @@ import :Error;
 
 export namespace Nyx::fs {
 
-class File {
+class [[nodiscard]] File {
 public:
-  explicit File(const Path &path, const std::ios::openmode &openmode) noexcept
-      : file_(path, openmode), path_(path) {}
-  ~File() { close(); }
+  [[nodiscard]] explicit File(const Path &path, const std::ios::openmode &openmode)
+      : file_(path, openmode)
+      , path_(path) {
+  }
+  ~File() {
+    close();
+  }
 
-  File(const File &) = delete (
-      "Since this class manages unique file streams, copy is not "
-      "supported; use move instead");
+  File(const File &) = delete ("Since this class manages unique file streams, copy is not "
+                               "supported; use move instead");
+  auto operator=(const File &)
+      -> File & = delete ("Since this class manages unique file streams, copy is not "
+                          "supported; use move instead");
   File(File &&) noexcept = default;
-  auto operator=(const File &) -> File & = delete (
-      "Since this class manages unique file streams, copy is not "
-      "supported; use move instead");
   auto operator=(File &&) noexcept -> File & = default;
 
-  auto read() const -> Result<String>;
+  [[nodiscard]] auto read() const -> Result<String>;
   auto write(StringView buf) -> Result<void>;
 
-  constexpr auto close() noexcept -> void {
-    if (ok()) {
-      file_.close();
-    }
-  }
-  constexpr auto delete_file() noexcept -> Result<void> {
-    if (ok()) {
-      file_.close();
-      std::error_code err;
-      std::filesystem::remove(path_, err);
-      if (err) {
-        String msg = err.message();
-        return bail({
-            "Failed to delete file: {}: {}",
-             path_.string(),
-            msg,
-        });
-      }
-    }
-    return {};
-  }
-  constexpr auto ok() const noexcept -> bool { return file_.is_open(); }
+  auto close() noexcept -> void;
+  auto deleteFile() noexcept -> Result<void>;
+  [[nodiscard]] auto ok() const noexcept -> bool;
 
-  explicit constexpr operator bool() const { return file_.is_open(); }
+  [[nodiscard]] explicit operator bool() const {
+    return file_.is_open();
+  }
 
 private:
   std::fstream file_;
@@ -60,5 +46,15 @@ struct OpenOptions {
   [[nodiscard]]
   auto open(const Path &path) const -> Result<File>;
 };
+
+/// Creates a unique directory below the platform's system temporary directory.
+[[nodiscard]] auto temporaryDirectory(StringView prefix = "nyx") -> Result<Path>;
+
+/// Returns a unique not-yet-created path below parent for a file with suffix.
+[[nodiscard]] auto temporaryPath(const Path &parent, StringView prefix = "file", StringView suffix = ".tmp")
+    -> Result<Path>;
+
+/// Creates one named child directory below parent.
+[[nodiscard]] auto createDirectory(const Path &parent, StringView name) -> Result<Path>;
 
 } // namespace Nyx::fs

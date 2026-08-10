@@ -133,6 +133,9 @@ auto RunLoop::waitForWork(Option<TimePoint> externalWake) -> WaitResult {
   promoteDueTimers();
 
   if (externalFirst and now() >= *externalWake)
+    timeoutTriggered_ = true;
+
+  if (externalFirst and now() >= *externalWake)
     return WaitResult::ExternalWake;
 
   return WaitResult::TimerReady;
@@ -168,6 +171,10 @@ auto RunLoop::pendingWorkCount() const noexcept -> usize {
 
 auto RunLoop::stopRequested() const noexcept -> bool {
   return stopToken_.stop_requested();
+}
+
+auto RunLoop::timeoutTriggered() const noexcept -> bool {
+  return timeoutTriggered_;
 }
 
 RunLoopBinding::RunLoopBinding(RunLoop &runLoop) noexcept

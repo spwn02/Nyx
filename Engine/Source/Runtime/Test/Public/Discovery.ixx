@@ -186,6 +186,33 @@ consteval auto timeoutCount() -> usize {
   return count;
 }
 
+template <class Annotation, std::meta::info Function>
+consteval auto annotationCount() -> usize {
+  usize count{};
+
+  template for (constexpr std::meta::info annotation : meta::annotations<Function>) {
+    if constexpr (std::same_as<meta::TypeObject<annotation>, Annotation>)
+      ++count;
+  }
+
+  return count;
+}
+
+template <std::meta::info Function>
+consteval auto repeatCount() -> usize {
+  return annotationCount<Repeat, Function>();
+}
+
+template <std::meta::info Function>
+consteval auto warmupCount() -> usize {
+  return annotationCount<Warmup, Function>();
+}
+
+template <std::meta::info Function>
+consteval auto retryCount() -> usize {
+  return annotationCount<Retry, Function>();
+}
+
 template <std::meta::info Function>
 consteval auto groupCount() -> usize {
   usize count{};
@@ -234,6 +261,12 @@ auto policyOf() -> TestPolicy {
       "Nyx::Test tests may declare at most one [[= shouldPanic(...)]] annotation.");
   static_assert(timeoutCount<Function>() <= 1,
       "Nyx::Test tests may declare at most one [[= timeout(...)]] annotation.");
+  static_assert(repeatCount<Function>() <= 1,
+      "Nyx::Test tests may declare at most one [[= repeat(...)]] annotation.");
+  static_assert(warmupCount<Function>() <= 1,
+      "Nyx::Test tests may declare at most one [[= warmup(...)]] annotation.");
+  static_assert(retryCount<Function>() <= 1,
+      "Nyx::Test tests may declare at most one [[= retry(...)]] annotation.");
 
   TestPolicy policy{
       .trace = Nyx::meta::has_annotation<Trace, Function>(),
@@ -248,6 +281,12 @@ auto policyOf() -> TestPolicy {
     } else if constexpr (std::same_as<Annotation, Timeout>) {
       constexpr auto limit = std::meta::extract<Timeout>(annotation);
       policy.timeout = std::chrono::duration_cast<std::chrono::steady_clock::duration>(limit.apply());
+    } else if constexpr (std::same_as<Annotation, Repeat>) {
+      policy.repeat = std::meta::extract<Repeat>(annotation).apply();
+    } else if constexpr (std::same_as<Annotation, Warmup>) {
+      policy.warmup = std::meta::extract<Warmup>(annotation).apply();
+    } else if constexpr (std::same_as<Annotation, Retry>) {
+      policy.retry = std::meta::extract<Retry>(annotation).apply();
     }
   }
 

@@ -71,6 +71,7 @@ namespace {
 [[nodiscard]] auto expectedPanicDiagnostic(StringView expected, std::source_location location) -> Diagnostic {
   Diagnostic diagnostic = makeDiagnostic(DiagnosticCode::ExpectedPanicNotObserved, location);
   diagnostic.details.spans.front().label = "expected panic";
+  diagnostic.details.spans.front().selection = SpanSelection::Declaration;
   if (expected.empty())
     diagnostic.addNote("expected the test to panic");
   else
@@ -84,6 +85,7 @@ namespace {
     std::source_location location) -> Diagnostic {
   Diagnostic diagnostic = makeDiagnostic(DiagnosticCode::TimeoutExceeded, location);
   diagnostic.details.spans.front().label = "timeout";
+  diagnostic.details.spans.front().selection = SpanSelection::Declaration;
   diagnostic.addNote(std::format("limit: {}", durationText(limit)));
   diagnostic.addNote(std::format("elapsed: {}", durationText(elapsed)));
   return diagnostic;
@@ -102,6 +104,7 @@ auto TestExecution::failed() const noexcept -> bool {
 auto detail::returnedErrorDiagnostic(const Error &error, std::source_location location) -> Diagnostic {
   Diagnostic diagnostic = makeDiagnostic(DiagnosticCode::TestReturnedError, location);
   diagnostic.details.spans.front().label = "test return";
+  diagnostic.details.spans.front().selection = SpanSelection::Declaration;
 
   if (error.messages.empty()) {
     diagnostic.addNote("test returned an error without a message");
@@ -119,6 +122,7 @@ auto detail::returnedErrorDiagnostic(const Error &error, std::source_location lo
 auto detail::unhandledExceptionDiagnostic(String message, std::source_location location) -> Diagnostic {
   Diagnostic diagnostic = makeDiagnostic(DiagnosticCode::UnhandledException, location);
   diagnostic.details.spans.front().label = "test body";
+  diagnostic.details.spans.front().selection = SpanSelection::Declaration;
   diagnostic.addNote(std::format("exception: {}", message));
   return diagnostic;
 }
@@ -134,6 +138,7 @@ auto detail::taskLifecycleDiagnostic(const TaskLifecycleError &error, std::sourc
     -> Diagnostic {
   Diagnostic diagnostic = makeDiagnostic(DiagnosticCode::TaskStranded, location);
   diagnostic.details.spans.front().label = "async task";
+  diagnostic.details.spans.front().selection = SpanSelection::Declaration;
 
   switch (error.failure()) {
     case TaskLifecycleFailure::Stranded:
@@ -156,6 +161,9 @@ auto detail::taskLifecycleDiagnostic(const TaskLifecycleError &error, std::sourc
 auto detail::applyPolicy(const TestPolicy &policy,
     TestEnvironment &environment,
     std::chrono::steady_clock::duration elapsed,
+    bool retry,
+    bool cancelled,
+    bool timeoutTriggered,
     std::source_location location) -> void {
   if (policy.expectedPanic) {
     const Option<usize> index = matchingPanicIndex(environment.state(), *policy.expectedPanic);
@@ -167,7 +175,10 @@ auto detail::applyPolicy(const TestPolicy &policy,
     }
   }
 
-  if (policy.timeout and elapsed >= *policy.timeout)
+  const bool timeoutReached = policy.timeout and
+                              (retry ? cancelled or timeoutTriggered or elapsed > *policy.timeout
+                                     : environment.stopRequested() or elapsed >= *policy.timeout);
+  if (timeoutReached)
     environment.recordError(timeoutDiagnostic(*policy.timeout, elapsed, location));
 }
 

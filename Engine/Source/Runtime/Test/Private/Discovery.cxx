@@ -176,7 +176,7 @@ auto runAll(TestSelection selection, RunOptions options) -> Vec<TestExecution> {
   detail::filterPlannedCases(session, selection);
 
   Vec<TestExecution> executions = detail::executePlannedCases(session, options);
-  std::ranges::sort(executions, {}, [](const TestExecution &execution) -> const String & {
+  std::ranges::stable_sort(executions, {}, [](const TestExecution &execution) -> const String & {
     return execution.descriptor.identifier;
   });
   return executions;

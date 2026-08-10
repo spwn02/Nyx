@@ -140,7 +140,7 @@ Appended 2!
         .write = true,
     };
     Result<void> res =
-        options.open(path).and_then([](File file) -> Result<void> { return file.delete_file(); });
+        options.open(path).and_then([](File file) -> Result<void> { return file.deleteFile(); });
     require(res);
     traceEvent(std::format("deleted file: {}", path.string()));
   }

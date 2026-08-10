@@ -28,7 +28,7 @@ auto recordFailure(Diagnostic diagnostic, std::source_location location) -> bool
   TestEnvironment &environment = activeEnvironment();
   auto primary = std::ranges::find_if(diagnostic.details.spans, isPrimarySpan);
   if (primary == diagnostic.details.spans.end()) {
-    diagnostic.addSpan(makeSpan({}, SpanKind::Primary, location));
+    diagnostic.addSpan(makeSpan({}, SpanKind::Primary, location, SpanSelection::EnclosingExpression));
     primary = std::prev(diagnostic.details.spans.end());
   }
 
@@ -57,7 +57,10 @@ auto evaluate(Condition &&condition, std::source_location location) -> bool {
     return true;
   }
 
-  return recordFailure<AbortOnFailure>(makeDiagnostic(DiagnosticCode::AssertionFailed, location), location);
+  Diagnostic diagnostic = makeDiagnostic(DiagnosticCode::AssertionFailed, location);
+  if (not diagnostic.details.spans.empty())
+    diagnostic.details.spans.front().selection = SpanSelection::EnclosingExpression;
+  return recordFailure<AbortOnFailure>(std::move(diagnostic), location);
 }
 
 template <bool AbortOnFailure>
@@ -71,7 +74,10 @@ auto evaluate(Expression expression, std::source_location location) -> bool {
   if (expression.diagnostic)
     return recordFailure<AbortOnFailure>(std::move(*expression.diagnostic), location);
 
-  return recordFailure<AbortOnFailure>(makeDiagnostic(DiagnosticCode::AssertionFailed, location), location);
+  Diagnostic diagnostic = makeDiagnostic(DiagnosticCode::AssertionFailed);
+  if (not diagnostic.details.spans.empty())
+    diagnostic.details.spans.front().selection = SpanSelection::EnclosingExpression;
+  return recordFailure<AbortOnFailure>(std::move(diagnostic), location);
 }
 
 } // namespace detail

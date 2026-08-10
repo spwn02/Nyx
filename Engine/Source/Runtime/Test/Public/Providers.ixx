@@ -3,6 +3,7 @@ export module Nyx.Test:Providers;
 import std;
 import Nyx.Core;
 import :Annotations;
+import :Context;
 
 export namespace Nyx::Test {
 
@@ -215,7 +216,8 @@ consteval auto isProviderParameter() -> bool {
 
 template <std::meta::info Function, std::meta::info Parameter>
 consteval auto isContextParameter() -> bool {
-  return argumentPropertyCount<Function, Parameter, IsContextParameter>() != 0;
+  return std::same_as<meta::TypeObject<Parameter>, Context> or
+         argumentPropertyCount<Function, Parameter, IsContextParameter>() != 0;
 }
 
 template <std::meta::info Function, std::meta::info Parameter>

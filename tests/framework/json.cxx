@@ -18,13 +18,13 @@ namespace Tests::json {
           .policy =
               TestPolicy{
                   .trace = true,
-                  .expectedPanic = "never",
+                  .expectedPanic = String{"never"},
                   .timeout = std::chrono::milliseconds{5},
               },
           .metadata =
               TestMetadata{
-                  .group = "reporting",
-                  .tags = {"json", "machine"},
+                  .group = String{"reporting"},
+                  .tags = Vec<String>{"json", "machine"},
               },
       },
       [] -> void {
@@ -47,17 +47,24 @@ namespace Tests::json {
       DiagnosticFragment{.text = "difference: "},
       DiagnosticFragment{.text = "3", .highlighted = true},
   });
+  failing.state.diagnostics.front().addExpansion(BinaryExpansion{
+      .left = "2",
+      .operatorName = "!=",
+      .right = "3",
+  });
   failing.state.diagnostics.front().addAttachment("input", "2 != 3");
 
   const Vec<TestExecution> executions{std::move(passing), std::move(failing)};
+  const RunReport report = Reporter::makeReport(executions);
   const JsonReporter reporter{JsonReporterOptions{.pretty = true}};
   const String output = reporter.render(executions);
 
   require(executions.size() == 2_exp);
+  check(report.cases.size() == 2_exp);
+  check(report.failed());
   check(output.starts_with("{\n"));
   check(output.ends_with("}\n"));
-  check(output.contains(R"(json\"passing\n\u0001)"));
-  check(output.contains(R"("schema_version": 1)"));
+  check(output.contains(R"("schema_version": 3)"));
   check(output.contains(R"("framework": "Nyx.Test")"));
   check(output.contains(R"("kind": "test_run")"));
   check(output.contains(R"("status": "failed")"));
@@ -65,13 +72,21 @@ namespace Tests::json {
   check(output.contains(R"("seed": 5678)"));
   check(output.contains(R"("iteration": 2)"));
   check(output.contains(R"("trace_mode": "forced_all")"));
+  check(output.contains(R"("attempt": {)"));
+  check(output.contains(R"("profile": {)"));
+  check(output.contains(R"("resources": {)"));
+  check(output.contains(R"("cases": [)"));
   check(output.contains(R"(json\"passing\n)"));
-  check(output.contains(R"("trace\nline")"));
+  check(output.contains(R"(json\"passing\n\u0001)"));
+  check(output.contains(R"(trace\nline)"));
   check(output.contains(R"("group": "reporting")"));
   check(output.contains(R"("expected_panic": "never")"));
   check(output.contains(R"("timeout_ns": 5000000)"));
   check(output.contains(R"("code": "NYX001")"));
   check(output.contains(R"("description": "assertion failed")"));
+  check(output.contains(R"("kind": "binary")"));
+  check(output.contains(R"("operator": "!=")"));
+  check(output.contains(R"("highlight": {)") or output.contains("\"highlight\": null"));
   check(output.contains(R"("highlighted": true)"));
   check(output.contains(R"("name": "input")"));
   check(output.contains(R"("content": "2 != 3")"));

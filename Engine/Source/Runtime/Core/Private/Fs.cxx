@@ -30,6 +30,35 @@ auto File::write(StringView buf) -> Result<void> {
   return {};
 }
 
+auto File::close() noexcept -> void {
+  if (ok()) {
+    file_.close();
+  }
+}
+
+auto File::deleteFile() noexcept -> Result<void> {
+  if (not ok())
+    return {};
+
+  file_.close();
+  std::error_code err;
+  std::filesystem::remove(path_, err);
+  if (err) {
+    String msg = err.message();
+    return bail({
+        "Failed to delete file: {}: {}",
+        path_.string(),
+        msg,
+    });
+  }
+
+  return {};
+}
+
+auto File::ok() const noexcept -> bool {
+  return file_.is_open();
+}
+
 auto OpenOptions::open(const Path &path) const -> Result<File> {
   if (std::filesystem::is_directory(path)) {
     return bail({
@@ -41,7 +70,7 @@ auto OpenOptions::open(const Path &path) const -> Result<File> {
   using ios = std::ios;
   ios::openmode mode{};
 
-  auto create_check = [&]() -> Result<void> {
+  auto createCheck = [&] -> Result<void> {
     if (not(mode & ios::out))
       return bail({
           "Attempted to create a file without write/append mode: {}",
@@ -76,16 +105,18 @@ auto OpenOptions::open(const Path &path) const -> Result<File> {
     mode |= ios::trunc;
   }
   if (create) {
-    Result<void> res = create_check();
+    Result<void> res = createCheck();
     if (not res)
       return bail(std::move(res.error()));
   } else if (create_new) {
     if (std::filesystem::exists(path))
       return bail({"File already exists: {}", path.string()});
 
-    Result<void> res = create_check();
+    Result<void> res = createCheck();
     if (not res)
       return bail(std::move(res.error()));
+
+    mode |= ios::trunc;
   }
 
   if ((mode & (ios::in | ios::out)) == 0)
@@ -106,6 +137,52 @@ auto OpenOptions::open(const Path &path) const -> Result<File> {
     return bail({"Failed to open a file: {}", path.string()});
 
   return file;
+}
+
+auto temporaryDirectory(StringView prefix) -> Result<Path> {
+  std::error_code error{};
+  const Path temporary = std::filesystem::temp_directory_path(error);
+  if (error)
+    return bail({"Failed to locate the system temporary directory: {}", error.message()});
+
+  const u64 stamp = static_cast<u64>(std::chrono::steady_clock::now().time_since_epoch().count());
+  const u64 thread = static_cast<u64>(std::hash<std::thread::id>{}(std::this_thread::get_id()));
+  const auto candidates = std::views::indices(128) | std::views::transform([&](usize index) -> Path {
+    return temporary / std::format("{}-{}-{}-{}", prefix, thread, stamp, index);
+  });
+  const auto found = std::ranges::find_if(candidates, [](const Path &candidate) -> bool {
+    std::error_code createError{};
+    return std::filesystem::create_directories(candidate, createError) and not createError;
+  });
+  if (found == candidates.end())
+    return bail({"Failed to create a unique temporary directory with prefix: {}", prefix});
+
+  return *found;
+}
+
+auto temporaryPath(const Path &parent, StringView prefix, StringView suffix) -> Result<Path> {
+  const u64 stamp = static_cast<u64>(std::chrono::steady_clock::now().time_since_epoch().count());
+  const u64 thread = static_cast<u64>(std::hash<std::thread::id>{}(std::this_thread::get_id()));
+  const auto candidates = std::views::indices(128) | std::views::transform([&](usize index) -> Path {
+    return parent / std::format("{}-{}-{}-{}{}", prefix, thread, stamp, index, suffix);
+  });
+  const auto found = std::ranges::find_if(candidates, [](const Path &candidate) -> bool {
+    std::error_code existsError{};
+    return not std::filesystem::exists(candidate, existsError) and not existsError;
+  });
+  if (found == candidates.end())
+    return bail({"Failed to create a unique temporary path with prefix: {}", prefix});
+
+  return *found;
+}
+
+auto createDirectory(const Path &parent, StringView name) -> Result<Path> {
+  Path path = parent / String{name};
+  std::error_code error{};
+  if (not std::filesystem::create_directory(path, error) or error)
+    return bail({"Failed to create directory {}: {}", path.string(), error.message()});
+
+  return path;
 }
 
 } // namespace Nyx::fs

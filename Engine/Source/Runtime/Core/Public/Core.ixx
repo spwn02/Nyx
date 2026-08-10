@@ -8,3 +8,5 @@ export import :Bitflags;
 export import :Debug;
 export import :Build;
 export import :Concepts;
+export import :Profiling;
+export import :Memory;

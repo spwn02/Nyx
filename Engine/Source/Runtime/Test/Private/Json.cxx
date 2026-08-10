@@ -9,7 +9,7 @@ namespace Nyx::Test {
 
 namespace {
 
-inline constexpr u32 schemaVersion{1};
+inline constexpr u32 schemaVersion{3};
 
 struct JsonFrame final {
   bool first{true};
@@ -148,6 +148,19 @@ private:
   std::unreachable();
 }
 
+[[nodiscard]] constexpr auto spanSelectionName(SpanSelection selection) noexcept -> StringView {
+  switch (selection) {
+    case SpanSelection::Point: return "point";
+    case SpanSelection::Invocation: return "invocation";
+    case SpanSelection::EnclosingExpression: return "enclosing_expression";
+    case SpanSelection::EnclosingStatement: return "enclosing_statement";
+    case SpanSelection::Declaration: return "declaration";
+    default: return "unknown";
+  }
+
+  std::unreachable();
+}
+
 [[nodiscard]] constexpr auto traceModeName(TraceMode mode) noexcept -> StringView {
   switch (mode) {
     case TraceMode::Annotations: return "annotations";
@@ -179,18 +192,49 @@ auto writeLocation(JsonWriter &writer, const std::source_location &location) -> 
   writer.endObject();
 }
 
-auto writeSpan(JsonWriter &writer, const SourceSpan &span) -> void {
+auto writePosition(JsonWriter &writer, const SourcePosition &position) -> void {
   writer.beginObject();
-  writer.field("kind", [&writer, &span] -> void { writer.text(spanKindName(span.kind)); });
-  writer.field("label", [&writer, &span] -> void { writer.text(span.label); });
-  writer.field("end_column", [&writer, &span] -> void { writer.number(span.endColumn); });
-  writer.field("location", [&writer, &span] -> void { writeLocation(writer, span.location); });
+  writer.field("line", [&writer, &position] -> void { writer.number(position.line); });
+  writer.field("column", [&writer, &position] -> void { writer.number(position.column); });
   writer.endObject();
 }
 
-auto writeOptionalSpan(JsonWriter &writer, const Option<SourceSpan> &span) -> void {
+auto writeRange(JsonWriter &writer, const SourceRange &range) -> void {
+  writer.beginObject();
+  writer.field("file", [&writer, &range] -> void { writer.text(range.file.generic_string()); });
+  writer.field("begin", [&writer, &range] -> void { writePosition(writer, range.begin); });
+  writer.field("end", [&writer, &range] -> void { writePosition(writer, range.end); });
+  writer.endObject();
+}
+
+auto writeSpan(JsonWriter &writer, const SourceSpan &span, const SourceManager &sources) -> void {
+  writer.beginObject();
+  writer.field("kind", [&writer, &span] -> void { writer.text(spanKindName(span.kind)); });
+  writer.field("selection", [&writer, &span] -> void { writer.text(spanSelectionName(span.selection)); });
+  writer.field("label", [&writer, &span] -> void { writer.text(span.label); });
+  writer.field("location", [&writer, &span] -> void { writeLocation(writer, span.location); });
+  writer.field("range", [&writer, &span, &sources] -> void {
+    const Option<SourceResolution> resolution = sources.resolve(span);
+    if (resolution)
+      writeRange(writer, resolution->range);
+    else
+      writer.nullValue();
+  });
+  writer.field("highlight", [&writer, &span, &sources] -> void {
+    const Option<SourceResolution> resolution = sources.resolve(span);
+    if (resolution)
+      writeRange(writer, resolution->highlight);
+    else
+      writer.nullValue();
+    ;
+  });
+  writer.endObject();
+}
+
+auto writeOptionalSpan(JsonWriter &writer, const Option<SourceSpan> &span, const SourceManager &sources)
+    -> void {
   if (span) {
-    writeSpan(writer, *span);
+    writeSpan(writer, *span, sources);
     return;
   }
 
@@ -204,11 +248,11 @@ auto writeFragment(JsonWriter &writer, const DiagnosticFragment &fragment) -> vo
   writer.endObject();
 }
 
-auto writeNote(JsonWriter &writer, const DiagnosticNote &note) -> void {
+auto writeNote(JsonWriter &writer, const DiagnosticNote &note, const SourceManager &sources) -> void {
   writer.beginObject();
   writer.field("level", [&writer, &note] -> void { writer.text(diagnosticLevelName(note.level)); });
   writer.field("message", [&writer, &note] -> void { writer.text(note.message); });
-  writer.field("span", [&writer, &note] -> void { writeOptionalSpan(writer, note.span); });
+  writer.field("span", [&writer, &note, &sources] -> void { writeOptionalSpan(writer, note.span, sources); });
   writer.field("fragments", [&writer, &note] -> void {
     writer.beginArray();
     std::ranges::for_each(note.fragments, [&writer](const DiagnosticFragment &fragment) -> void {
@@ -219,23 +263,60 @@ auto writeNote(JsonWriter &writer, const DiagnosticNote &note) -> void {
   writer.endObject();
 }
 
-auto writeDiagnostic(JsonWriter &writer, const Diagnostic &diagnostic) -> void {
+auto writeExpansion(JsonWriter &writer, const DiagnosticExpansion &expansion) -> void {
+  std::visit(
+      [&](const auto &expansion) -> void {
+        using Type = std::remove_cvref_t<decltype(expansion)>;
+        if constexpr (std::same_as<Type, std::monostate>) {
+          writer.nullValue();
+        } else if constexpr (std::same_as<Type, BinaryExpansion>) {
+          const BinaryExpansion &value = expansion;
+          writer.beginObject();
+          writer.field("kind", [&writer] -> void { writer.text("binary"); });
+          writer.field("left", [&writer, &value] -> void { writer.text(value.left); });
+          writer.field("operator", [&writer, &value] -> void { writer.text(value.operatorName); });
+          writer.field("right", [&writer, &value] -> void { writer.text(value.right); });
+          writer.endObject();
+        } else if constexpr (std::same_as<Type, ContainsExpansion>) {
+          const ContainsExpansion &value = expansion;
+          writer.beginObject();
+          writer.field("kind", [&writer] -> void { writer.text("contains"); });
+          writer.field("needle", [&writer, &value] -> void { writer.text(value.needle); });
+          writer.field("container", [&writer, &value] -> void { writer.text(value.container); });
+          writer.endObject();
+        } else if constexpr (std::same_as<Type, NearExpansion>) {
+          const NearExpansion &value = expansion;
+          writer.beginObject();
+          writer.field("kind", [&writer] -> void { writer.text("near"); });
+          writer.field("left", [&writer, &value] -> void { writer.text(value.left); });
+          writer.field("right", [&writer, &value] -> void { writer.text(value.right); });
+          writer.field("tolerance", [&writer, &value] -> void { writer.text(value.tolerance); });
+          writer.field("difference", [&writer, &value] -> void { writer.text(value.difference); });
+          writer.endObject();
+        }
+      },
+      expansion);
+}
+
+auto writeDiagnostic(JsonWriter &writer, const Diagnostic &diagnostic, const SourceManager &sources) -> void {
   writer.beginObject();
   writer.field(
       "level", [&writer, &diagnostic] -> void { writer.text(diagnosticLevelName(diagnostic.level)); });
   writer.field("code", [&writer, &diagnostic] -> void { writer.text(diagnostic.code()); });
   writer.field("description", [&writer, &diagnostic] -> void { writer.text(diagnostic.description()); });
-  writer.field("spans", [&writer, &diagnostic] -> void {
+  writer.field("spans", [&writer, &diagnostic, &sources] -> void {
     writer.beginArray();
-    std::ranges::for_each(diagnostic.details.spans, [&writer](const SourceSpan &span) -> void {
-      writer.element([&writer, &span] -> void { writeSpan(writer, span); });
+    std::ranges::for_each(diagnostic.details.spans, [&writer, &sources](const SourceSpan &span) -> void {
+      writer.element([&writer, &span, &sources] -> void { writeSpan(writer, span, sources); });
     });
     writer.endArray();
   });
-  writer.field("notes", [&writer, &diagnostic] -> void {
+  writer.field(
+      "expansion", [&writer, &diagnostic] -> void { writeExpansion(writer, diagnostic.details.expansion); });
+  writer.field("notes", [&writer, &diagnostic, &sources] -> void {
     writer.beginArray();
-    std::ranges::for_each(diagnostic.details.notes, [&writer](const DiagnosticNote &note) -> void {
-      writer.element([&writer, &note] -> void { writeNote(writer, note); });
+    std::ranges::for_each(diagnostic.details.notes, [&writer, &sources](const DiagnosticNote &note) -> void {
+      writer.element([&writer, &note, &sources] -> void { writeNote(writer, note, sources); });
     });
     writer.endArray();
   });
@@ -288,6 +369,9 @@ auto writePolicy(JsonWriter &writer, const TestPolicy &policy) -> void {
     else
       writer.nullValue();
   });
+  writer.field("repeat", [&writer, &policy] -> void { writer.number(policy.repeat); });
+  writer.field("warmup", [&writer, &policy] -> void { writer.number(policy.warmup); });
+  writer.field("retry", [&writer, &policy] -> void { writer.number(policy.retry); });
   writer.endObject();
 }
 
@@ -303,16 +387,17 @@ auto writeDescriptor(JsonWriter &writer, const TestDescriptor &descriptor) -> vo
   writer.endObject();
 }
 
-auto writeState(JsonWriter &writer, const TestState &state) -> void {
+auto writeState(JsonWriter &writer, const TestState &state, const SourceManager &sources) -> void {
   writer.beginObject();
   writer.field("assertions", [&writer, &state] -> void { writer.number(state.assertions); });
   writer.field("failed_assertions", [&writer, &state] -> void { writer.number(state.failedAssertions); });
   writer.field("errors", [&writer, &state] -> void { writer.number(state.errors); });
   writer.field("aborted", [&writer, &state] -> void { writer.boolean(state.aborted); });
-  writer.field("diagnostics", [&writer, &state] -> void {
+  writer.field("diagnostics", [&writer, &state, &sources] -> void {
     writer.beginArray();
-    std::ranges::for_each(state.diagnostics, [&writer](const Diagnostic &diagnostic) -> void {
-      writer.element([&writer, &diagnostic] -> void { writeDiagnostic(writer, diagnostic); });
+    std::ranges::for_each(state.diagnostics, [&writer, &sources](const Diagnostic &diagnostic) -> void {
+      writer.element(
+          [&writer, &diagnostic, &sources] -> void { writeDiagnostic(writer, diagnostic, sources); });
     });
     writer.endArray();
   });
@@ -331,20 +416,153 @@ auto writeState(JsonWriter &writer, const TestState &state) -> void {
   writer.endObject();
 }
 
-auto writeExecution(JsonWriter &writer, const TestExecution &execution) -> void {
+auto writeProfile(JsonWriter &writer, const profiling::ProfileSnapshot &profile) -> void {
+  writer.beginObject();
+  writer.field(
+      "duration_ns", [&writer, &profile] -> void { writer.number(durationNanoseconds(profile.duration)); });
+  writer.field("events", [&writer, &profile] -> void {
+    writer.beginArray();
+    std::ranges::for_each(profile.events, [&writer](const profiling::ProfileEvent &event) -> void {
+      writer.element([&writer, &event] -> void {
+        writer.beginObject();
+        writer.field("name", [&writer, &event] -> void { writer.text(event.name); });
+        writer.field(
+            "duration_ns", [&writer, &event] -> void { writer.number(durationNanoseconds(event.duration)); });
+        writer.field("depth", [&writer, &event] -> void { writer.number(event.depth); });
+        writer.field("location", [&writer, &event] -> void { writeLocation(writer, event.location); });
+        writer.endObject();
+      });
+    });
+    writer.endArray();
+  });
+  writer.field("aggregates", [&writer, &profile] -> void {
+    writer.beginArray();
+    std::ranges::for_each(
+        profile.aggregates, [&writer](const Pair<String, profiling::ProfileAggregate> &entry) -> void {
+          writer.element([&writer, &entry] -> void {
+            writer.beginObject();
+            writer.field("name", [&writer, &entry] -> void { writer.text(entry.first); });
+            writer.field("count", [&writer, &entry] -> void { writer.number(entry.second.count); });
+            writer.field("total_ns",
+                [&writer, &entry] -> void { writer.number(durationNanoseconds(entry.second.total)); });
+            writer.field("minimum_ns",
+                [&writer, &entry] -> void { writer.number(durationNanoseconds(entry.second.minimum)); });
+            writer.field("maximum_ns",
+                [&writer, &entry] -> void { writer.number(durationNanoseconds(entry.second.maximum)); });
+            writer.endObject();
+          });
+        });
+    writer.endArray();
+  });
+  writer.endObject();
+}
+
+auto writeResources(JsonWriter &writer, const ResourceSnapshot &resources) -> void {
+  writer.beginObject();
+  writer.field("active", [&writer, &resources] -> void { writer.number(resources.activeResources); });
+  writer.field("peak", [&writer, &resources] -> void { writer.number(resources.peakResources); });
+  writer.field("cleanup_count", [&writer, &resources] -> void { writer.number(resources.cleanupCount); });
+  writer.field(
+      "allocation_bytes", [&writer, &resources] -> void { writer.number(resources.allocationBytes); });
+  writer.field("active_allocation_bytes",
+      [&writer, &resources] -> void { writer.number(resources.activeAllocationBytes); });
+  writer.field("peak_allocation_bytes",
+      [&writer, &resources] -> void { writer.number(resources.peakAllocationBytes); });
+  writer.field("temporary_files", [&writer, &resources] -> void { writer.number(resources.temporaryFiles); });
+  writer.field("temporary_directories",
+      [&writer, &resources] -> void { writer.number(resources.temporaryDirectories); });
+  writer.endObject();
+}
+
+auto writeMemory(JsonWriter &writer, const Option<memory::ProcessMemorySnapshot> &memory) -> void {
+  if (not memory) {
+    writer.nullValue();
+    return;
+  }
+
+  writer.beginObject();
+  writer.field("resident_bytes", [&writer, &memory] -> void { writer.number(memory->residentBytes); });
+  writer.endObject();
+}
+
+auto writeAttemptIndex(JsonWriter &writer, const AttemptIndex &index, bool warmup) -> void {
+  writer.beginObject();
+  writer.field("run_iteration", [&writer, &index] -> void { writer.number(index.runIteration); });
+  writer.field("sample", [&writer, &index] -> void { writer.number(index.sample); });
+  writer.field("retry", [&writer, &index] -> void { writer.number(index.retry); });
+  writer.field("warmup", [&writer, &warmup] -> void { writer.boolean(warmup); });
+  writer.endObject();
+}
+
+auto writeMeasurement(JsonWriter &writer, const Option<MeasurementSummary> &measurement) -> void {
+  if (not measurement) {
+    writer.nullValue();
+    return;
+  }
+
+  writer.beginObject();
+  writer.field("samples", [&writer, &measurement] -> void { writer.number(measurement->sampleCount); });
+  writer.field("minimum_ns",
+      [&writer, &measurement] -> void { writer.number(durationNanoseconds(measurement->minimum)); });
+  writer.field("maximum_ns",
+      [&writer, &measurement] -> void { writer.number(durationNanoseconds(measurement->maximum)); });
+  writer.field(
+      "mean_ns", [&writer, &measurement] -> void { writer.number(durationNanoseconds(measurement->mean)); });
+  writer.field("median_ns",
+      [&writer, &measurement] -> void { writer.number(durationNanoseconds(measurement->median)); });
+  writer.field("deviation_ns",
+      [&writer, &measurement] -> void { writer.number(durationNanoseconds(measurement->deviation)); });
+  writer.endObject();
+}
+
+auto writeExecution(JsonWriter &writer, const TestExecution &execution, const SourceManager &sources)
+    -> void {
   writer.beginObject();
   writer.field("identifier", [&writer, &execution] -> void { writer.text(execution.descriptor.identifier); });
   writer.field("status", [&writer, &execution] -> void { writer.text(executionStatus(execution)); });
   writer.field("duration_ns",
       [&writer, &execution] -> void { writer.number(durationNanoseconds(execution.duration)); });
+  writer.field("wall_duration_ns",
+      [&writer, &execution] -> void { writer.number(durationNanoseconds(execution.wallDuration)); });
   writer.field("run_seed", [&writer, &execution] -> void { writer.number(execution.runSeed); });
   writer.field("seed", [&writer, &execution] -> void { writer.number(execution.seed); });
   writer.field("iteration", [&writer, &execution] -> void { writer.number(execution.iteration); });
+  writer.field("attempt",
+      [&writer, &execution] -> void { writeAttemptIndex(writer, execution.attempt, execution.warmup); });
   writer.field(
       "trace_mode", [&writer, &execution] -> void { writer.text(traceModeName(execution.traceMode)); });
   writer.field(
       "descriptor", [&writer, &execution] -> void { writeDescriptor(writer, execution.descriptor); });
-  writer.field("state", [&writer, &execution] -> void { writeState(writer, execution.state); });
+  writer.field(
+      "state", [&writer, &execution, &sources] -> void { writeState(writer, execution.state, sources); });
+  writer.field("profile", [&writer, &execution] -> void { writeProfile(writer, execution.profile); });
+  writer.field("resources", [&writer, &execution] -> void { writeResources(writer, execution.resources); });
+  writer.field(
+      "memory_before", [&writer, &execution] -> void { writeMemory(writer, execution.memoryBefore); });
+  writer.field("memory_after", [&writer, &execution] -> void { writeMemory(writer, execution.memoryAfter); });
+  writer.endObject();
+}
+
+auto writeCase(JsonWriter &writer, const TestCaseResult &testCase, const SourceManager &sources) -> void {
+  writer.beginObject();
+  writer.field("identifier", [&writer, &testCase] -> void { writer.text(testCase.descriptor.identifier); });
+  writer.field(
+      "status", [&writer, &testCase] -> void { writer.text(testCase.passed() ? "passed" : "failed"); });
+  writer.field("passed", [&writer, &testCase] -> void { writer.boolean(testCase.passed()); });
+  writer.field("failed", [&writer, &testCase] -> void { writer.boolean(testCase.failed()); });
+  writer.field("descriptor", [&writer, &testCase] -> void { writeDescriptor(writer, testCase.descriptor); });
+  writer.field("attempts", [&writer, &testCase, &sources] -> void {
+    writer.beginArray();
+    std::ranges::for_each(testCase.attempts, [&writer, &sources](const TestAttempt &attempt) -> void {
+      writer.element(
+          [&writer, &attempt, &sources] -> void { writeExecution(writer, attempt.execution, sources); });
+    });
+    writer.endArray();
+  });
+  writer.field(
+      "measurement", [&writer, &testCase] -> void { writeMeasurement(writer, testCase.measurement); });
+  writer.field(
+      "recovered_timeouts", [&writer, &testCase] -> void { writer.number(testCase.recoveredTimeouts); });
   writer.endObject();
 }
 
@@ -353,6 +571,14 @@ auto writeSummary(JsonWriter &writer, const TestSummary &summary) -> void {
   writer.field(
       "status", [&writer, &summary] -> void { writer.text(summary.passed() ? "passed" : "failed"); });
   writer.field("tests", [&writer, &summary] -> void { writer.number(summary.testCount); });
+  writer.field("cases", [&writer, &summary] -> void { writer.number(summary.caseCount); });
+  writer.field("attempts", [&writer, &summary] -> void { writer.number(summary.attemptCount); });
+  writer.field("samples", [&writer, &summary] -> void { writer.number(summary.sampleCount); });
+  writer.field("retries", [&writer, &summary] -> void { writer.number(summary.retryCount); });
+  writer.field("warmups", [&writer, &summary] -> void { writer.number(summary.warmupCount); });
+  writer.field("recovered", [&writer, &summary] -> void { writer.number(summary.recoveredCount); });
+  writer.field("passed_cases", [&writer, &summary] -> void { writer.number(summary.passedCaseCount); });
+  writer.field("failed_cases", [&writer, &summary] -> void { writer.number(summary.failedCaseCount); });
   writer.field("passed", [&writer, &summary] -> void { writer.number(summary.passedCount); });
   writer.field("failed", [&writer, &summary] -> void { writer.number(summary.failedCount); });
   writer.field("assertions", [&writer, &summary] -> void { writer.number(summary.assertionCount); });
@@ -361,11 +587,13 @@ auto writeSummary(JsonWriter &writer, const TestSummary &summary) -> void {
   writer.field("errors", [&writer, &summary] -> void { writer.number(summary.errorCount); });
   writer.field(
       "duration_ns", [&writer, &summary] -> void { writer.number(durationNanoseconds(summary.duration)); });
+  writer.field("wall_duration_ns",
+      [&writer, &summary] -> void { writer.number(durationNanoseconds(summary.wallDuration)); });
   writer.endObject();
 }
 
-auto writeReport(JsonWriter &writer, Span<const TestExecution> executions) -> void {
-  const TestSummary summary = Reporter::summarize(executions);
+auto writeReport(JsonWriter &writer, const RunReport &report, const SourceManager &sources) -> void {
+  const TestSummary summary = Reporter::summarize(report);
 
   writer.beginObject();
   writer.field("schema_version", [&writer] -> void { writer.number(schemaVersion); });
@@ -373,17 +601,30 @@ auto writeReport(JsonWriter &writer, Span<const TestExecution> executions) -> vo
   writer.field("kind", [&writer] -> void { writer.text("test_run"); });
   writer.field(
       "status", [&writer, &summary] -> void { writer.text(summary.passed() ? "passed" : "failed"); });
-  writer.field("run_seed", [&writer, &executions] -> void {
-    if (executions.empty())
+  writer.field("run_seed", [&writer, &report] -> void {
+    if (report.cases.empty() or report.cases.front().attempts.empty())
       writer.nullValue();
     else
-      writer.number(executions.front().runSeed);
+      writer.number(report.cases.front().attempts.front().execution.runSeed);
   });
   writer.field("summary", [&writer, &summary] -> void { writeSummary(writer, summary); });
-  writer.field("tests", [&writer, &executions] -> void {
+  writer.field("cases", [&writer, &report, &sources] -> void {
     writer.beginArray();
-    std::ranges::for_each(executions, [&writer](const TestExecution &execution) -> void {
-      writer.element([&writer, &execution] -> void { writeExecution(writer, execution); });
+    std::ranges::for_each(report.cases, [&writer, &sources](const TestCaseResult &testCase) -> void {
+      writer.element([&writer, &testCase, &sources] -> void { writeCase(writer, testCase, sources); });
+    });
+    writer.endArray();
+  });
+  writer.field("tests", [&writer, &report, &sources] -> void {
+    writer.beginArray();
+    const auto flattenedAttempts =
+        report.cases | std::views::transform([](const TestCaseResult &testCase) -> const Vec<TestAttempt> & {
+          return testCase.attempts;
+        }) |
+        std::views::join;
+    std::ranges::for_each(flattenedAttempts, [&writer, &sources](const TestAttempt &attempt) -> void {
+      writer.element(
+          [&writer, &attempt, &sources] -> void { writeExecution(writer, attempt.execution, sources); });
     });
     writer.endArray();
   });
@@ -412,9 +653,15 @@ JsonReporter::JsonReporter(JsonReporterOptions options)
     : options_(options) {
 }
 
+auto JsonReporter::addRoot(Path root) -> void {
+  roots_.push_back(std::move(root));
+}
+
 auto JsonReporter::report(Span<const TestExecution> executions, std::ostream &output) const -> void {
+  const RunReport report = Reporter::makeReport(executions);
+  const SourceManager sources{roots_};
   JsonWriter writer{output, options_};
-  writeReport(writer, executions);
+  writeReport(writer, report, sources);
   if (options_.pretty)
     output << '\n';
 }

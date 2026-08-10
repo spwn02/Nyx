@@ -8,10 +8,11 @@ import Nyx.Core;
 
 namespace Nyx::Test {
 
-auto makeSpan(String label, SpanKind kind, std::source_location location, usize endColumn) -> SourceSpan {
+auto makeSpan(String label, SpanKind kind, std::source_location location, SpanSelection selection)
+    -> SourceSpan {
   return SourceSpan{
       .location = location,
-      .endColumn = endColumn,
+      .selection = selection,
       .kind = kind,
       .label = std::move(label),
   };
@@ -73,6 +74,11 @@ auto Diagnostic::addAttachment(String name, String content) -> Diagnostic & {
       .name = std::move(name),
       .content = std::move(content),
   });
+  return *this;
+}
+
+auto Diagnostic::addExpansion(DiagnosticExpansion expansion) -> Diagnostic & {
+  details.expansion = std::move(expansion);
   return *this;
 }
 

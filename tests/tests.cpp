@@ -5,42 +5,48 @@ import Nyx.Test;
 using namespace Nyx;
 using namespace Nyx::Test;
 
+inline constexpr bool renderJson{false};
+
 auto main() -> int { // NOLINT
   const Vec<TestExecution> executions = runAll(
       TestSelection{
-          .group = "core",
+          // .group = "core",
       },
       RunOptions{
           .jobs = 0,
+          .timeMode = TimeMode::Real,
           .traceMode = TraceMode::Annotations,
           .order = ExecutionOrder::Shuffled,
+          .failFast = true,
       });
-  Reporter{
+  Reporter reporter{
       ReporterOptions{
           .renderer =
               {
-                  .color = Nyx::Test::ColorMode::Always,
+                  .color = ColorMode::Always,
                   .terminal = true,
                   .showSource = true,
-                  .details = Nyx::Test::DetailMode::Trace,
+                  .details = DetailMode::Trace,
               },
           .showPassedTests = true,
           .showSummary = true,
       },
-  }
-      .report(executions, std::cout);
+  };
+  TestSummary summary = reporter.report(executions, std::cout);
 
-  {
-    JsonReporter reporter(JsonReporterOptions{
+  if constexpr (renderJson) {
+    JsonReporter jsonReporter(JsonReporterOptions{
         .pretty = true,
     });
 
     const Path root = std::filesystem::current_path() / "tests";
     std::ofstream outputList{root / "list.json"};
     if (outputList)
-      reporter.reportList(list(), outputList);
+      jsonReporter.reportList(list(), outputList);
     std::ofstream outputSummary{root / "summary.json"};
     if (outputSummary)
-      reporter.report(executions, outputSummary);
+      jsonReporter.report(executions, outputSummary);
   }
+
+  return summary.passed() ? build::exitSuccess : build::exitFailure;
 }

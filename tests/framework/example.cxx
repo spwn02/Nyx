@@ -1,3 +1,4 @@
+import std;
 import Nyx.Core;
 import Nyx.Test;
 
@@ -6,6 +7,13 @@ using namespace Nyx::Test;
 
 // NOLINTBEGIN(cppcoreguidelines-avoid-magic-numbers, readability-magic-numbers)
 namespace Tests::example {
+
+[[ = test, = group("example"), = repeat(10) ]] auto foo(const Context &ctx) -> void {
+  Array<usize, 10> array = ctx.resources.allocate<Array<usize, 10>>();
+  std::ranges::iota(array, 1);
+  check(contains(array, 10));
+  check(near(std::ranges::fold_left(array, 0.0F, std::plus<>{}) / std::ranges::distance(array), 5, 0.5));
+}
 
 [[nodiscard]] auto divide(i32 num, i32 den) noexcept -> Result<i32> {
   if (den == 0)
@@ -19,9 +27,11 @@ namespace Tests::example {
   return divide(num, den);
 }
 
-[[ = test, = group("example"), =tag("math"), = Case{5, 0}, = shouldPanic("Cannot divide by zero!") ]] auto divideFail(
-    i32 num,
-    i32 den) noexcept -> Result<i32> {
+[[ = test,
+  = group("example"),
+  = tag("math"),
+  = Case{5, 0},
+  = shouldPanic("Cannot divide by zero!") ]] auto divideFail(i32 num, i32 den) noexcept -> Result<i32> {
   return divide(num, den);
 }
 

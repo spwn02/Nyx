@@ -88,6 +88,8 @@ public:
 
   [[nodiscard]] auto stopRequested() const noexcept -> bool;
 
+  [[nodiscard]] auto timeoutTriggered() const noexcept -> bool;
+
 private:
   struct Timer final {
     TimePoint wakeTime;
@@ -119,6 +121,7 @@ private:
   TimePoint currentTime_;
   usize nextTimerSequence_{};
   std::stop_token stopToken_;
+  bool timeoutTriggered_{};
 };
 
 /// Dynamically binds the deterministic coroutine queue while a task resumes. It is analogous to

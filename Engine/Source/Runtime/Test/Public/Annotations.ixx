@@ -389,6 +389,47 @@ consteval auto timeout(std::chrono::duration<Rep, Period> duration) -> Timeout {
   };
 }
 
+/// Declares the number of measured samples for one logical test case.
+struct Repeat final {
+  usize count{1};
+
+  [[nodiscard]] constexpr auto apply() const noexcept -> usize {
+    return count;
+  }
+};
+
+consteval auto repeat(usize count) -> Repeat {
+  if (count == 0)
+    throw "Nyx.Test repeat() requires at least one measured sample.";
+  return Repeat{.count = count};
+}
+
+/// Declares the number of unreported warmup attempts before measured samples.
+struct Warmup final {
+  usize count{1};
+
+  [[nodiscard]] constexpr auto apply() const noexcept -> usize {
+    return count;
+  }
+};
+
+consteval auto warmup(usize count) -> Warmup {
+  return Warmup{.count = count};
+}
+
+/// Declares the number of additional timeout-only attempts for each measured sample.
+struct Retry final {
+  usize count{1};
+
+  [[nodiscard]] constexpr auto apply() const noexcept -> usize {
+    return count;
+  }
+};
+
+consteval auto retry(usize count) -> Retry {
+  return Retry{.count = count};
+}
+
 template <usize Size>
 struct Description final {
   meta::StaticString<Size> description_;

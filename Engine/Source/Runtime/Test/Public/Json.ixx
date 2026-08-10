@@ -23,6 +23,8 @@ class JsonReporter final {
 public:
   explicit JsonReporter(JsonReporterOptions options = {});
 
+  auto addRoot(Path root) -> void;
+
   auto report(Span<const TestExecution> executions, std::ostream &output) const -> void;
 
   [[nodiscard]] auto render(Span<const TestExecution> executions) const -> String;
@@ -34,6 +36,7 @@ public:
 
 private:
   JsonReporterOptions options_{};
+  Vec<Path> roots_;
 };
 
 } // namespace Nyx::Test

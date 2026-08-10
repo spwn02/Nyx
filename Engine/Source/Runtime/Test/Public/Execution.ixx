@@ -28,16 +28,29 @@ struct TestDescriptor final {
   TestMetadata metadata{};
 };
 
+struct AttemptIndex final {
+  usize runIteration{};
+  usize sample{};
+  usize retry{};
+};
+
 struct TestExecution final {
   TestDescriptor descriptor;
   TestState state;
   std::chrono::steady_clock::duration duration{};
+  std::chrono::steady_clock::duration wallDuration{};
+  profiling::ProfileSnapshot profile;
+  ResourceSnapshot resources;
+  Option<memory::ProcessMemorySnapshot> memoryBefore;
+  Option<memory::ProcessMemorySnapshot> memoryAfter;
   /// Root seed selected for the whole RunOptions invocation.
   u64 runSeed{};
   /// Per-case seed exposed through Context::seed.
   u64 seed{};
   /// Zero-based repeat index for this execution.
   usize iteration{};
+  AttemptIndex attempt{};
+  bool warmup{};
   TraceMode traceMode{TraceMode::Annotations};
 
   [[nodiscard]] auto passed() const noexcept -> bool;
@@ -81,6 +94,9 @@ concept TestInvocable = std::invocable<Function> or ContextInvocable<Function>;
 auto applyPolicy(const TestPolicy &policy,
     TestEnvironment &environment,
     std::chrono::steady_clock::duration elapsed,
+    bool retry,
+    bool cancelled,
+    bool timeoutTriggered,
     std::source_location location) -> void;
 
 template <class Value>
@@ -125,6 +141,7 @@ auto normalizeReturn(Return &&returned,
     Diagnostic diagnostic = makeDiagnostic(DiagnosticCode::AssertionFailed, location);
     diagnostic.header.descriptionOverride = "test returned false";
     diagnostic.details.spans.front().label = "test return";
+    diagnostic.details.spans.front().selection = SpanSelection::Declaration;
     environment.recordFailure(std::move(diagnostic));
   } else {
     static_assert(meta::always_false_v<Type>,
@@ -157,6 +174,7 @@ auto normalizeTask(Task<Value> &&task,
       [&environment, &context](std::coroutine_handle<> handle) -> void {
         EnvironmentBinding environmentBinding{environment};
         ContextBinding contextBinding{context};
+        profiling::SinkBinding profileBinding{environment.profileSink()};
         handle.resume();
       },
       requestTimeoutStop,
@@ -204,15 +222,28 @@ auto invokeTest(Function &&function, const Context &context) -> decltype(auto) {
 /// Context::stopToken at the next queued resume. TimeMode::Virtual advances only Nyx::Test scheduler time.
 template <detail::TestInvocable Function>
 [[nodiscard]]
-auto run(TestDescriptor descriptor, Function &&function, TimeMode timeMode = TimeMode::Real)
-    -> TestExecution {
+auto run(TestDescriptor descriptor, // NOLINT(readability-function-size)
+    Function &&function,
+    TimeMode timeMode = TimeMode::Real) -> TestExecution {
   const detail::InvocationSettings invocation = detail::currentInvocationSettings();
+  const auto wallStarted = std::chrono::steady_clock::now();
+  const Option<memory::ProcessMemorySnapshot> memoryBefore =
+      invocation.captureMemory ? memory::processMemory() : None;
   TestEnvironment environment{};
   TestExecution execution{
       .descriptor = std::move(descriptor),
       .seed = invocation.seed,
       .iteration = invocation.iteration,
+      .attempt =
+          AttemptIndex{
+              .runIteration = invocation.iteration,
+              .sample = invocation.sample,
+              .retry = invocation.retry,
+          },
+      .warmup = invocation.warmup,
   };
+  const auto finalizeEnvironment = std::scope_exit(
+      [&environment, &execution] -> void { environment.finalize(execution.descriptor.location); });
 
   if (execution.descriptor.name.empty())
     execution.descriptor.name = execution.descriptor.identifier;
@@ -226,6 +257,7 @@ auto run(TestDescriptor descriptor, Function &&function, TimeMode timeMode = Tim
   detail::Deadline deadline{};
   if (execution.descriptor.policy.timeout)
     deadline.emplace(started + *execution.descriptor.policy.timeout);
+  bool cancelled{};
 
   {
     const auto recordDuration =
@@ -234,11 +266,20 @@ auto run(TestDescriptor descriptor, Function &&function, TimeMode timeMode = Tim
         .name = StringView{execution.descriptor.name},
         .description = StringView{execution.descriptor.description},
         .testCase = execution.descriptor.testCase,
+        .resources = environment.resources(),
         .seed = execution.seed,
         .iteration = execution.iteration,
+        .sample = invocation.sample,
+        .retry = invocation.retry,
+        .warmup = invocation.warmup,
         .stopToken = environment.stopToken(),
         .location = execution.descriptor.location,
     };
+
+    EnvironmentBinding environmentBinding{environment};
+    ContextBinding contextBinding{context};
+    profiling::SinkBinding profileBinding{environment.profileSink()};
+    auto testProfile = profiling::profileScope(execution.descriptor.name, execution.descriptor.location);
 
     try {
       using Return = decltype(detail::invokeTest(std::forward<Function>(function), context));
@@ -270,6 +311,7 @@ auto run(TestDescriptor descriptor, Function &&function, TimeMode timeMode = Tim
       }
     } catch (const detail::TaskCancelled &) { // NOLINT
       // The timeout policy records the final diagnostic after duration capture.
+      cancelled = true;
     } catch (const detail::TaskLifecycleError &error) {
       environment.recordError(detail::taskLifecycleDiagnostic(error, execution.descriptor.location));
     } catch (const TestAbort &) { // NOLINT
@@ -289,8 +331,20 @@ auto run(TestDescriptor descriptor, Function &&function, TimeMode timeMode = Tim
     }
   }
 
+  execution.wallDuration = std::chrono::steady_clock::now() - wallStarted;
+  execution.profile = environment.profileSnapshot();
   detail::applyPolicy(
-      execution.descriptor.policy, environment, execution.duration, execution.descriptor.location);
+      execution.descriptor.policy,
+      environment,
+      execution.duration,
+      invocation.retry != 0,
+      cancelled,
+      runLoop.timeoutTriggered(),
+      execution.descriptor.location);
+  environment.finalize(execution.descriptor.location);
+  execution.resources = environment.resourceSnapshot();
+  execution.memoryBefore = memoryBefore;
+  execution.memoryAfter = invocation.captureMemory ? memory::processMemory() : None;
   execution.state = std::move(environment).takeState();
 
   return execution;

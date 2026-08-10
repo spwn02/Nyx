@@ -19,6 +19,9 @@ struct TestPolicy final {
   bool trace{};
   Option<String> expectedPanic;
   Option<std::chrono::steady_clock::duration> timeout;
+  usize repeat{1};
+  usize warmup{};
+  usize retry{};
 };
 
 /// Internal exception used by panic(). The runner turns it into a structured diagnostic, while shouldPanic()

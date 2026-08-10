@@ -11,7 +11,7 @@ namespace {
 
 struct ScheduledCase final {
   usize plannedCase{};
-  usize iteration{};
+  usize runIteration{};
   u64 seed{};
 };
 
@@ -63,13 +63,16 @@ private:
   return mixer.next();
 }
 
-[[nodiscard]] constexpr auto deriveSeed(u64 runSeed, usize plannedCase, usize iteration) -> u64 {
+[[nodiscard]] constexpr auto deriveSeed(u64 runSeed, usize plannedCase, AttemptIndex attempt, bool warmup)
+    -> u64 {
   constexpr u64 streamSalt{0xD1B54A32D192ED03ULL};
-  constexpr u32 iterationShift{1};
   SplitMix64 mixer{runSeed ^ streamSalt};
   const u64 caseSeed = mixer.next() ^ static_cast<u64>(plannedCase);
-  const u64 iterationSeed = mixer.next() ^ static_cast<u64>(iteration);
-  SplitMix64 result{caseSeed ^ (iterationSeed << iterationShift)};
+  const u64 runSeedPart = mixer.next() ^ static_cast<u64>(attempt.runIteration);
+  const u64 sampleSeed = mixer.next() ^ static_cast<u64>(attempt.sample);
+  const u64 retrySeed = mixer.next() ^ static_cast<u64>(attempt.retry);
+  const u64 warmupSeed = mixer.next() ^ static_cast<u64>(warmup);
+  SplitMix64 result{caseSeed ^ runSeedPart ^ sampleSeed ^ retrySeed ^ warmupSeed};
   return result.next();
 }
 
@@ -81,13 +84,12 @@ private:
   Vec<ScheduledCase> scheduled{};
   scheduled.reserve(plannedCaseCount * options.repeat);
   std::ranges::for_each(
-      std::views::indices(options.repeat), [&scheduled, plannedCaseCount, runSeed](usize iteration) -> void {
-        std::ranges::for_each(std::views::indices(plannedCaseCount),
-            [&scheduled, iteration, runSeed](usize plannedCase) -> void {
+      std::views::indices(options.repeat), [&scheduled, plannedCaseCount](usize iteration) -> void {
+        std::ranges::for_each(
+            std::views::indices(plannedCaseCount), [&scheduled, iteration](usize plannedCase) -> void {
               scheduled.push_back(ScheduledCase{
                   .plannedCase = plannedCase,
-                  .iteration = iteration,
-                  .seed = deriveSeed(runSeed, plannedCase, iteration),
+                  .runIteration = iteration,
               });
             });
       });
@@ -96,7 +98,7 @@ private:
     return scheduled;
 
   SplitMix64 random{runSeed};
-  std::ranges::for_each(std::views::iota(usize{1}, scheduled.size()) | std::views::reverse,
+  std::ranges::for_each(std::views::iota(1U, scheduled.size()) | std::views::reverse,
       [&scheduled, &random](usize index) -> void {
         const auto selected = static_cast<usize>(random.next() % (index + 1));
         std::ranges::swap(scheduled[index], scheduled[selected]);
@@ -108,25 +110,139 @@ private:
   return traceMode != TraceMode::Annotations;
 }
 
-auto executeCase(PlannedCase &plannedCase,
-    ResourceLane *lane,
-    const ScheduledCase &scheduledCase,
+auto executeAttempt(PlannedCase &plannedCase,
+    usize plannedCaseIndex,
+    usize runIteration,
+    AttemptIndex attempt,
+    bool warmup,
+    bool captureMemory,
     const RunOptions &options,
     u64 runSeed) -> TestExecution {
-  std::unique_lock<std::mutex> lock{};
-  if (lane != nullptr)
-    lock = std::unique_lock<std::mutex>{lane->mutex()};
-
   const InvocationSettings settings{
-      .seed = scheduledCase.seed,
-      .iteration = scheduledCase.iteration,
+      .seed = deriveSeed(runSeed, plannedCaseIndex, attempt, warmup),
+      .iteration = runIteration,
+      .sample = attempt.sample,
+      .retry = attempt.retry,
+      .warmup = warmup,
       .forceTrace = forceTrace(options.traceMode),
+      .captureMemory = captureMemory,
   };
   const InvocationBinding binding{settings};
   TestExecution execution = plannedCase.execute(TestDescriptor{plannedCase.descriptor}, options.timeMode);
   execution.runSeed = runSeed;
+  execution.attempt = attempt;
+  execution.iteration = runIteration;
+  execution.warmup = warmup;
   execution.traceMode = options.traceMode;
   return execution;
+}
+
+[[nodiscard]] constexpr auto hasTimeout(const TestExecution &execution) noexcept -> bool {
+  const bool hasTimeoutDiagnostic = std::ranges::any_of(
+      execution.state.diagnostics, [](const Diagnostic &diagnostic) constexpr noexcept -> bool {
+        return diagnostic.header.code == DiagnosticCode::TimeoutExceeded;
+      });
+  if (not hasTimeoutDiagnostic)
+    return false;
+
+  return std::ranges::all_of(
+      execution.state.diagnostics, [](const Diagnostic &diagnostic) constexpr noexcept -> bool {
+        return diagnostic.header.code == DiagnosticCode::TimeoutExceeded;
+      });
+}
+
+[[nodiscard]] constexpr auto sameSample(const TestExecution &left, const TestExecution &right) noexcept
+    -> bool {
+  return not left.warmup and not right.warmup and left.attempt.runIteration == right.attempt.runIteration and
+         left.attempt.sample == right.attempt.sample;
+}
+
+[[nodiscard]] auto batchFailed(const Vec<TestExecution> &executions) noexcept -> bool {
+  return std::ranges::any_of(executions | std::views::enumerate,
+      [&executions](const Tuple<usize, const TestExecution &> &item) -> bool {
+        const auto &[index, execution] = item;
+        if (execution.warmup)
+          return execution.failed();
+
+        if (execution.passed())
+          return false;
+
+        if (not hasTimeout(execution))
+          return true;
+
+        const auto recovered = std::ranges::find_if(executions.begin() + static_cast<isize>(index) + 1,
+            executions.end(),
+            [&execution](const TestExecution &candidate) -> bool {
+              return sameSample(execution, candidate) and
+                     candidate.attempt.retry > execution.attempt.retry and candidate.passed();
+            });
+        return recovered == executions.end();
+      });
+}
+
+auto executeCase(PlannedCase &plannedCase,
+    ResourceLane *lane,
+    usize plannedCaseIndex,
+    const ScheduledCase &scheduledCase,
+    const RunOptions &options,
+    u64 runSeed,
+    bool captureMemory) -> Vec<TestExecution> {
+  std::unique_lock<std::mutex> lock{};
+  if (lane != nullptr)
+    lock = std::unique_lock<std::mutex>{lane->mutex()};
+
+  Vec<TestExecution> executions{};
+  const usize samples = std::max<usize>(plannedCase.descriptor.policy.repeat, 1);
+  const auto appendAttempt = [&](AttemptIndex attempt, bool warmup) -> const TestExecution & {
+    TestExecution execution = executeAttempt(plannedCase,
+        plannedCaseIndex,
+        scheduledCase.runIteration,
+        attempt,
+        warmup,
+        captureMemory,
+        options,
+        runSeed);
+    executions.push_back(std::move(execution));
+    return executions.back();
+  };
+
+  std::ranges::for_each(std::views::indices(plannedCase.descriptor.policy.warmup),
+      [&appendAttempt, &scheduledCase](usize warmupIndex) -> void {
+        static_cast<void>(appendAttempt(
+            AttemptIndex{
+                .runIteration = scheduledCase.runIteration,
+                .sample = warmupIndex,
+            },
+            true));
+      });
+
+  std::ranges::for_each(std::views::indices(samples), [&](usize sample) -> void {
+    usize retryIndex{};
+    bool retrying{true};
+    while (retrying) {
+      const TestExecution &execution = appendAttempt(
+          AttemptIndex{
+              .runIteration = scheduledCase.runIteration,
+              .sample = sample,
+              .retry = retryIndex,
+          },
+          false);
+      retrying = not execution.passed() and hasTimeout(execution) and
+                 retryIndex < plannedCase.descriptor.policy.retry;
+      if (retrying)
+        ++retryIndex;
+    }
+  });
+
+  return executions;
+}
+
+[[nodiscard]] auto laneFor(Vec<UPtr<ResourceLane>> &resourceLanes, usize plannedCase) noexcept
+    -> ResourceLane * {
+  if (resourceLanes.empty())
+    return nullptr;
+
+  return resourceLanes[plannedCase].get();
 }
 
 [[nodiscard]] constexpr auto workerCount(usize requested, usize workCount) -> usize {
@@ -144,14 +260,6 @@ auto executeCase(PlannedCase &plannedCase,
   return std::min(requested, workCount);
 }
 
-[[nodiscard]] auto laneFor(Vec<UPtr<ResourceLane>> &resourceLanes, usize plannedCase) noexcept
-    -> ResourceLane * {
-  if (resourceLanes.empty())
-    return nullptr;
-
-  return resourceLanes[plannedCase].get();
-}
-
 } // namespace
 
 auto executePlannedCases(RunSession &session, const RunOptions &options) -> Vec<TestExecution> {
@@ -159,6 +267,7 @@ auto executePlannedCases(RunSession &session, const RunOptions &options) -> Vec<
   const u64 runSeed = options.seed ? *options.seed : randomSeed();
   const Vec<ScheduledCase> scheduledCases = scheduleCases(plannedCases.size(), options, runSeed);
   const usize workers = workerCount(options.jobs, scheduledCases.size());
+  const bool captureMemory = workers == 1;
 
   if (workers == 0)
     return {};
@@ -178,25 +287,32 @@ auto executePlannedCases(RunSession &session, const RunOptions &options) -> Vec<
       if (stopped)
         return;
 
-      TestExecution execution = executeCase(plannedCases[scheduledCase.plannedCase],
+      Vec<TestExecution> batch = executeCase(plannedCases[scheduledCase.plannedCase],
           laneFor(resourceLanes, scheduledCase.plannedCase),
+          scheduledCase.plannedCase,
           scheduledCase,
           options,
-          runSeed);
-      stopped = options.failFast and execution.failed();
-      executions.push_back(std::move(execution));
+          runSeed,
+          captureMemory);
+      stopped = options.failFast and batchFailed(batch);
+      executions.append_range(std::move(batch));
     });
-
     return executions;
   }
 
-  Vec<Option<TestExecution>> executions{scheduledCases.size()};
+  Vec<Option<Vec<TestExecution>>> executions{scheduledCases.size()};
 
   std::atomic<usize> nextIndex{};
   std::atomic<bool> stopped{};
-  const auto executeNext =
-      [&plannedCases, &resourceLanes, &scheduledCases, &executions, &nextIndex, &stopped, &options, runSeed]
-      -> void {
+  const auto executeNext = [&plannedCases,
+                               &resourceLanes,
+                               &scheduledCases,
+                               &executions,
+                               &nextIndex,
+                               &stopped,
+                               &options,
+                               &captureMemory,
+                               runSeed] -> void {
     while (true) {
       if (stopped.load(std::memory_order_relaxed))
         return;
@@ -206,14 +322,17 @@ auto executePlannedCases(RunSession &session, const RunOptions &options) -> Vec<
         return;
 
       const ScheduledCase &scheduledCase = scheduledCases[index];
-      TestExecution execution = executeCase(plannedCases[scheduledCase.plannedCase],
+      Vec<TestExecution> batch = executeCase(plannedCases[scheduledCase.plannedCase],
           laneFor(resourceLanes, scheduledCase.plannedCase),
+          scheduledCase.plannedCase,
           scheduledCase,
           options,
-          runSeed);
-      executions[index].emplace(std::move(execution));
+          runSeed,
+          captureMemory);
+      const bool failed = batchFailed(batch);
+      executions[index].emplace(std::move(batch));
 
-      if (options.failFast and executions[index]->failed())
+      if (options.failFast and failed)
         stopped.store(true, std::memory_order_relaxed);
     }
   };
@@ -225,11 +344,12 @@ auto executePlannedCases(RunSession &session, const RunOptions &options) -> Vec<
         [&threads, &executeNext](usize) -> void { threads.emplace_back(executeNext); });
   }
 
-  return executions | std::views::filter([](const Option<TestExecution> &execution) -> bool {
+  return executions | std::views::filter([](const Option<Vec<TestExecution>> &execution) -> bool {
     return execution.has_value();
-  }) | std::views::transform([](Option<TestExecution> &execution) -> TestExecution {
+  }) | std::views::transform([](Option<Vec<TestExecution>> &execution) -> Vec<TestExecution> {
     return std::move(*execution);
-  }) | std::ranges::to<Vec<TestExecution>>();
+  }) | std::views::join |
+         std::ranges::to<Vec<TestExecution>>();
 }
 
 } // namespace Nyx::Test::detail

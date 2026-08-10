@@ -82,6 +82,37 @@ auto TestEnvironment::stopRequested() const noexcept -> bool {
   return stopSource_.stop_requested();
 }
 
+auto TestEnvironment::resources() noexcept -> TestResources & {
+  return resources_;
+}
+
+auto TestEnvironment::profileSink() noexcept -> profiling::ProfileSink & {
+  return profile_;
+}
+
+auto TestEnvironment::finalize(std::source_location location) -> void {
+  if (finalized_)
+    return;
+
+  const ResourceCleanupReport cleanup = resources_.cleanup();
+  std::ranges::for_each(cleanup.failures, [this, location](const ResourceCleanupFailure &failure) -> void {
+    Diagnostic diagnostic = makeDiagnostic(DiagnosticCode::ResourceCleanupFailed, failure.location);
+    diagnostic.addNote(std::format("{}: {}", failure.name, failure.message));
+    diagnostic.addNote(std::format("test cleanup boundary: {}: {}", location.file_name(), location.line()),
+        DiagnosticLevel::Help);
+    recordError(std::move(diagnostic));
+  });
+  finalized_ = true;
+}
+
+auto TestEnvironment::resourceSnapshot() const noexcept -> ResourceSnapshot {
+  return resources_.snapshot();
+}
+
+auto TestEnvironment::profileSnapshot() const noexcept -> profiling::ProfileSnapshot {
+  return profile_.snapshot();
+}
+
 auto TestEnvironment::takeState() && noexcept -> TestState {
   return std::move(state_);
 }
@@ -100,6 +131,13 @@ auto currentEnvironment() noexcept -> Option<Ref<TestEnvironment>> {
     return None;
 
   return std::ref(*currentEnvironment_);
+}
+
+auto currentResources() noexcept -> Option<Ref<TestResources>> {
+  if (currentEnvironment_ == nullptr)
+    return None;
+
+  return std::ref(currentEnvironment_->resources());
 }
 
 auto traceEvent(StringView message, std::source_location location) -> void {

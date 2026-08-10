@@ -2,6 +2,7 @@ export module Nyx.Test:Context;
 
 import std;
 import Nyx.Core;
+import :Resources;
 
 export namespace Nyx::Test {
 
@@ -10,10 +11,14 @@ struct Context final {
   const StringView name;
   const StringView description;
   const usize testCase;
+  TestResources &resources;
   /// Deterministic per-case seed derived from the run seed, case position, and repetition.
   const u64 seed{};
   /// Zero-based repeat index for this execution.
   const usize iteration{};
+  const usize sample{};
+  const usize retry{};
+  const bool warmup{};
   /// Becomes requested once the test reaches its coroutine timeout boundary.
   const std::stop_token stopToken;
   const std::source_location location;
@@ -29,7 +34,11 @@ namespace detail {
 struct InvocationSettings final {
   u64 seed{};
   usize iteration{};
+  usize sample{};
+  usize retry{};
+  bool warmup{};
   bool forceTrace{};
+  bool captureMemory{true};
 };
 
 class InvocationBinding final {
