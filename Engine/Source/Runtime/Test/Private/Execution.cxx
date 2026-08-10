@@ -64,7 +64,7 @@ namespace {
   if (milliseconds.count() != 0)
     return std::format("{} ms", milliseconds.count());
 
-  const auto microseconds = std::chrono::duration_cast<std::chrono::milliseconds>(duration);
+  const auto microseconds = std::chrono::duration_cast<std::chrono::microseconds>(duration);
   return std::format("{} μs", microseconds.count());
 }
 
@@ -175,9 +175,9 @@ auto detail::applyPolicy(const TestPolicy &policy,
     }
   }
 
-  const bool timeoutReached = policy.timeout and
-                              (retry ? cancelled or timeoutTriggered or elapsed > *policy.timeout
-                                     : environment.stopRequested() or elapsed >= *policy.timeout);
+  const bool timeoutReached =
+      policy.timeout and (retry ? cancelled or timeoutTriggered or elapsed > *policy.timeout
+                                : environment.stopRequested() or elapsed >= *policy.timeout);
   if (timeoutReached)
     environment.recordError(timeoutDiagnostic(*policy.timeout, elapsed, location));
 }

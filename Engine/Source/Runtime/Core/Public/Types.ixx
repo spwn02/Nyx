@@ -17,7 +17,7 @@ using i64 = std::int64_t;
 using f32 = float;
 using f64 = double;
 using usize = std::size_t;
-using isize = long;
+using isize = std::make_signed_t<usize>;
 
 using String = std::string;
 using StringView = std::string_view;

@@ -432,7 +432,7 @@ auto Reporter::report(Span<const TestExecution> executions, std::ostream &output
            << paint(String(failedWidth, '='), red, useColor) << '\n';
   }
 
-  output << std::format("\ntest result: test result: {}. {}; {}; {}; {}; {}; {}; {}; finished in {}; {}; {}; "
+  output << std::format("\ntest result: {}. {}; {}; {}; {}; {}; {}; {}; finished in {}; {}; {}; "
                         "{}; {}; {}; wall {}\n",
       paint(summary.passed() ? "ok" : "FAILED", summary.passed() ? green : red, useColor),
       countLabel(summary.testCount, "test", "tests"),

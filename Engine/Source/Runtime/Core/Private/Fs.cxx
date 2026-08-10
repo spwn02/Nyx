@@ -31,26 +31,22 @@ auto File::write(StringView buf) -> Result<void> {
 }
 
 auto File::close() noexcept -> void {
-  if (ok()) {
+  if (ok())
     file_.close();
-  }
 }
 
 auto File::deleteFile() noexcept -> Result<void> {
-  if (not ok())
-    return {};
+  if (ok())
+    file_.close();
 
-  file_.close();
-  std::error_code err;
-  std::filesystem::remove(path_, err);
-  if (err) {
-    String msg = err.message();
+  std::error_code error;
+  std::filesystem::remove(path_, error);
+  if (error)
     return bail({
         "Failed to delete file: {}: {}",
         path_.string(),
-        msg,
+        error.message(),
     });
-  }
 
   return {};
 }

@@ -27,6 +27,8 @@ auto processMemory() noexcept -> Option<ProcessMemorySnapshot> {
   return ProcessMemorySnapshot{
       .residentBytes = static_cast<usize>(residentPages) * static_cast<usize>(pageSize),
   };
+#else
+  return None;
 #endif
 }
 

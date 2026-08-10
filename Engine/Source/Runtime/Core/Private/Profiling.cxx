@@ -44,7 +44,7 @@ auto ProfileSink::record(String name,
     ++aggregate.count;
     aggregate.total += duration;
     aggregate.minimum = std::min(aggregate.minimum, duration);
-    aggregate.maximum = std::min(aggregate.maximum, duration);
+    aggregate.maximum = std::max(aggregate.maximum, duration);
   }
 
   if (activeScopes_ != 0)

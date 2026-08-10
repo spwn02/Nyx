@@ -333,8 +333,7 @@ auto run(TestDescriptor descriptor, // NOLINT(readability-function-size)
 
   execution.wallDuration = std::chrono::steady_clock::now() - wallStarted;
   execution.profile = environment.profileSnapshot();
-  detail::applyPolicy(
-      execution.descriptor.policy,
+  detail::applyPolicy(execution.descriptor.policy,
       environment,
       execution.duration,
       invocation.retry != 0,
@@ -370,8 +369,8 @@ template <detail::TestInvocable Function>
     std::source_location location = std::source_location::current()) -> TestExecution {
   return run(
       TestDescriptor{
+          .identifier = String{identifier},
           .location = location,
-          .description = String{identifier},
       },
       std::forward<Function>(function),
       timeMode);
