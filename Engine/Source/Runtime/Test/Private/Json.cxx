@@ -502,6 +502,8 @@ auto writeMeasurement(JsonWriter &writer, const Option<MeasurementSummary> &meas
 
   writer.beginObject();
   writer.field("samples", [&writer, &measurement] -> void { writer.number(measurement->sampleCount); });
+  writer.field("total_ns",
+      [&writer, &measurement] -> void { writer.number(durationNanoseconds(measurement->total)); });
   writer.field("minimum_ns",
       [&writer, &measurement] -> void { writer.number(durationNanoseconds(measurement->minimum)); });
   writer.field("maximum_ns",
