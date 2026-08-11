@@ -157,29 +157,42 @@ auto TestSelection::matches(const TestDescriptor &descriptor) const -> bool {
 }
 
 auto discover() -> Vec<TestDescriptor> {
-  return detail::describeSuites(registeredSuites());
+  if constexpr (build::tests)
+    return detail::describeSuites(registeredSuites());
+  else
+    return {};
 }
 
 auto list(TestSelection selection) -> Vec<TestDescriptor> { // NOLINT
-  return detail::filterDescriptors(detail::describeSuites(registeredSuites()), selection);
+  if constexpr (build::tests)
+    return detail::filterDescriptors(detail::describeSuites(registeredSuites()), selection);
+  else
+    return {};
 }
 
 auto runAll(RunOptions options) -> Vec<TestExecution> {
-  return runAll({}, options);
+  if constexpr (build::tests)
+    return runAll({}, options);
+  else
+    return {};
 }
 
 auto runAll(TestSelection selection, RunOptions options) -> Vec<TestExecution> { // NOLINT
-  const Vec<SuiteEntry> suites = registeredSuites();
-  detail::RunSession session{};
+  if constexpr (build::tests) {
+    const Vec<SuiteEntry> suites = registeredSuites();
+    detail::RunSession session{};
 
-  std::ranges::for_each(suites, [&session](const SuiteEntry &suite) -> void { suite.plan(session); });
-  detail::filterPlannedCases(session, selection);
+    std::ranges::for_each(suites, [&session](const SuiteEntry &suite) -> void { suite.plan(session); });
+    detail::filterPlannedCases(session, selection);
 
-  Vec<TestExecution> executions = detail::executePlannedCases(session, options);
-  std::ranges::stable_sort(executions, {}, [](const TestExecution &execution) -> const String & {
-    return execution.descriptor.identifier;
-  });
-  return executions;
+    Vec<TestExecution> executions = detail::executePlannedCases(session, options);
+    std::ranges::stable_sort(executions, {}, [](const TestExecution &execution) -> const String & {
+      return execution.descriptor.identifier;
+    });
+    return executions;
+  } else {
+    return {};
+  }
 }
 
 } // namespace Nyx::Test

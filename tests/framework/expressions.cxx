@@ -119,7 +119,7 @@ auto containsHighlighted(const Vec<DiagnosticFragment> &fragments, StringView te
     try {
       require(eq(2, 3));
       continued = true;
-    } catch (const TestAbort &) { // NOLINT(bugprone-empty-catch)
+    } catch (const detail::TestAbort &) { // NOLINT(bugprone-empty-catch)
     }
 
     state = environment.state();
@@ -147,7 +147,7 @@ auto containsHighlighted(const Vec<DiagnosticFragment> &fragments, StringView te
   check(execution.state.diagnostics.front().description() == "assertion failed"_exp);
 
   const auto &expansion = std::get<BinaryExpansion>(execution.state.diagnostics.front().details.expansion);
-  check(expansion.operatorName == "!="_exp);
+  require(expansion.operatorName == "!="_exp);
 }
 
 [[ = test, = group("framework"), = tag("expressions") ]] auto comparisonsExposeValuesAndLocations() -> void {

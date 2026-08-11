@@ -15,18 +15,11 @@ struct Error {
     String message;
     std::source_location location;
 
-    Message(std::source_location loc = std::source_location::current())
-        : location(loc) {
-    }
+    Message(std::source_location loc = std::source_location::current());
 
-    Message(const char *message, std::source_location loc = std::source_location::current())
-        : message(message)
-        , location(loc) {
-    }
-    Message(String message, std::source_location loc = std::source_location::current())
-        : message(std::move(message))
-        , location(loc) {
-    }
+    Message(const char *message, std::source_location loc = std::source_location::current());
+
+    Message(String message, std::source_location loc = std::source_location::current());
   };
 
   Error();
@@ -49,11 +42,11 @@ struct Error {
   Error(Error &&other) noexcept;
   auto operator=(Error &&other) noexcept -> Error &;
 
-  [[nodiscard]]
   /// Renders Error into cout.
-  auto display(ErrorDisplayOptions options = {}) const -> String;
-  /// Renders Error into a String, that can later be displayed into cout.
   auto display(std::ostream &output, ErrorDisplayOptions options = {}) const -> void;
+  /// Renders Error into a String, that can later be displayed into cout.
+  [[nodiscard]]
+  auto display(ErrorDisplayOptions options = {}) const -> String;
 
   /// Appends Error with another message (identical to `<<` operator).
   auto with(Message other) -> Error &;
@@ -77,6 +70,10 @@ using Result = std::expected<T, Error>;
 
 using bail = std::unexpected<Error>;
 auto todo(std::source_location loc = std::source_location::current()) -> bail;
+[[noreturn]] auto fatal(Error error, ErrorDisplayOptions options = {}) -> void;
+[[noreturn]] auto fatal(StringView message,
+    ErrorDisplayOptions options = {},
+    std::source_location location = std::source_location::current()) -> void;
 
 } // namespace Nyx
 

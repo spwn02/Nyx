@@ -173,7 +173,7 @@ consteval auto validateFixtureDependencyGraph() -> void {
   validateFixtureSignature<FixtureFunction>();
 
   template for (constexpr std::meta::info parameter : meta::parameters<FixtureFunction>)
-    validateFixtureDependency<Namespace, FixtureFunction, parameter, Path...>();
+      validateFixtureDependency<Namespace, FixtureFunction, parameter, Path...>();
 }
 
 template <std::meta::info Namespace>
@@ -398,7 +398,7 @@ auto FixtureScope<Namespace>::get(detail::FixtureResolver<Namespace> &resolver) 
 
     while (slot->state == FixtureState::Constructing) {
       if (slot->owner == std::this_thread::get_id())
-        throw std::logic_error{"Nyx::Test detected recursive fixture construction."};
+        fatal("Nyx::Test detected recursive fixture construction.");
 
       slot->ready.wait(lock, [slot] -> bool { return slot->state != FixtureState::Constructing; });
     }
@@ -454,7 +454,7 @@ auto bindArgument(const Context &context,
   if constexpr (isProviderParameter<Function, parameter>()) {
     static_assert(
         not isContextParameter<Function, parameter>() and not isFromCaseParameter<Function, parameter>(),
-        "Nyx::Test provider parameters cannot also use context or fromCase in [[= arg<\"name\">(...)]].");
+        "Nyx::Test provider parameters cannot also use [[= arg<\"name\">(...)]].");
     validateInputParameter<parameter>();
     constexpr usize index = providerArgumentIndex<Function, ParameterIndex>();
     if constexpr (index < providerValueCount) {
@@ -489,8 +489,8 @@ auto bindArgument(const Context &context,
     }
   } else {
     static_assert(meta::always_false_v<Value>,
-        "Nyx::Test could not bind this parameter. Use an [[= arg<\"name\">]] provider, [[= context]], [[= "
-        "fromCase]], or a fixture return type.");
+        "Nyx::Test could not bind this parameter. Use an [[= arg<\"name\">]] provider, [[= context]], or a "
+        "fixture return type.");
   }
 }
 

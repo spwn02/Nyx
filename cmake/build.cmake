@@ -143,9 +143,9 @@ function(nyx_verify_platform_macro_boundary)
       continue()
     endif()
 
-    # Removes platform-selection conditionals from Nyx sources. The
+    # Phase 12A removes platform-selection conditionals from Nyx sources. The
     # remaining RHI defines configure third-party headers and move behind the
-    # Internal bridge boundary is TODO; imports cannot propagate them.
+    # Internal bridge boundary in Phase 12D; imports cannot propagate them.
     file(STRINGS "${source}" directives
       REGEX "^[ \t]*#[ \t]*(if|ifdef|ifndef|elif|else|endif)([ \t(]|$)")
 
@@ -198,6 +198,8 @@ function(nyx_verify_exception_boundary)
   foreach(source IN LISTS sources)
     string(REPLACE "\\" "/" normalized_source "${source}")
 
+    # Nyx.Test is an API-only dependency in production profiles. Its test
+    # exception island is linked only by the DevelopmentTests executable.
     if(normalized_source MATCHES "/Runtime/Test/")
       continue()
     endif()
@@ -213,7 +215,7 @@ function(nyx_verify_exception_boundary)
     # Catching STL failures remains permitted; accidental application-level
     # throws and explicit exception propagation remain forbidden.
     file(STRINGS "${source}" forbidden
-      REGEX "^[ \\t]*throw([ \\t({;:]|$)|^[^/]*std::(rethrow_exception|make_exception_ptr)")
+      REGEX "^[ \t]*throw([ \t({;:]|$)|^[^/]*std::(rethrow_exception|make_exception_ptr)")
 
     if(forbidden)
       list(APPEND violations "${source}")

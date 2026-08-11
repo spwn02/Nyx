@@ -141,11 +141,13 @@ auto currentResources() noexcept -> Option<Ref<TestResources>> {
 }
 
 auto traceEvent(StringView message, std::source_location location) -> void {
-  const Option<Ref<TestEnvironment>> environment = currentEnvironment();
-  if (not environment)
-    throw std::logic_error{"Nyx::Test trace events require an active test environment"};
+  if constexpr (build::tests) {
+    const Option<Ref<TestEnvironment>> environment = currentEnvironment();
+    if (not environment)
+      throw std::logic_error{"Nyx::Test trace events require an active test environment"};
 
-  environment->get().recordTrace(String{message}, location);
+    environment->get().recordTrace(String{message}, location);
+  }
 }
 
 } // namespace Nyx::Test

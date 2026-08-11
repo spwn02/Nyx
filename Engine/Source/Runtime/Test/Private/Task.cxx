@@ -193,7 +193,7 @@ auto currentRunLoop() noexcept -> RunLoop * {
 auto schedule(std::coroutine_handle<> handle) -> void {
   RunLoop *const runLoop = currentRunLoop();
   if (runLoop == nullptr)
-    throw std::logic_error{"Nyx::Test Task suspension requires an active test run loop."};
+    fatal("Nyx::Test Task suspension requires an active test run loop.");
 
   runLoop->enqueue(handle);
 }
@@ -201,7 +201,7 @@ auto schedule(std::coroutine_handle<> handle) -> void {
 auto scheduleAfter(std::coroutine_handle<> handle, RunLoop::Clock::duration duration) -> void {
   RunLoop *const runLoop = currentRunLoop();
   if (runLoop == nullptr)
-    throw std::logic_error{"Nyx::Test Task suspension requires an active test run loop."};
+    fatal("Nyx::Test Task suspension requires an active test run loop.");
 
   runLoop->scheduleAt(handle, runLoop->now() + duration);
 }
@@ -214,18 +214,20 @@ auto stopRequested() noexcept -> bool {
 
 } // namespace detail
 
-auto YieldAwaiter::await_suspend(std::coroutine_handle<> handle) const -> void { // NOLINT
+auto YieldAwaiter::await_suspend(std::coroutine_handle<> handle) const -> bool { // NOLINT
   if (detail::stopRequested())
-    throw detail::TaskCancelled{};
+    return true;
 
   detail::schedule(handle);
+  return true;
 }
 
-auto SleepAwaiter::await_suspend(std::coroutine_handle<> handle) const -> void {
+auto SleepAwaiter::await_suspend(std::coroutine_handle<> handle) const -> bool {
   if (detail::stopRequested())
-    throw detail::TaskCancelled{};
+    return true;
 
   detail::scheduleAfter(handle, duration_);
+  return true;
 }
 
 } // namespace Nyx::Test

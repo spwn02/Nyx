@@ -99,9 +99,25 @@ consteval auto annotationPrefix() -> StringView {
 
 export namespace Nyx::Test {
 
-struct Test final {};
+/// `[[= test]]` marks a callable for discovery in a test-enabled build.
+/// Keep its executable test body inside `test::only([captures]<bool> { ... });` so production builds do not
+/// instantiate or evaluate test-only expressions.
+/// Gates embedded test work without adding a preprocessor branch to the test's owning source file.
+///
+/// The type and the inline object intentionally share the spelling: `test::only(...)` uses the type, while
+/// `= test` uses the inline annotation object. The public `Test` alias preserves the marker type used by
+/// reflection-based discovery.
+struct test final {
+  template <class Function>
+  static constexpr auto only(Function &&function) -> void {
+    if constexpr (build::tests)
+      std::forward<Function>(function).template operator()<true>();
+  }
+};
 
-inline constexpr Test test{};
+using Test = test;
+
+inline constexpr test test{};
 
 struct Fixture final {};
 

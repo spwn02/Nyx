@@ -25,7 +25,11 @@ auto TestPanic::what() const noexcept -> const char * {
 }
 
 auto panic(StringView message, std::source_location location) -> void {
-  throw TestPanic{String{message}, location};
+  if constexpr (build::tests) {
+    throw TestPanic{String{message}, location};
+  } else {
+    fatal("Nyx::Test::panic() is reserved for tests. Call Nyx::fatal() instead.");
+  }
 }
 
 } // namespace Nyx::Test

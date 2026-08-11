@@ -157,7 +157,8 @@ auto normalizeTask(Task<Value> &&task,
     RunLoop &runLoop,
     const Deadline &deadline) -> void {
   const auto requestTimeoutStop = [&environment, &runLoop, &deadline] -> void {
-    if (deadline and not environment.stopRequested() and runLoop.now() >= *deadline)
+    if (deadline and not environment.stopRequested() and
+        (runLoop.timeoutTriggered() or runLoop.now() > *deadline))
       environment.requestStop();
   };
 
@@ -168,7 +169,7 @@ auto normalizeTask(Task<Value> &&task,
     return deadline;
   };
 
-  detail::drive(
+  const TaskDriveResult result = detail::drive(
       task,
       runLoop,
       [&environment, &context](std::coroutine_handle<> handle) -> void {
@@ -179,6 +180,23 @@ auto normalizeTask(Task<Value> &&task,
       },
       requestTimeoutStop,
       nextTimeoutWake);
+
+  switch (result.status) {
+    case TaskDriveStatus::Completed: break;
+    case TaskDriveStatus::Cancelled: environment.requestStop(); return;
+    case TaskDriveStatus::Empty:
+      environment.recordError(
+          detail::taskLifecycleDiagnostic(TaskLifecycleError{TaskLifecycleFailure::Empty}, location));
+      return;
+    case TaskDriveStatus::Stranded:
+      environment.recordError(
+          detail::taskLifecycleDiagnostic(TaskLifecycleError{TaskLifecycleFailure::Stranded}, location));
+      return;
+    case TaskDriveStatus::PendingWork:
+      environment.recordError(detail::taskLifecycleDiagnostic(
+          TaskLifecycleError{TaskLifecycleFailure::PendingWork, result.pendingWork}, location));
+      return;
+  }
 
   if constexpr (std::same_as<Value, void>) {
     std::move(task).takeResult();
@@ -217,136 +235,138 @@ auto invokeTest(Function &&function, const Context &context) -> decltype(auto) {
 
 /// Executes one test in a dynamically bound TestEnvironment.
 ///
-/// A TestAbort records a fatal requirement failure but is not itself an error.
+/// A detail::TestAbort records a fatal requirement failure but is not itself an error.
 /// Other exceptions are converted into UnhandledException diagnostics. Coroutine timeouts request
 /// Context::stopToken at the next queued resume. TimeMode::Virtual advances only Nyx::Test scheduler time.
 template <detail::TestInvocable Function>
 [[nodiscard]]
-auto run(TestDescriptor descriptor, // NOLINT(readability-function-size)
+auto run( // NOLINT(readability-function-cognitive-complexity, readability-function-size)
+    TestDescriptor descriptor,
     Function &&function,
     TimeMode timeMode = TimeMode::Real) -> TestExecution {
-  const detail::InvocationSettings invocation = detail::currentInvocationSettings();
-  const auto wallStarted = std::chrono::steady_clock::now();
-  const Option<memory::ProcessMemorySnapshot> memoryBefore =
-      invocation.captureMemory ? memory::processMemory() : None;
-  TestEnvironment environment{};
-  TestExecution execution{
-      .descriptor = std::move(descriptor),
-      .seed = invocation.seed,
-      .iteration = invocation.iteration,
-      .attempt =
-          AttemptIndex{
-              .runIteration = invocation.iteration,
-              .sample = invocation.sample,
-              .retry = invocation.retry,
-          },
-      .warmup = invocation.warmup,
-  };
-  const auto finalizeEnvironment = std::scope_exit(
-      [&environment, &execution] -> void { environment.finalize(execution.descriptor.location); });
-
-  if (execution.descriptor.name.empty())
-    execution.descriptor.name = execution.descriptor.identifier;
-
-  if (execution.descriptor.policy.trace or invocation.forceTrace)
-    environment.enableTrace();
-
-  environment.recordTrace(std::format("enabled tracing for: {} ...", execution.descriptor.name));
-  detail::RunLoop runLoop{timeMode, environment.stopToken()};
-  const detail::RunLoop::TimePoint started = runLoop.now();
-  detail::Deadline deadline{};
-  if (execution.descriptor.policy.timeout)
-    deadline.emplace(started + *execution.descriptor.policy.timeout);
-  bool cancelled{};
-
-  {
-    const auto recordDuration =
-        std::scope_exit([&execution, &runLoop] -> void { execution.duration = runLoop.elapsed(); });
-    const Context context{
-        .name = StringView{execution.descriptor.name},
-        .description = StringView{execution.descriptor.description},
-        .testCase = execution.descriptor.testCase,
-        .resources = environment.resources(),
-        .seed = execution.seed,
-        .iteration = execution.iteration,
-        .sample = invocation.sample,
-        .retry = invocation.retry,
+  if constexpr (not build::tests) {
+    return TestExecution{.descriptor = std::move(descriptor)};
+  } else {
+    const detail::InvocationSettings invocation = detail::currentInvocationSettings();
+    const auto wallStarted = std::chrono::steady_clock::now();
+    const Option<memory::ProcessMemorySnapshot> memoryBefore =
+        invocation.captureMemory ? memory::processMemory() : None;
+    TestEnvironment environment{};
+    TestExecution execution{
+        .descriptor = std::move(descriptor),
+        .seed = invocation.seed,
+        .iteration = invocation.iteration,
+        .attempt =
+            AttemptIndex{
+                .runIteration = invocation.iteration,
+                .sample = invocation.sample,
+                .retry = invocation.retry,
+            },
         .warmup = invocation.warmup,
-        .stopToken = environment.stopToken(),
-        .location = execution.descriptor.location,
     };
+    const auto finalizeEnvironment = std::scope_exit(
+        [&environment, &execution] -> void { environment.finalize(execution.descriptor.location); });
 
-    EnvironmentBinding environmentBinding{environment};
-    ContextBinding contextBinding{context};
-    profiling::SinkBinding profileBinding{environment.profileSink()};
-    auto testProfile = profiling::profileScope(execution.descriptor.name, execution.descriptor.location);
+    if (execution.descriptor.name.empty())
+      execution.descriptor.name = execution.descriptor.identifier;
 
-    try {
-      using Return = decltype(detail::invokeTest(std::forward<Function>(function), context));
-      using ReturnType = std::remove_cvref_t<Return>;
+    if (execution.descriptor.policy.trace or invocation.forceTrace)
+      environment.enableTrace();
 
-      if constexpr (std::same_as<Return, void>) {
-        EnvironmentBinding binding{environment};
-        ContextBinding contextBinding{context};
-        detail::invokeTest(std::forward<Function>(function), context);
-      } else if constexpr (detail::is_task_return_v<ReturnType>) {
-        static_assert(not std::is_lvalue_reference_v<ReturnType>,
-            "Nyx::Test asynchronous test functions must return Task<T> by value.");
-        const auto invokeTask = [&] -> ReturnType {
+    environment.recordTrace(std::format("enabled tracing for: {} ...", execution.descriptor.name));
+    detail::RunLoop runLoop{timeMode, environment.stopToken()};
+    const detail::RunLoop::TimePoint started = runLoop.now();
+    detail::Deadline deadline{};
+    if (execution.descriptor.policy.timeout)
+      deadline.emplace(started + *execution.descriptor.policy.timeout);
+    bool cancelled{};
+
+    {
+      const auto recordDuration =
+          std::scope_exit([&execution, &runLoop] -> void { execution.duration = runLoop.elapsed(); });
+      const Context context{
+          .name = StringView{execution.descriptor.name},
+          .description = StringView{execution.descriptor.description},
+          .testCase = execution.descriptor.testCase,
+          .resources = environment.resources(),
+          .seed = execution.seed,
+          .iteration = execution.iteration,
+          .sample = invocation.sample,
+          .retry = invocation.retry,
+          .warmup = invocation.warmup,
+          .stopToken = environment.stopToken(),
+          .location = execution.descriptor.location,
+      };
+
+      EnvironmentBinding environmentBinding{environment};
+      ContextBinding contextBinding{context};
+      profiling::SinkBinding profileBinding{environment.profileSink()};
+      auto testProfile = profiling::profileScope(execution.descriptor.name, execution.descriptor.location);
+
+      try {
+        using Return = decltype(detail::invokeTest(std::forward<Function>(function), context));
+        using ReturnType = std::remove_cvref_t<Return>;
+
+        if constexpr (std::same_as<Return, void>) {
           EnvironmentBinding binding{environment};
           ContextBinding contextBinding{context};
-          return detail::invokeTest(std::forward<Function>(function), context);
-        };
-        detail::normalizeReturn(
-            invokeTask(), environment, context, execution.descriptor.location, runLoop, deadline);
-      } else {
-        EnvironmentBinding binding{environment};
-        ContextBinding contextBinding{context};
-        detail::normalizeReturn(detail::invokeTest(std::forward<Function>(function), context),
-            environment,
-            context,
-            execution.descriptor.location,
-            runLoop,
-            deadline);
+          detail::invokeTest(std::forward<Function>(function), context);
+        } else if constexpr (detail::is_task_return_v<ReturnType>) {
+          static_assert(not std::is_lvalue_reference_v<ReturnType>,
+              "Nyx::Test asynchronous test functions must return Task<T> by value.");
+          const auto invokeTask = [&] -> ReturnType {
+            EnvironmentBinding binding{environment};
+            ContextBinding contextBinding{context};
+            return detail::invokeTest(std::forward<Function>(function), context);
+          };
+          detail::normalizeReturn(
+              invokeTask(), environment, context, execution.descriptor.location, runLoop, deadline);
+        } else {
+          EnvironmentBinding binding{environment};
+          ContextBinding contextBinding{context};
+          detail::normalizeReturn(detail::invokeTest(std::forward<Function>(function), context),
+              environment,
+              context,
+              execution.descriptor.location,
+              runLoop,
+              deadline);
+        }
+      } catch (const detail::TestAbort &) { // NOLINT
+        // require() already recorded the fatal assertion and marked the test aborted.
+        // nothing to do here.
+      } catch (const TestPanic &panicException) {
+        environment.recordError(
+            detail::panickedDiagnostic(String{panicException.message()}, panicException.location()));
+      } catch (const std::exception &exception) {
+        const char *message = exception.what();
+        environment.recordError(detail::unhandledExceptionDiagnostic(
+            message == nullptr ? String{"standard exception"} : String{message},
+            execution.descriptor.location));
+      } catch (...) {
+        environment.recordError(
+            detail::unhandledExceptionDiagnostic("non-standard exception", execution.descriptor.location));
       }
-    } catch (const detail::TaskCancelled &) { // NOLINT
-      // The timeout policy records the final diagnostic after duration capture.
-      cancelled = true;
-    } catch (const detail::TaskLifecycleError &error) {
-      environment.recordError(detail::taskLifecycleDiagnostic(error, execution.descriptor.location));
-    } catch (const TestAbort &) { // NOLINT
-      // require() already recorded the fatal assertion and marked the test aborted.
-      // nothing to do here.
-    } catch (const TestPanic &panicException) {
-      environment.recordError(
-          detail::panickedDiagnostic(String{panicException.message()}, panicException.location()));
-    } catch (const std::exception &exception) {
-      const char *message = exception.what();
-      environment.recordError(detail::unhandledExceptionDiagnostic(
-          message == nullptr ? String{"standard exception"} : String{message},
-          execution.descriptor.location));
-    } catch (...) {
-      environment.recordError(
-          detail::unhandledExceptionDiagnostic("non-standard exception", execution.descriptor.location));
+
+      cancelled = environment.stopRequested();
     }
+
+    execution.wallDuration = std::chrono::steady_clock::now() - wallStarted;
+    execution.profile = environment.profileSnapshot();
+    detail::applyPolicy(execution.descriptor.policy,
+        environment,
+        execution.duration,
+        invocation.retry != 0,
+        cancelled,
+        runLoop.timeoutTriggered(),
+        execution.descriptor.location);
+    environment.finalize(execution.descriptor.location);
+    execution.resources = environment.resourceSnapshot();
+    execution.memoryBefore = memoryBefore;
+    execution.memoryAfter = invocation.captureMemory ? memory::processMemory() : None;
+    execution.state = std::move(environment).takeState();
+
+    return execution;
   }
-
-  execution.wallDuration = std::chrono::steady_clock::now() - wallStarted;
-  execution.profile = environment.profileSnapshot();
-  detail::applyPolicy(execution.descriptor.policy,
-      environment,
-      execution.duration,
-      invocation.retry != 0,
-      cancelled,
-      runLoop.timeoutTriggered(),
-      execution.descriptor.location);
-  environment.finalize(execution.descriptor.location);
-  execution.resources = environment.resourceSnapshot();
-  execution.memoryBefore = memoryBefore;
-  execution.memoryAfter = invocation.captureMemory ? memory::processMemory() : None;
-  execution.state = std::move(environment).takeState();
-
-  return execution;
 }
 
 template <detail::TestInvocable Function>
@@ -361,7 +381,6 @@ template <detail::TestInvocable Function>
       std::forward<Function>(function));
 }
 
-/// Executes one test with an explicit per-run time source.
 template <detail::TestInvocable Function>
 [[nodiscard]] auto run(StringView identifier,
     Function &&function,

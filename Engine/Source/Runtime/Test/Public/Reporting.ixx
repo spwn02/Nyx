@@ -132,20 +132,24 @@ template <class Function>
     usize samples,
     Function function,
     std::source_location location = std::source_location::current()) -> MeasurementSummary {
-  if (samples == 0)
-    throw std::invalid_argument{"Nyx::Test measure() requires at least one sample"};
+  if constexpr (build::tests) {
+    if (samples == 0)
+      fatal("Nyx::Test measure() requires at least one sample");
 
-  Vec<std::chrono::steady_clock::duration> values{};
-  values.reserve(samples);
-  std::ranges::for_each(std::views::indices(samples), [&values, &function, name, location](usize) -> void {
-    const auto started = detail::measurementNow();
-    {
-      auto profile = profiling::profileScope(name, location);
-      static_cast<void>(std::invoke(function));
-    }
-    values.push_back(detail::measurementNow() - started);
-  });
-  return detail::summarizeMeasurements(std::move(values));
+    Vec<std::chrono::steady_clock::duration> values{};
+    values.reserve(samples);
+    std::ranges::for_each(std::views::indices(samples), [&values, &function, name, location](usize) -> void {
+      const auto started = detail::measurementNow();
+      {
+        auto profile = profiling::profileScope(name, location);
+        static_cast<void>(std::invoke(function));
+      }
+      values.push_back(detail::measurementNow() - started);
+    });
+    return detail::summarizeMeasurements(std::move(values));
+  } else {
+    return {};
+  }
 }
 
 /// Measures an asynchronous callable repeatedly on the active Nyx.Test run loop.
@@ -154,10 +158,14 @@ template <detail::AsyncMeasurementFunction Function>
     usize samples,
     Function function,
     std::source_location location = std::source_location::current()) -> Task<MeasurementSummary> {
-  if (samples == 0)
-    throw std::invalid_argument{"Nyx::Test measure() requires at least one sample"};
+  if constexpr (not build::tests) {
+    return {};
+  } else {
+    if (samples == 0)
+      fatal("Nyx::Test measure() requires at least one sample");
 
-  return detail::measureAsync(name, samples, std::move(function), {}, 0, location);
+    return detail::measureAsync(name, samples, std::move(function), {}, 0, location);
+  }
 }
 
 /// Groups every physical attempt that belongs to one logical test case.

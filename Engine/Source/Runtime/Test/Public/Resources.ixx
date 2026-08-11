@@ -209,11 +209,15 @@ public:
 private:
   auto appendEntry(UPtr<Entry> entry) -> ResourceHandle;
 
+  auto recordFailure(String name, String message, std::source_location location) -> void;
+
   [[nodiscard]] auto root() -> const Path &;
 
   Hive<UPtr<Entry>> entries_;
   Vec<Entry *> constructionOrder_;
+  Vec<ResourceCleanupFailure> failures_;
   Path root_;
+  bool rootAttempted_{};
   usize nextId_{1};
   usize cleanupCount_{};
   usize allocationBytes_{};

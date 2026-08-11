@@ -440,10 +440,8 @@ constexpr auto makeTextureFormatInfo() -> TextureFormatInfo {
   }
 
   if constexpr (Format != TextureFormat::Undefined and Format != TextureFormat::Count)
-    if (!found) {
-      std::println(std::cerr, "Every non-undefined TextureFormat must have format properties.");
-      std::terminate();
-    }
+    if (!found)
+      fatal("Every non-undefined TextureFormat must have format properties.");
 
   return result;
 }

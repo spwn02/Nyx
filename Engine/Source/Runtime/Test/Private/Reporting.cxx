@@ -202,10 +202,14 @@ Reporter::Reporter(ReporterOptions options)
 }
 
 auto Reporter::addRoot(Path root) -> void {
-  roots_.push_back(std::move(root));
+  if constexpr (build::tests)
+    roots_.push_back(std::move(root));
 }
 
 auto Reporter::makeReport(Span<const TestExecution> executions) -> RunReport {
+  if constexpr (not build::tests)
+    return {};
+
   RunReport result{};
   result.cases.reserve(executions.size());
 
@@ -244,10 +248,16 @@ auto Reporter::makeReport(Span<const TestExecution> executions) -> RunReport {
 }
 
 auto Reporter::summarize(Span<const TestExecution> executions) noexcept -> TestSummary {
+  if constexpr (not build::tests)
+    return {};
+
   return summarize(makeReport(executions));
 }
 
 auto Reporter::summarize(const RunReport &report) noexcept -> TestSummary {
+  if constexpr (not build::tests)
+    return {};
+
   TestSummary result{
       .caseCount = report.cases.size(),
   };
@@ -357,6 +367,9 @@ auto Reporter::renderMeasurement(const TestCaseResult &testCase, std::ostream &o
 
 // NOLINTNEXTLINE(readability-function-cognitive-complexity)
 auto Reporter::report(Span<const TestExecution> executions, std::ostream &output) const -> TestSummary {
+  if constexpr (not build::tests)
+    return {};
+
   const bool useColor = colorEnabled();
   const SourceManager sources{roots_};
   const RunReport reportModel = makeReport(executions);

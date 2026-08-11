@@ -261,12 +261,12 @@ auto policyOf() -> TestPolicy {
       "Nyx::Test tests may declare at most one [[= shouldPanic(...)]] annotation.");
   static_assert(timeoutCount<Function>() <= 1,
       "Nyx::Test tests may declare at most one [[= timeout(...)]] annotation.");
-  static_assert(repeatCount<Function>() <= 1,
-      "Nyx::Test tests may declare at most one [[= repeat(...)]] annotation.");
-  static_assert(warmupCount<Function>() <= 1,
-      "Nyx::Test tests may declare at most one [[= warmup(...)]] annotation.");
-  static_assert(retryCount<Function>() <= 1,
-      "Nyx::Test tests may declare at most one [[= retry(...)]] annotation.");
+  static_assert(
+      repeatCount<Function>() <= 1, "Nyx::Test tests may declare at most one [[= repeat(...)]] annotation.");
+  static_assert(
+      warmupCount<Function>() <= 1, "Nyx::Test tests may declare at most one [[= warmup(...)]] annotation.");
+  static_assert(
+      retryCount<Function>() <= 1, "Nyx::Test tests may declare at most one [[= retry(...)]] annotation.");
 
   TestPolicy policy{
       .trace = Nyx::meta::has_annotation<Trace, Function>(),
@@ -382,8 +382,7 @@ auto noProviderExecution(TestDescriptor descriptor, TimeMode timeMode) -> TestEx
       [location] -> void {
         const Option<Ref<TestEnvironment>> environment = currentEnvironment();
         if (not environment)
-          throw std::logic_error{
-              "Nyx::Test could not report an empty provider without an active environment"};
+          fatal("Nyx::Test could not report an empty provider without an active environment");
 
         Diagnostic diagnostic = makeDiagnostic(DiagnosticCode::ProviderProducedNoValues, location);
         diagnostic.details.spans.front().label = "provider";
@@ -586,7 +585,8 @@ inline constinit const SuiteEntry suiteEntry{
 template <std::meta::info Scope, class Configuration>
 struct SuiteRegistration final {
   SuiteRegistration() {
-    appendRegisteredSuite(suiteEntry<Scope, Configuration>);
+    if constexpr (build::tests)
+      appendRegisteredSuite(suiteEntry<Scope, Configuration>);
   }
 };
 
@@ -620,52 +620,74 @@ consteval auto registerSuite() -> void {
 /// containing discover() must be linked into the test executable.
 template <std::meta::info Scope, detail::DiscoveryOption... Options>
 consteval auto discover(Options... /*unused*/) -> void {
-  using Configuration = detail::DiscoveryConfiguration<std::remove_cvref_t<Options>...>;
-  static_assert(std::meta::is_namespace(Scope) or Configuration::staticMemberFunctions_,
-      "Nyx::Test class-member discovery requires the staticMemberFunctions options.");
-  detail::materializeRegistration<Scope, Configuration>();
+  if constexpr (build::tests) {
+    using Configuration = detail::DiscoveryConfiguration<std::remove_cvref_t<Options>...>;
+    static_assert(std::meta::is_namespace(Scope) or Configuration::staticMemberFunctions_,
+        "Nyx::Test class-member discovery requires the staticMemberFunctions options.");
+    detail::materializeRegistration<Scope, Configuration>();
+  }
 }
 /// Returns one descriptor per Case/provider combination in declaration order.
 template <std::meta::info Scope, detail::DiscoveryOption... Options>
 [[nodiscard]]
 auto describe(Options... /*unused*/) -> Vec<TestDescriptor> {
-  using Configuration = detail::DiscoveryConfiguration<std::remove_cvref_t<Options>...>;
-  static_assert(std::meta::is_namespace(Scope) or Configuration::staticMemberFunctions_,
-      "Nyx::Test class-member discovery requires the staticMemberFunctions option.");
-  return detail::describeScope<Scope, Configuration>();
+  if constexpr (build::tests) {
+    using Configuration = detail::DiscoveryConfiguration<std::remove_cvref_t<Options>...>;
+    static_assert(std::meta::is_namespace(Scope) or Configuration::staticMemberFunctions_,
+        "Nyx::Test class-member discovery requires the staticMemberFunctions options.");
+    return detail::describeScope<Scope, Configuration>();
+  } else {
+    return {};
+  }
 }
 
 /// Lists one reflected scope after applying metadata and qualified-name selection.
 template <std::meta::info Scope>
 [[nodiscard]] auto list(TestSelection selection = {}) -> Vec<TestDescriptor> {
-  static_assert(std::meta::is_namespace(Scope), "Provided Scope should be a namespace.");
-  return detail::listScope<Scope, detail::DiscoveryConfiguration<>>(selection);
+  if constexpr (build::tests) {
+    static_assert(std::meta::is_namespace(Scope), "Provided Scope should be a namespace.");
+    return detail::listScope<Scope, detail::DiscoveryConfiguration<>>(selection);
+  } else {
+    return {};
+  }
 }
 
 /// Lists one reflected scope with explicit discovery options and selection.
 template <std::meta::info Scope, detail::DiscoveryOption... Options>
   requires(sizeof...(Options) != 0)
 [[nodiscard]] auto list(TestSelection selection, Options... /*unused*/) -> Vec<TestDescriptor> {
-  using Configuration = detail::DiscoveryConfiguration<std::remove_cvref_t<Options>...>;
-  static_assert(std::meta::is_namespace(Scope) or Configuration::staticMemberFunctions_,
-      "Nyx::Test class-member discovery requires the staticMemberFunctions options.");
-  return detail::listScope<Scope, Configuration>(selection);
+  if constexpr (build::tests) {
+    using Configuration = detail::DiscoveryConfiguration<std::remove_cvref_t<Options>...>;
+    static_assert(std::meta::is_namespace(Scope) or Configuration::staticMemberFunctions_,
+        "Nyx::Test class-member discovery requires the staticMemberFunctions options.");
+    return detail::listScope<Scope, Configuration>(selection);
+  } else {
+    return {};
+  }
 }
 
 /// Executes all reflected tests and their declarative Case/provider annotations.
 template <std::meta::info Namespace>
 [[nodiscard]]
 auto runAll(RunOptions options = {}) -> Vec<TestExecution> {
-  static_assert(std::meta::is_namespace(Namespace), "Provided Namespace should be a namespace.");
-  return detail::runScope<Namespace, detail::DiscoveryConfiguration<>>({}, options);
+  if constexpr (build::tests) {
+    static_assert(std::meta::is_namespace(Namespace), "Provided Namespace should be a namespace.");
+    return detail::runScope<Namespace, detail::DiscoveryConfiguration<>>({}, options);
+  } else {
+    return {};
+  }
 }
 
 /// Executes one reflected namespace after selecting expanded cases.
 template <std::meta::info Namespace>
 [[nodiscard]]
 auto runAll(TestSelection selection, RunOptions options = {}) -> Vec<TestExecution> {
-  static_assert(std::meta::is_namespace(Namespace), "Provided Namespace should be a namespace.");
-  return detail::runScope<Namespace, detail::DiscoveryConfiguration<>>(selection, options);
+  if constexpr (build::tests) {
+    static_assert(std::meta::is_namespace(Namespace), "Provided Namespace should be a namespace.");
+    return detail::runScope<Namespace, detail::DiscoveryConfiguration<>>(selection, options);
+  } else {
+    return {};
+  }
 }
 
 /// Executes one reflected scope with explicit discovery options.
@@ -673,10 +695,14 @@ template <std::meta::info Scope, detail::DiscoveryOption... Options>
   requires(sizeof...(Options) != 0)
 [[nodiscard]]
 auto runAll(Options... /*unused*/) -> Vec<TestExecution> {
-  using Configuration = detail::DiscoveryConfiguration<std::remove_cvref_t<Options>...>;
-  static_assert(std::meta::is_namespace(Scope) or Configuration::staticMemberFunctions_,
-      "Nyx::Test class-member discovery requires the staticMemberFunctions options.");
-  return detail::runScope<Scope, Configuration>({}, {});
+  if constexpr (build::tests) {
+    using Configuration = detail::DiscoveryConfiguration<std::remove_cvref_t<Options>...>;
+    static_assert(std::meta::is_namespace(Scope) or Configuration::staticMemberFunctions_,
+        "Nyx::Test class-member discovery requires the staticMemberFunctions options.");
+    return detail::runScope<Scope, Configuration>({}, {});
+  } else {
+    return {};
+  }
 }
 
 /// Executes one reflected scope with explicit discovery and runner options.
@@ -684,31 +710,42 @@ template <std::meta::info Scope, detail::DiscoveryOption... Options>
   requires(sizeof...(Options) != 0)
 [[nodiscard]]
 auto runAll(RunOptions options, Options... /*unused*/) -> Vec<TestExecution> {
-  using Configuration = detail::DiscoveryConfiguration<std::remove_cvref_t<Options>...>;
-  static_assert(std::meta::is_namespace(Scope) or Configuration::staticMemberFunctions_,
-      "Nyx::Test class-member discovery requires the staticMemberFunctions options.");
-  return detail::runScope<Scope, Configuration>({}, options);
+  if constexpr (not build::tests) {
+    using Configuration = detail::DiscoveryConfiguration<std::remove_cvref_t<Options>...>;
+    static_assert(std::meta::is_namespace(Scope) or Configuration::staticMemberFunctions_,
+        "Nyx::Test class-member discovery requires the staticMemberFunctions options.");
+    return detail::runScope<Scope, Configuration>({}, options);
+  } else {
+    return {};
+  }
 }
 
 /// Executes one reflected scope with explicit discovery options and selection.
 template <std::meta::info Scope, detail::DiscoveryOption... Options>
   requires(sizeof...(Options) != 0)
 [[nodiscard]] auto runAll(TestSelection selection, Options... /*unused*/) -> Vec<TestExecution> {
-  using Configuration = detail::DiscoveryConfiguration<std::remove_cvref_t<Options>...>;
-  static_assert(std::meta::is_namespace(Scope) or Configuration::staticMemberFunctions_,
-      "Nyx::Test class-member discovery requires the staticMemberFunctions options.");
-  return detail::runScope<Scope, Configuration>(selection, {});
+  if constexpr (not build::tests) {
+    using Configuration = detail::DiscoveryConfiguration<std::remove_cvref_t<Options>...>;
+    static_assert(std::meta::is_namespace(Scope) or Configuration::staticMemberFunctions_,
+        "Nyx::Test class-member discovery requires the staticMemberFunctions options.");
+    return detail::runScope<Scope, Configuration>(selection, {});
+  } else {
+    return {};
+  }
 }
 
 /// Executes one reflected scope with explicit discovery, selection, and runner options.
 template <std::meta::info Scope, detail::DiscoveryOption... Options>
-  requires(sizeof...(Options) != 0)
 [[nodiscard]] auto runAll(TestSelection selection, RunOptions options, Options... /*unused*/)
     -> Vec<TestExecution> {
-  using Configuration = detail::DiscoveryConfiguration<std::remove_cvref_t<Options>...>;
-  static_assert(std::meta::is_namespace(Scope) or Configuration::staticMemberFunctions_,
-      "Nyx::Test class-member discovery requires the staticMemberFunctions options.");
-  return detail::runScope<Scope, Configuration>(selection, options);
+  if constexpr (not build::tests) {
+    using Configuration = detail::DiscoveryConfiguration<std::remove_cvref_t<Options>...>;
+    static_assert(std::meta::is_namespace(Scope) or Configuration::staticMemberFunctions_,
+        "Nyx::Test class-member discovery requires the staticMemberFunctions option.");
+    return detail::runScope<Scope, Configuration>(selection, options);
+  } else {
+    return {};
+  }
 }
 
 /// Describes every suite registered by file-scope discover<^^Scope>() calls.

@@ -79,7 +79,7 @@ private:
 [[nodiscard]] auto scheduleCases(usize plannedCaseCount, const RunOptions &options, u64 runSeed)
     -> Vec<ScheduledCase> {
   if (options.repeat == 0)
-    throw std::invalid_argument{"Nyx::Test RunOptions::repeat must be greater than zero"};
+    fatal("Nyx::Test RunOptions::repeat must be greater than zero");
 
   Vec<ScheduledCase> scheduled{};
   scheduled.reserve(plannedCaseCount * options.repeat);
@@ -110,6 +110,16 @@ private:
   return traceMode != TraceMode::Annotations;
 }
 
+[[nodiscard]] auto boundaryFailure(TestDescriptor descriptor, String message) -> TestExecution {
+  TestExecution execution{
+      .descriptor = std::move(descriptor),
+  };
+  execution.state.diagnostics.push_back(
+      unhandledExceptionDiagnostic(std::move(message), execution.descriptor.location));
+  execution.state.errors = 1;
+  return execution;
+}
+
 auto executeAttempt(PlannedCase &plannedCase,
     usize plannedCaseIndex,
     usize runIteration,
@@ -128,7 +138,21 @@ auto executeAttempt(PlannedCase &plannedCase,
       .captureMemory = captureMemory,
   };
   const InvocationBinding binding{settings};
-  TestExecution execution = plannedCase.execute(TestDescriptor{plannedCase.descriptor}, options.timeMode);
+  TestExecution execution{};
+  try {
+    execution = plannedCase.execute(TestDescriptor{plannedCase.descriptor}, options.timeMode);
+  } catch (const TestAbort &) {
+    execution = TestExecution{
+        .descriptor = TestDescriptor{plannedCase.descriptor},
+    };
+    execution.state.aborted = true;
+  } catch (const std::exception &exception) {
+    const char *message = exception.what();
+    execution = boundaryFailure(TestDescriptor{plannedCase.descriptor},
+        message == nullptr ? String{"standard exception"} : String{message});
+  } catch (...) {
+    execution = boundaryFailure(TestDescriptor{plannedCase.descriptor}, "non-standard exception");
+  }
   execution.runSeed = runSeed;
   execution.attempt = attempt;
   execution.iteration = runIteration;
@@ -263,93 +287,97 @@ auto executeCase(PlannedCase &plannedCase,
 } // namespace
 
 auto executePlannedCases(RunSession &session, const RunOptions &options) -> Vec<TestExecution> {
-  Vec<PlannedCase> plannedCases = session.takePlannedCases();
-  const u64 runSeed = options.seed ? *options.seed : randomSeed();
-  const Vec<ScheduledCase> scheduledCases = scheduleCases(plannedCases.size(), options, runSeed);
-  const usize workers = workerCount(options.jobs, scheduledCases.size());
-  const bool captureMemory = workers == 1;
-
-  if (workers == 0)
+  if constexpr (not build::tests) {
     return {};
+  } else {
+    Vec<PlannedCase> plannedCases = session.takePlannedCases();
+    const u64 runSeed = options.seed ? *options.seed : randomSeed();
+    const Vec<ScheduledCase> scheduledCases = scheduleCases(plannedCases.size(), options, runSeed);
+    const usize workers = workerCount(options.jobs, scheduledCases.size());
+    const bool captureMemory = workers == 1;
 
-  Vec<UPtr<ResourceLane>> resourceLanes{};
-  if (options.repeat > 1) {
-    resourceLanes.reserve(plannedCases.size());
-    std::ranges::for_each(plannedCases, [&resourceLanes](const PlannedCase & /*ignored*/) -> void {
-      resourceLanes.push_back(std::make_unique<ResourceLane>());
-    });
-  }
-  if (workers == 1) {
-    Vec<TestExecution> executions{};
-    executions.reserve(scheduledCases.size());
-    bool stopped{};
-    std::ranges::for_each(scheduledCases, [&](const ScheduledCase &scheduledCase) -> void {
-      if (stopped)
-        return;
+    if (workers == 0)
+      return {};
 
-      Vec<TestExecution> batch = executeCase(plannedCases[scheduledCase.plannedCase],
-          laneFor(resourceLanes, scheduledCase.plannedCase),
-          scheduledCase.plannedCase,
-          scheduledCase,
-          options,
-          runSeed,
-          captureMemory);
-      stopped = options.failFast and batchFailed(batch);
-      executions.append_range(std::move(batch));
-    });
-    return executions;
-  }
-
-  Vec<Option<Vec<TestExecution>>> executions{scheduledCases.size()};
-
-  std::atomic<usize> nextIndex{};
-  std::atomic<bool> stopped{};
-  const auto executeNext = [&plannedCases,
-                               &resourceLanes,
-                               &scheduledCases,
-                               &executions,
-                               &nextIndex,
-                               &stopped,
-                               &options,
-                               &captureMemory,
-                               runSeed] -> void {
-    while (true) {
-      if (stopped.load(std::memory_order_relaxed))
-        return;
-
-      const usize index = nextIndex.fetch_add(1, std::memory_order_relaxed);
-      if (index >= scheduledCases.size())
-        return;
-
-      const ScheduledCase &scheduledCase = scheduledCases[index];
-      Vec<TestExecution> batch = executeCase(plannedCases[scheduledCase.plannedCase],
-          laneFor(resourceLanes, scheduledCase.plannedCase),
-          scheduledCase.plannedCase,
-          scheduledCase,
-          options,
-          runSeed,
-          captureMemory);
-      const bool failed = batchFailed(batch);
-      executions[index].emplace(std::move(batch));
-
-      if (options.failFast and failed)
-        stopped.store(true, std::memory_order_relaxed);
+    Vec<UPtr<ResourceLane>> resourceLanes{};
+    if (options.repeat > 1) {
+      resourceLanes.reserve(plannedCases.size());
+      std::ranges::for_each(plannedCases, [&resourceLanes](const PlannedCase & /*ignored*/) -> void {
+        resourceLanes.push_back(std::make_unique<ResourceLane>());
+      });
     }
-  };
+    if (workers == 1) {
+      Vec<TestExecution> executions{};
+      executions.reserve(scheduledCases.size());
+      bool stopped{};
+      std::ranges::for_each(scheduledCases, [&](const ScheduledCase &scheduledCase) -> void {
+        if (stopped)
+          return;
 
-  {
-    Vec<std::jthread> threads{};
-    threads.reserve(workers);
-    std::ranges::for_each(std::views::indices(workers),
-        [&threads, &executeNext](usize) -> void { threads.emplace_back(executeNext); });
+        Vec<TestExecution> batch = executeCase(plannedCases[scheduledCase.plannedCase],
+            laneFor(resourceLanes, scheduledCase.plannedCase),
+            scheduledCase.plannedCase,
+            scheduledCase,
+            options,
+            runSeed,
+            captureMemory);
+        stopped = options.failFast and batchFailed(batch);
+        executions.append_range(std::move(batch));
+      });
+      return executions;
+    }
+
+    Vec<Option<Vec<TestExecution>>> executions{scheduledCases.size()};
+
+    std::atomic<usize> nextIndex{};
+    std::atomic<bool> stopped{};
+    const auto executeNext = [&plannedCases,
+                                 &resourceLanes,
+                                 &scheduledCases,
+                                 &executions,
+                                 &nextIndex,
+                                 &stopped,
+                                 &options,
+                                 &captureMemory,
+                                 runSeed] -> void {
+      while (true) {
+        if (stopped.load(std::memory_order_relaxed))
+          return;
+
+        const usize index = nextIndex.fetch_add(1, std::memory_order_relaxed);
+        if (index >= scheduledCases.size())
+          return;
+
+        const ScheduledCase &scheduledCase = scheduledCases[index];
+        Vec<TestExecution> batch = executeCase(plannedCases[scheduledCase.plannedCase],
+            laneFor(resourceLanes, scheduledCase.plannedCase),
+            scheduledCase.plannedCase,
+            scheduledCase,
+            options,
+            runSeed,
+            captureMemory);
+        const bool failed = batchFailed(batch);
+        executions[index].emplace(std::move(batch));
+
+        if (options.failFast and failed)
+          stopped.store(true, std::memory_order_relaxed);
+      }
+    };
+
+    {
+      Vec<std::jthread> threads{};
+      threads.reserve(workers);
+      std::ranges::for_each(std::views::indices(workers),
+          [&threads, &executeNext](usize) -> void { threads.emplace_back(executeNext); });
+    }
+
+    return executions | std::views::filter([](const Option<Vec<TestExecution>> &execution) -> bool {
+      return execution.has_value();
+    }) | std::views::transform([](Option<Vec<TestExecution>> &execution) -> Vec<TestExecution> {
+      return std::move(*execution);
+    }) | std::views::join |
+           std::ranges::to<Vec<TestExecution>>();
   }
-
-  return executions | std::views::filter([](const Option<Vec<TestExecution>> &execution) -> bool {
-    return execution.has_value();
-  }) | std::views::transform([](Option<Vec<TestExecution>> &execution) -> Vec<TestExecution> {
-    return std::move(*execution);
-  }) | std::views::join |
-         std::ranges::to<Vec<TestExecution>>();
 }
 
 } // namespace Nyx::Test::detail

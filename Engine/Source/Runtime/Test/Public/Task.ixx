@@ -20,17 +20,29 @@ enum class[[= debug::derive]] TimeMode : u8 {
 
 namespace detail {
 
-/// Internal control flow used when a run loop has requested cancellation.
-/// The test boundary turns this into the timeout diagnostic after cleanup.
-class TaskCancelled final {};
-
 /// Describes a broken asynchronous lifecycle observed by the test scheduduler.
 enum class[[= debug::derive]] TaskLifecycleFailure : u8 {
+  Empty,
   Stranded,
   PendingWork,
 };
 
-/// Internal control flow used when an asynchronous test can no longer make safe progress.
+/// Describes the terminal state returned by one scheduler drive operation.
+enum class[[= debug::derive]] TaskDriveStatus : u8 {
+  Completed,
+  Cancelled,
+  Stranded,
+  PendingWork,
+  Empty,
+};
+
+/// Carries explicit scheduler status without using exceptions for framework control flow.
+struct TaskDriveResult final {
+  TaskDriveStatus status{TaskDriveStatus::Empty};
+  usize pendingWork{};
+};
+
+/// Describes a lifecycle diagnostic after an asynchronous test can no longer make safe progress.
 class TaskLifecycleError final {
 public:
   constexpr explicit TaskLifecycleError(TaskLifecycleFailure failure, usize pendingWork = 0) noexcept
@@ -135,9 +147,9 @@ public:
       "RunLoopBinding owns a pointer to a previous thread-local RunLoop.");
   auto operator=(const RunLoopBinding &)
       -> RunLoopBinding & = delete ("RunLoopBinding owns a pointer to a previous thread-local RunLoop.");
-  RunLoopBinding(RunLoopBinding &&) noexcept = delete (
+  RunLoopBinding(RunLoop &&) noexcept = delete (
       "RunLoopBinding owns a pointer to a previous thread-local RunLoop.");
-  auto operator=(RunLoopBinding &&) noexcept
+  auto operator=(RunLoop &&) noexcept
       -> RunLoopBinding & = delete ("RunLoopBinding owns a pointer to a previous thread-local RunLoop.");
 
 private:
@@ -152,26 +164,27 @@ auto scheduleAfter(std::coroutine_handle<> handle, RunLoop::Clock::duration dura
 
 [[nodiscard]] auto stopRequested() noexcept -> bool;
 
+/// Drives one task until completion, cancellation, or a broken lifecycle is observed.
 template <class Value, class Resume>
-auto drive(Task<Value> &task, Resume &&resume) -> void;
+auto drive(Task<Value> &task, Resume &&resume) -> TaskDriveResult;
 
 template <class Value, class Resume, class BeforeResume>
 auto drive(Task<Value> &task, Resume &&resume, BeforeResume &&beforeResume, std::stop_token stopToken = {})
-    -> void;
+    -> TaskDriveResult;
 
 template <class Value, class Resume, class BeforeResume, class NextWakeUp>
 auto drive(Task<Value> &task,
     RunLoop &runLoop,
     Resume &&resume,
     BeforeResume &&beforeResume,
-    NextWakeUp &&nextWakeUp) -> void;
+    NextWakeUp &&nextWakeUp) -> TaskDriveResult;
 
 template <class Value, class Resume, class BeforeResume, class NextWakeUp>
 auto drive(Task<Value> &task,
     Resume &&resume,
     BeforeResume &&beforeResume,
     NextWakeUp &&nextWakeUp,
-    std::stop_token stopToken = {}) -> void;
+    std::stop_token stopToken = {}) -> TaskDriveResult;
 
 } // namespace detail
 
@@ -185,7 +198,7 @@ struct YieldAwaiter final {
     return false;
   }
 
-  auto await_suspend(std::coroutine_handle<> handle) const -> void;
+  auto await_suspend(std::coroutine_handle<> handle) const -> bool;
 
   constexpr auto await_resume() const noexcept -> void {
   }
@@ -209,7 +222,7 @@ public:
     return duration_ <= std::chrono::steady_clock::duration::zero();
   }
 
-  auto await_suspend(std::coroutine_handle<> handle) const -> void;
+  [[nodiscard]] auto await_suspend(std::coroutine_handle<> handle) const -> bool;
 
   constexpr auto await_resume() const noexcept -> void {
   }
@@ -271,7 +284,7 @@ public:
 
     [[nodiscard]] auto takeResult() -> Value {
       if (resultTaken_)
-        throw std::logic_error{"Nyx::Test Task<T> result may be read only once."};
+        fatal("Nyx::Test Task<T> result may be read only once.");
 
       resultTaken_ = true;
 
@@ -279,7 +292,7 @@ public:
         std::rethrow_exception(exception_);
 
       if (not value_)
-        throw std::logic_error{"Nyx::Test Task<T> completed without a value."};
+        fatal("Nyx::Test Task<T> completed without a value.");
 
       return std::move(*value_);
     }
@@ -336,15 +349,16 @@ public:
       return handle_ and handle_.done();
     }
 
-    auto await_suspend(std::coroutine_handle<> continuation) -> void {
+    auto await_suspend(std::coroutine_handle<> continuation) -> bool {
       if (not handle_)
-        throw std::logic_error{"Nyx::Test cannot await an empty Task<T>."};
+        fatal("Nyx::Test cannot await an empty Task<T>.");
 
       if (handle_.promise().hasContinuation())
-        throw std::logic_error{"Nyx::Test Task<T> may be awaited only once."};
+        fatal("Nyx::Test Task<T> may be awaited only once.");
 
       handle_.promise().setContinuation(continuation);
       detail::schedule(handle_);
+      return true;
     }
 
     [[nodiscard]] auto await_resume() -> Value {
@@ -388,7 +402,7 @@ public:
 
   [[nodiscard]] auto takeResult() && -> Value {
     if (not handle_ or not handle_.done())
-      throw std::logic_error{"Nyx::Test cannot read an incomplete Task<T>."};
+      fatal("Nyx::Test cannot read an incomplete Task<T>.");
 
     return handle_.promise().takeResult();
   }
@@ -407,7 +421,7 @@ private:
       detail::RunLoop &runLoop,
       Resume &&resume,
       BeforeResume &&beforeResume,
-      NextWakeUp &&nextWakeUp) -> void;
+      NextWakeUp &&nextWakeUp) -> detail::TaskDriveResult;
 
   explicit Task(Handle handle) noexcept
       : handle_(handle) {
@@ -466,7 +480,7 @@ public:
 
     auto takeResult() -> void {
       if (resultTaken_)
-        throw std::logic_error{"Nyx::Test Task<T> result may be read only once."};
+        fatal("Nyx::Test Task<T> result may be read only once.");
 
       resultTaken_ = true;
 
@@ -525,15 +539,16 @@ public:
       return handle_ and handle_.done();
     }
 
-    auto await_suspend(std::coroutine_handle<> continuation) -> void {
+    auto await_suspend(std::coroutine_handle<> continuation) -> bool {
       if (not handle_)
-        throw std::logic_error{"Nyx::Test cannot await an empty Task<T>."};
+        fatal("Nyx::Test cannot await an empty Task<T>.");
 
       if (handle_.promise().hasContinuation())
-        throw std::logic_error{"Nyx::Test Task<T> may be awaited only once."};
+        fatal("Nyx::Test Task<T> may be awaited only once.");
 
       handle_.promise().setContinuation(continuation);
       detail::schedule(handle_);
+      return true;
     }
 
     auto await_resume() -> void {
@@ -577,7 +592,7 @@ public:
 
   auto takeResult() && -> void {
     if (not handle_ or not handle_.done())
-      throw std::logic_error{"Nyx::Test cannot read an incomplete Task<T>."};
+      fatal("Nyx::Test cannot read an incomplete Task<T>.");
 
     handle_.promise().takeResult();
   }
@@ -596,7 +611,7 @@ private:
       detail::RunLoop &runLoop,
       Resume &&resume,
       BeforeResume &&beforeResume,
-      NextWakeUp &&nextWakeUp) -> void;
+      NextWakeUp &&nextWakeUp) -> detail::TaskDriveResult;
 
   explicit Task(Handle handle) noexcept
       : handle_(handle) {
@@ -619,9 +634,9 @@ auto drive(Task<Value> &task,
     RunLoop &runLoop,
     Resume &&resume,
     BeforeResume &&beforeResume,
-    NextWakeUp &&nextWakeUp) -> void {
+    NextWakeUp &&nextWakeUp) -> TaskDriveResult {
   if (not task.valid())
-    throw std::logic_error{"Nyx::Test cannot execute an empty Task<T>"};
+    return TaskDriveResult{.status = TaskDriveStatus::Empty};
 
   const auto discardPending = std::scope_exit([&runLoop] -> void { runLoop.discardPending(); });
   runLoop.enqueue(task.handle_);
@@ -648,14 +663,19 @@ auto drive(Task<Value> &task,
   }
 
   if (not task.done() and runLoop.stopRequested())
-    throw TaskCancelled{};
+    return TaskDriveResult{.status = TaskDriveStatus::Cancelled};
 
   if (not task.done())
-    throw TaskLifecycleError{TaskLifecycleFailure::Stranded};
+    return TaskDriveResult{.status = TaskDriveStatus::Stranded};
 
   const usize pendingWork = runLoop.pendingWorkCount();
   if (pendingWork != 0)
-    throw TaskLifecycleError{TaskLifecycleFailure::PendingWork, pendingWork};
+    return TaskDriveResult{
+        .status = TaskDriveStatus::PendingWork,
+        .pendingWork = pendingWork,
+    };
+
+  return TaskDriveResult{.status = TaskDriveStatus::Completed};
 }
 
 template <class Value, class Resume, class BeforeResume, class NextWakeUp>
@@ -663,9 +683,9 @@ auto drive(Task<Value> &task,
     Resume &&resume,
     BeforeResume &&beforeResume,
     NextWakeUp &&nextWakeUp,
-    std::stop_token stopToken) -> void {
+    std::stop_token stopToken) -> TaskDriveResult {
   RunLoop runLoop{TimeMode::Real, std::move(stopToken)};
-  drive(task,
+  return drive(task,
       runLoop,
       std::forward<Resume>(resume),
       std::forward<BeforeResume>(beforeResume),
@@ -674,8 +694,8 @@ auto drive(Task<Value> &task,
 
 template <class Value, class Resume, class BeforeResume>
 auto drive(Task<Value> &task, Resume &&resume, BeforeResume &&beforeResume, std::stop_token stopToken)
-    -> void {
-  drive(
+    -> TaskDriveResult {
+  return drive(
       task,
       std::forward<Resume>(resume),
       std::forward<BeforeResume>(beforeResume),
@@ -684,8 +704,8 @@ auto drive(Task<Value> &task, Resume &&resume, BeforeResume &&beforeResume, std:
 }
 
 template <class Value, class Resume>
-auto drive(Task<Value> &task, Resume &&resume) -> void {
-  drive(task, std::forward<Resume>(resume), [] noexcept -> void {});
+auto drive(Task<Value> &task, Resume &&resume) -> TaskDriveResult {
+  return drive(task, std::forward<Resume>(resume), [] noexcept -> void {});
 }
 
 } // namespace detail

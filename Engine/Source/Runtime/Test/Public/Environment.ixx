@@ -75,9 +75,13 @@ private:
   bool finalized_{};
 };
 
-/// Internal control flow used by require(). The test boundary catches this type and still finalize the
-/// environment normally.
+namespace detail {
+
+/// Internal control flow used by require(). The test boundary catches this type and still finalizes the
+/// environment normally. It is intentionally kept out of the public Nyx::Test surface.
 struct TestAbort final {};
+
+} // namespace detail
 
 /// Binds an environment to the current execution thread.
 ///

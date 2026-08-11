@@ -656,10 +656,14 @@ JsonReporter::JsonReporter(JsonReporterOptions options)
 }
 
 auto JsonReporter::addRoot(Path root) -> void {
-  roots_.push_back(std::move(root));
+  if constexpr (build::tests)
+    roots_.push_back(std::move(root));
 }
 
 auto JsonReporter::report(Span<const TestExecution> executions, std::ostream &output) const -> void {
+  if constexpr (not build::tests)
+    return;
+
   const RunReport report = Reporter::makeReport(executions);
   const SourceManager sources{roots_};
   JsonWriter writer{output, options_};
@@ -669,12 +673,18 @@ auto JsonReporter::report(Span<const TestExecution> executions, std::ostream &ou
 }
 
 auto JsonReporter::render(Span<const TestExecution> executions) const -> String {
+  if constexpr (not build::tests)
+    return {};
+
   std::ostringstream output{};
   report(executions, output);
   return output.str();
 }
 
 auto JsonReporter::reportList(Span<const TestDescriptor> descriptors, std::ostream &output) const -> void {
+  if constexpr (not build::tests)
+    return;
+
   JsonWriter writer{output, options_};
   writeList(writer, descriptors);
   if (options_.pretty)
@@ -682,6 +692,9 @@ auto JsonReporter::reportList(Span<const TestDescriptor> descriptors, std::ostre
 }
 
 auto JsonReporter::renderList(Span<const TestDescriptor> descriptors) const -> String {
+  if constexpr (not build::tests)
+    return {};
+
   std::ostringstream output{};
   reportList(descriptors, output);
   return output.str();

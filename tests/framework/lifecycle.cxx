@@ -80,8 +80,8 @@ auto completedTask() -> Task<void> {
 }
 
 template <class Value>
-auto driveDirectly(Task<Value> &task, detail::RunLoop &runLoop) -> void {
-  detail::drive(
+auto driveDirectly(Task<Value> &task, detail::RunLoop &runLoop) -> detail::TaskDriveResult {
+  return detail::drive(
       task,
       runLoop,
       [](std::coroutine_handle<> handle) -> void { handle.resume(); },
@@ -153,15 +153,10 @@ reportsOnlyTheTimeoutWhenCancellationCannotResumeATask() -> void {
 [[ = test, = group("framework"), = tag("lifecycle") ]] auto clearsRunLoopTicketsWhenDrivingFails() -> void {
   detail::RunLoop runLoop{TimeMode::Virtual};
   Task<void> pending = taskWithPendingWork();
-  bool caught{};
+  const detail::TaskDriveResult result = driveDirectly(pending, runLoop);
 
-  try {
-    driveDirectly(pending, runLoop);
-  } catch (const detail::TaskLifecycleError &error) {
-    caught = error.failure() == detail::TaskLifecycleFailure::PendingWork;
-  }
-
-  require(caught);
+  require(result.status == detail::TaskDriveStatus::PendingWork);
+  require(result.pendingWork == 1_exp);
   require(runLoop.pendingWorkCount() == 0_exp);
 
   Task<void> following = completedTask();

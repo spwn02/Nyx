@@ -6,6 +6,20 @@ import :Error;
 
 namespace Nyx {
 
+Error::Message::Message(std::source_location location)
+    : location(location) {
+}
+
+Error::Message::Message(const char *message, std::source_location location)
+    : message(message)
+    , location(location) {
+}
+
+Error::Message::Message(String message, std::source_location location)
+    : message(std::move(message))
+    , location(location) {
+}
+
 Error::Error() = default;
 Error::Error(Message message)
     : messages{std::move(message)} {};
@@ -93,6 +107,14 @@ auto todo(std::source_location loc) -> bail {
   Error::Message message{loc};
   message.message = "TODO";
   return bail(message);
+}
+
+auto fatal(Error error, ErrorDisplayOptions options) -> void {
+  error.display(std::cerr, options);
+  std::terminate();
+}
+auto fatal(StringView message, ErrorDisplayOptions options, std::source_location location) -> void {
+  fatal({Error::Message{String{message}, location}}, options);
 }
 
 } // namespace Nyx

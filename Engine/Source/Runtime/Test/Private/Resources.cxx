@@ -163,12 +163,23 @@ auto TestResources::appendEntry(UPtr<Entry> entry) -> ResourceHandle {
   return ResourceHandle{nextId_++};
 }
 
+auto TestResources::recordFailure(String name, String message, std::source_location location) -> void {
+  failures_.push_back(ResourceCleanupFailure{
+      .name = std::move(name),
+      .message = std::move(message),
+      .location = location,
+  });
+}
+
 auto TestResources::root() -> const Path & {
-  if (root_.empty()) {
+  if (not rootAttempted_) {
+    rootAttempted_ = true;
     Result<Path> created = fs::temporaryDirectory("nyx-test");
-    if (not created)
-      throw std::runtime_error{created.error().display()};
-    root_ = std::move(*created);
+    if (created) {
+      root_ = std::move(*created);
+    } else {
+      recordFailure("resource creation", created.error().display(), std::source_location::current());
+    }
   }
 
   return root_;
@@ -177,7 +188,7 @@ auto TestResources::root() -> const Path & {
 auto TestResources::defer(std::move_only_function<void()> cleanup, std::source_location location)
     -> ResourceHandle {
   if (not cleanup)
-    throw std::invalid_argument{"Nyx.Test defer() requires a cleanup function"};
+    std::terminate();
 
   return appendEntry(std::make_unique<DeferredEntry>(std::move(cleanup), location));
 }
@@ -185,9 +196,14 @@ auto TestResources::defer(std::move_only_function<void()> cleanup, std::source_l
 auto TestResources::temporaryDirectory(StringView label, std::source_location location)
     -> TemporaryDirectory & {
   const Path parent = root();
+  if (parent.empty())
+    return allocate<TemporaryDirectory>(Path{}, location);
+
   const Result<Path> created = fs::createDirectory(parent, std::format("{}-{}", label, nextId_));
-  if (not created)
-    throw std::runtime_error{created.error().display()};
+  if (not created) {
+    recordFailure("resource creation", created.error().display(), location);
+    return allocate<TemporaryDirectory>(Path{}, location);
+  }
 
   auto &directory = allocate<TemporaryDirectory>(*created, location);
   ++temporaryDirectories_;
@@ -196,9 +212,14 @@ auto TestResources::temporaryDirectory(StringView label, std::source_location lo
 
 auto TestResources::temporaryFile(StringView suffix, std::source_location location) -> TemporaryFile & {
   const Path parent = root();
+  if (parent.empty())
+    return allocate<TemporaryFile>(Path{}, fs::File{Path{}, std::ios::in}, location);
+
   const Result<Path> path = fs::temporaryPath(parent, "file", suffix);
-  if (not path)
-    throw std::runtime_error{path.error().display()};
+  if (not path) {
+    recordFailure("resource creation", path.error().display(), location);
+    return allocate<TemporaryFile>(Path{}, fs::File{Path{}, std::ios::in}, location);
+  }
 
   const fs::OpenOptions options{
       .create_new = true,
@@ -206,8 +227,10 @@ auto TestResources::temporaryFile(StringView suffix, std::source_location locati
       .write = true,
   };
   Result<fs::File> opened = options.open(*path);
-  if (not opened)
-    throw std::runtime_error(opened.error().display());
+  if (not opened) {
+    recordFailure("resource creation", opened.error().display(), location);
+    return allocate<TemporaryFile>(Path{}, fs::File{Path{}, std::ios::in}, location);
+  }
 
   auto &file = allocate<TemporaryFile>(*path, std::move(*opened), location);
   ++temporaryFiles_;
@@ -232,7 +255,9 @@ auto TestResources::cleanup() noexcept -> ResourceCleanupReport {
   if (cleaned_)
     return {};
 
-  ResourceCleanupReport result{};
+  ResourceCleanupReport result{
+      .failures = std::move(failures_),
+  };
   std::ranges::for_each(std::views::reverse(constructionOrder_), [this, &result](Entry *entry) -> void {
     if (const Option<ResourceCleanupFailure> failure = entry->cleanup())
       result.failures.push_back(*failure);

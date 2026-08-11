@@ -141,6 +141,8 @@ auto detail::taskLifecycleDiagnostic(const TaskLifecycleError &error, std::sourc
   diagnostic.details.spans.front().selection = SpanSelection::Declaration;
 
   switch (error.failure()) {
+    case TaskLifecycleFailure::Empty:
+      diagnostic.addNote("the coroutine task was empty and could not be executed");
     case TaskLifecycleFailure::Stranded:
       diagnostic.addNote("the coroutine suspended without scheduling further work");
       diagnostic.addNote(

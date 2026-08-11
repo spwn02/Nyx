@@ -18,7 +18,7 @@ concept BoolTestable = requires(Condition &&condition) {
 [[nodiscard]] auto activeEnvironment() -> TestEnvironment & {
   const Option<Ref<TestEnvironment>> environment = currentEnvironment();
   if (not environment)
-    throw std::logic_error{"Nyx::Test assertions require an active test environment"};
+    fatal("Nyx::Test assertions require an active test environment");
 
   return environment->get();
 }
@@ -51,33 +51,41 @@ auto recordFailure(Diagnostic diagnostic, std::source_location location) -> bool
 
 template <bool AbortOnFailure, BoolTestable Condition>
 auto evaluate(Condition &&condition, std::source_location location) -> bool {
-  TestEnvironment &environment = activeEnvironment();
-  if (static_cast<bool>(std::forward<Condition>(condition))) {
-    environment.recordPass();
+  if constexpr (build::tests) {
+    TestEnvironment &environment = activeEnvironment();
+    if (static_cast<bool>(std::forward<Condition>(condition))) {
+      environment.recordPass();
+      return true;
+    }
+
+    Diagnostic diagnostic = makeDiagnostic(DiagnosticCode::AssertionFailed, location);
+    if (not diagnostic.details.spans.empty())
+      diagnostic.details.spans.front().selection = SpanSelection::EnclosingExpression;
+    return recordFailure<AbortOnFailure>(std::move(diagnostic), location);
+  } else {
     return true;
   }
-
-  Diagnostic diagnostic = makeDiagnostic(DiagnosticCode::AssertionFailed, location);
-  if (not diagnostic.details.spans.empty())
-    diagnostic.details.spans.front().selection = SpanSelection::EnclosingExpression;
-  return recordFailure<AbortOnFailure>(std::move(diagnostic), location);
 }
 
 template <bool AbortOnFailure>
 auto evaluate(Expression expression, std::source_location location) -> bool {
-  TestEnvironment &environment = activeEnvironment();
-  if (expression.passed) {
-    environment.recordPass();
+  if constexpr (build::tests) {
+    TestEnvironment &environment = activeEnvironment();
+    if (expression.passed) {
+      environment.recordPass();
+      return true;
+    }
+
+    if (expression.diagnostic)
+      return recordFailure<AbortOnFailure>(std::move(*expression.diagnostic), location);
+
+    Diagnostic diagnostic = makeDiagnostic(DiagnosticCode::AssertionFailed);
+    if (not diagnostic.details.spans.empty())
+      diagnostic.details.spans.front().selection = SpanSelection::EnclosingExpression;
+    return recordFailure<AbortOnFailure>(std::move(diagnostic), location);
+  } else {
     return true;
   }
-
-  if (expression.diagnostic)
-    return recordFailure<AbortOnFailure>(std::move(*expression.diagnostic), location);
-
-  Diagnostic diagnostic = makeDiagnostic(DiagnosticCode::AssertionFailed);
-  if (not diagnostic.details.spans.empty())
-    diagnostic.details.spans.front().selection = SpanSelection::EnclosingExpression;
-  return recordFailure<AbortOnFailure>(std::move(diagnostic), location);
 }
 
 } // namespace detail
