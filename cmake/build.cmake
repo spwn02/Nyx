@@ -143,9 +143,9 @@ function(nyx_verify_platform_macro_boundary)
       continue()
     endif()
 
-    # Phase 12A removes platform-selection conditionals from Nyx sources. The
+    # Removes platform-selection conditionals from Nyx sources. The
     # remaining RHI defines configure third-party headers and move behind the
-    # Internal bridge boundary in Phase 12D; imports cannot propagate them.
+    # Internal bridge boundary is TODO; imports cannot propagate them.
     file(STRINGS "${source}" directives
       REGEX "^[ \t]*#[ \t]*(if|ifdef|ifndef|elif|else|endif)([ \t(]|$)")
 

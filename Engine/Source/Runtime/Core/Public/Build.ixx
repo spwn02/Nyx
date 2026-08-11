@@ -1,15 +1,7 @@
 export module Nyx.Core:Build;
 
-export namespace Nyx::build {
-
-inline constexpr bool development = true;
-inline constexpr bool optimized = false;
-inline constexpr bool assertions = true;
-inline constexpr bool expensiveChecks = true;
-inline constexpr bool gpuValidation = true;
-inline constexpr bool profiling = true;
-
-inline constexpr int exitSuccess = 0;
-inline constexpr int exitFailure = 1;
-
-} // namespace Nyx::build
+/// Re-exports the generated build contract through Nyx.Core.
+///
+/// Core is the common dependency of the runtime modules, so this bridge keeps existing `import Nyx.Core` call
+/// sites on the same CMake-generated values as direct `import Nyx.Build` users.
+export import Nyx.Build;
