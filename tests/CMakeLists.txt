@@ -14,6 +14,7 @@ target_link_libraries(unit_tests
   PRIVATE
     Nyx
     Nyx::Engine
+    Nyx::Test
 )
 
 add_dependencies(unit_tests nyx_std_module)

@@ -16,8 +16,15 @@ endif()
 
 message(STATUS "Bloomberg P2296 reflection support enabled")
 
+# The experimental std module currently requires exception handling to remain
+# enabled for constexpr formatter diagnostics and module-file compatibility.
+# Nyx still treats exceptions as an exceptional boundary and audits accidental
+# application-level throws separately.
 target_compile_options(
   NyxCompilerOptions
   INTERFACE
     $<$<COMPILE_LANGUAGE:CXX>:-freflection-latest>
+    $<$<COMPILE_LANGUAGE:CXX>:-fexceptions>
 )
+
+message(STATUS "Nyx exception policy: minimized; compiler exception support retained for STL contracts")

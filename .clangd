@@ -1,5 +1,5 @@
 CompileFlags:
-  CompilationDatabase: build
+  CompilationDatabase: build/debug
   Add:
     - -std=c++26
     - -freflection-latest

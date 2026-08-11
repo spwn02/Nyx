@@ -7,6 +7,7 @@ endfunction()
 function(nyx_initialize_build_configuration)
   set(NYX_BUILD_PROFILE "Debug" CACHE STRING
     "Nyx build profile: Debug, Development, DevelopmentTests, or Release")
+
   set_property(CACHE NYX_BUILD_PROFILE PROPERTY STRINGS
     Debug Development DevelopmentTests Release)
 
@@ -112,15 +113,18 @@ function(nyx_verify_platform_macro_boundary)
     message(FATAL_ERROR
       "nyx_verify_platform_macro_boundary(): unknown arguments: ${arg_UNPARSED_ARGUMENTS}")
   endif()
+
   if(arg_KEYWORDS_MISSING_VALUES)
     message(FATAL_ERROR
       "nyx_verify_platform_macro_boundary(): missing values for: ${arg_KEYWORDS_MISSING_VALUES}")
   endif()
+
   if(NOT arg_ROOT)
     set(arg_ROOT "${CMAKE_SOURCE_DIR}")
   endif()
 
   cmake_path(ABSOLUTE_PATH arg_ROOT NORMALIZE OUTPUT_VARIABLE root)
+
   file(GLOB_RECURSE sources CONFIGURE_DEPENDS
     "${root}/Engine/Source/*.ixx"
     "${root}/Engine/Source/*.cxx"
@@ -131,8 +135,10 @@ function(nyx_verify_platform_macro_boundary)
   )
 
   set(violations)
+
   foreach(source IN LISTS sources)
     string(REPLACE "\\" "/" normalized_source "${source}")
+
     if(normalized_source MATCHES "/Runtime/Build/")
       continue()
     endif()
@@ -142,6 +148,7 @@ function(nyx_verify_platform_macro_boundary)
     # Internal bridge boundary in Phase 12D; imports cannot propagate them.
     file(STRINGS "${source}" directives
       REGEX "^[ \t]*#[ \t]*(if|ifdef|ifndef|elif|else|endif)([ \t(]|$)")
+
     if(directives)
       list(APPEND violations "${source}")
     endif()
@@ -149,7 +156,74 @@ function(nyx_verify_platform_macro_boundary)
 
   if(violations)
     list(JOIN violations "\n  " violations_text)
+
     message(FATAL_ERROR
       "Conditional preprocessor directives are restricted to Nyx.Build.\n  ${violations_text}")
+  endif()
+endfunction()
+
+function(nyx_verify_exception_boundary)
+  set(options)
+  set(one_value_args ROOT)
+  set(multi_value_args)
+
+  cmake_parse_arguments(PARSE_ARGV 0 arg
+    "${options}" "${one_value_args}" "${multi_value_args}")
+
+  if(arg_UNPARSED_ARGUMENTS)
+    message(FATAL_ERROR
+      "nyx_verify_exception_boundary(): unknown arguments: ${arg_UNPARSED_ARGUMENTS}")
+  endif()
+
+  if(arg_KEYWORDS_MISSING_VALUES)
+    message(FATAL_ERROR
+      "nyx_verify_exception_boundary(): missing values for: ${arg_KEYWORDS_MISSING_VALUES}")
+  endif()
+
+  if(NOT arg_ROOT)
+    set(arg_ROOT "${CMAKE_SOURCE_DIR}")
+  endif()
+
+  cmake_path(ABSOLUTE_PATH arg_ROOT NORMALIZE OUTPUT_VARIABLE root)
+
+  file(GLOB_RECURSE sources CONFIGURE_DEPENDS
+    "${root}/Engine/Source/*.ixx"
+    "${root}/Engine/Source/*.cxx"
+    "${root}/Engine/Source/*.cpp"
+    "${root}/Engine/Source/*.cc"
+  )
+
+  set(violations)
+
+  foreach(source IN LISTS sources)
+    string(REPLACE "\\" "/" normalized_source "${source}")
+
+    if(normalized_source MATCHES "/Runtime/Test/")
+      continue()
+    endif()
+
+    # std::formatter::parse is an intentional exception boundary: the standard
+    # format checker uses format_error during constant evaluation. This is a
+    # toolchain contract, not application-level exception-based control flow.
+    if(normalized_source MATCHES "/Runtime/Core/Public/Meta/(Bitflags|Debug)\\.ixx$")
+      continue()
+    endif()
+
+    # The regular expression intentionally checks statement-leading throws.
+    # Catching STL failures remains permitted; accidental application-level
+    # throws and explicit exception propagation remain forbidden.
+    file(STRINGS "${source}" forbidden
+      REGEX "^[ \\t]*throw([ \\t({;:]|$)|^[^/]*std::(rethrow_exception|make_exception_ptr)")
+
+    if(forbidden)
+      list(APPEND violations "${source}")
+    endif()
+  endforeach()
+
+  if(violations)
+    list(JOIN violations "\n  " violations_text)
+
+    message(FATAL_ERROR
+      "Unexpected application-level exception syntax in production sources.\n  ${violations_text}")
   endif()
 endfunction()

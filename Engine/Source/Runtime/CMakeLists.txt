@@ -8,7 +8,10 @@ add_subdirectory(Project)
 add_subdirectory(RHI)
 add_subdirectory(Renderer)
 add_subdirectory(Kernel)
-add_subdirectory(Test)
+
+if (NYX_BUILD_TESTS)
+  add_subdirectory(Test)
+endif()
 
 # App
 add_subdirectory(Launch)

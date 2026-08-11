@@ -40,6 +40,7 @@ if (NYX_BUILD_TESTS)
 endif()
 
 nyx_verify_platform_macro_boundary(ROOT "${CMAKE_CURRENT_SOURCE_DIR}")
+nyx_verify_exception_boundary(ROOT "${CMAKE_CURRENT_SOURCE_DIR}")
 
 # CPack
 set(CPACK_PACKAGE_NAME "NyxEngine")
