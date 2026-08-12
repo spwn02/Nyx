@@ -11,10 +11,8 @@ struct Bitflags {};
 export inline constexpr Bitflags bitflags{};
 
 template <typename E>
-concept UnevaluatedBitflagsConcept = requires() {
-  std::is_enum_v<E> and (std::meta::is_unsigned_type(^^std::underlying_type_t<E>)) and
-      Nyx::meta::has_annotation<Bitflags, ^^E>;
-};
+concept UnevaluatedBitflagsConcept = std::is_enum_v<E> and
+    (std::meta::is_unsigned_type(^^std::underlying_type_t<E>)) and Nyx::meta::has_annotation<Bitflags, ^^E>();
 
 template <UnevaluatedBitflagsConcept E>
 consteval auto is_flags_enum_v() -> bool { // NOLINT(readability-identifier-naming)

@@ -8,33 +8,39 @@ import :Concepts;
 // NOLINTBEGIN(readability-identifier-naming, bugprone-reserved-identifier)
 namespace Nyx::debug {
 
-struct DebugDerive final {};
-export inline constexpr DebugDerive derive{};
+/// Marks an aggregate or enumeration for reflection-based debug formatting.
+export struct DebugDerive final {};
 
-struct DebugHide final {};
-export inline constexpr DebugHide hide{};
+/// Hides one reflected member or enumerator from debug formatting.
+export struct DebugHide final {};
 
-struct DebugPrefer final {};
-export inline constexpr DebugPrefer prefer{};
+/// Selects the fallback enumerator when an enum value has no visible exact match.
+export struct DebugPrefer final {};
 
-template <usize Size>
-struct DebugRename {
+/// Replaces the reflected identifier used by debug formatting and enumName().
+export template <usize Size>
+struct DebugRename final {
   meta::StaticString<Size> name_{};
 
   explicit constexpr DebugRename(meta::StaticString<Size> name)
       : name_(std::move(name)) {
   }
 
-  [[nodiscard]]
-  constexpr auto apply() const -> StringView {
+  [[nodiscard]] constexpr auto apply() const noexcept -> StringView {
     return name_.apply();
   }
 };
+
+export inline constexpr DebugDerive derive{};
+export inline constexpr DebugHide hide{};
+export inline constexpr DebugPrefer prefer{};
 
 export template <usize Size>
 consteval auto rename(const char (&name)[Size]) -> DebugRename<Size> { // NOLINT
   return DebugRename<Size>{meta::StaticString<Size>{name}};
 }
+
+namespace detail {
 
 template <class>
 inline constexpr bool is_debug_rename_v{};
@@ -47,17 +53,6 @@ concept DebuggableAggr = Nyx::meta::has_annotation<DebugDerive, ^^T>() and not E
 template <class T>
 concept DebuggableEnum = Nyx::meta::has_annotation<DebugDerive, ^^T>() and Enum<T>;
 
-export template <class T>
-concept Debuggable = DebuggableAggr<T> or DebuggableEnum<T>;
-
-consteval auto debug_annotations(std::meta::info info) -> Vec<std::meta::info> {
-  Vec<std::meta::info> notes = std::meta::annotations_of(info);
-  std::erase_if(notes, [](std::meta::info ann) -> bool {
-    return std::meta::parent_of(std::meta::type_of(ann)) != ^^Nyx::debug;
-  });
-  return notes;
-}
-
 template <std::meta::info Info>
 consteval auto debug_hidden() -> bool {
   return Nyx::meta::has_annotation<DebugHide, Info>();
@@ -65,106 +60,116 @@ consteval auto debug_hidden() -> bool {
 
 template <std::meta::info Info>
 consteval auto debug_name() -> StringView {
-  template for (constexpr std::meta::info ann : meta::annotations<Info>) {
-    using Ann = meta::TypeObject<ann>;
+  template for (constexpr std::meta::info annotation : meta::annotations<Info>) {
+    using Annotation = meta::TypeObject<annotation>;
 
-    if constexpr (is_debug_rename_v<Ann>)
-      return std::meta::extract<Ann>(ann).apply();
+    if constexpr (is_debug_rename_v<Annotation>)
+      return std::meta::extract<Annotation>(annotation).apply();
   }
 
   return meta::identifier<Info>;
 }
 
 struct DebugMetadata {
-  bool skipped{};
   StringView name;
+  bool skipped{};
+  bool preferred{};
 };
 
-template <std::meta::info info>
+template <std::meta::info Info>
 constexpr auto debug_metadata() -> DebugMetadata {
-  DebugMetadata metadata{};
-
-  if constexpr (debug_hidden<info>()) {
-    metadata.skipped = true;
-  }
-
-  metadata.name = debug_name<info>();
-
-  return metadata;
+  return DebugMetadata{
+      .name = debug_name<Info>(),
+      .skipped = debug_hidden<Info>(),
+      .preferred = meta::has_annotation<DebugPrefer, Info>(),
+  };
 }
 
-template <class Obj>
-constexpr auto map_fields(const Obj &obj, bool pretty = false, usize level = 0) -> String {
-  Vec<String> buf{};
-  const String indent_outer(pretty ? (level) * 2 : 0, ' ');
-  const String indent_inner(pretty ? (level + 1) * 2 : 0, ' ');
-
-  template for (constexpr std::meta::info mem : meta::nsMembers<^^Obj, meta::AccessContext::unchecked()>) {
-    constexpr DebugMetadata metadata = debug_metadata<mem>();
-    if constexpr (metadata.skipped) {
-      continue;
-    }
-
-    using Type = meta::TypeObject<mem>;
-    const meta::Type<mem> &value = obj.[:mem:];
-
-    String result{};
-    if constexpr (DebuggableAggr<Type>) {
-      result = std::format("{}: {}", metadata.name, map_fields(value, pretty, level + 1));
-    } else if constexpr (DebuggableEnum<Type>) {
-      result = std::format("{}: {}", metadata.name, map_enum(value));
-    } else {
-      static_assert(std::formattable<Type, char>,
-          "Debug formatter error: reflected member is not std::formattable. Provide std::formatter for the "
-          "member type or annotate that type with [[=Debug]].");
-
-      if constexpr (StringLike<Type>) {
-        result = std::format("{}: \"{}\"", metadata.name, value);
-      } else {
-        result = std::format("{}: {}", metadata.name, value);
-      }
-    }
-    buf.push_back(std::move(result.insert(0, indent_inner)));
-  }
-
-  constexpr StringView name = meta::identifier<^^Obj>;
-  if (buf.empty())
-    return String{name};
-
-  String fields = buf | std::views::join_with(StringView{pretty ? ",\n" : ", "}) | std::ranges::to<String>();
-  String res{};
-
-  if (pretty)
-    res = std::format("{} {{\n{},\n{}}}", name, fields, indent_outer);
-  else
-    res = std::format("{} {{ {} }}", name, fields);
-
-  return res;
-}
-
-template <class T>
-constexpr auto map_enum(const T &value) -> String {
-  Option<StringView> preferred{};
+template <Enum T>
+constexpr auto enum_name(T value) -> StringView {
+  StringView preferred{"<unnamed>"};
 
   template for (constexpr std::meta::info enumerator : meta::enumerators<^^T>) {
-    constexpr T item = [:enumerator:];
     constexpr DebugMetadata metadata = debug_metadata<enumerator>();
 
     if constexpr (metadata.skipped)
       continue;
 
-    if (item == value) {
-      return String{metadata.name};
-    }
+    if ([:enumerator:] == std::remove_cvref_t<T>(value))
+      return metadata.name;
 
-    if constexpr (Nyx::meta::has_annotation<DebugPrefer, enumerator>())
+    if constexpr (metadata.preferred)
       preferred = metadata.name;
   }
 
-  if (preferred.has_value())
-    return String{*preferred};
+  return preferred;
+}
 
-  return "<unnamed>";
+template <class Obj>
+constexpr auto format_fields(const Obj &obj, bool pretty = false, usize level = 0) -> String {
+  Hive<String> fields{};
+  const String indent_outer(pretty ? level * 2 : 0, ' ');
+  const String indent_inner(pretty ? (level + 1) * 2 : 0, ' ');
+
+  template for (constexpr std::meta::info mem : meta::nsMembers<^^Obj, meta::AccessContext::unchecked()>) {
+    constexpr DebugMetadata metadata = debug_metadata<mem>();
+    if constexpr (metadata.skipped)
+      continue;
+
+    using Type = meta::TypeObject<mem>;
+    const meta::Type<mem> &value = obj.[:mem:];
+
+    String field{};
+    if constexpr (DebuggableAggr<Type>) {
+      field = std::format("{}: {}", metadata.name, format_fields(value, pretty, level + 1));
+    } else if constexpr (DebuggableEnum<Type>) {
+      field = std::format("{}: {}", metadata.name, enum_name(value));
+    } else {
+      static_assert(std::formattable<Type, char>,
+          "Debug formatter error: reflected member is not std::formattable. Provide std::formatter for the "
+          "member type or annotate that type with [[= debug::derive]].");
+
+      if constexpr (StringLike<Type>) {
+        field = std::format("{}: \"{}\"", metadata.name, value);
+      } else {
+        field = std::format("{}: {}", metadata.name, value);
+      }
+    }
+
+    fields.insert(std::move(field.insert(0, indent_inner)));
+  }
+
+  constexpr StringView name = meta::identifier<^^Obj>;
+  if (fields.empty())
+    return String{name};
+
+  const String joined =
+      fields | std::views::join_with(StringView{pretty ? ",\n" : ", "}) | std::ranges::to<String>();
+  if (pretty)
+    return std::format("{} {{\n{},\n{}}}", name, joined, indent_outer);
+
+  return std::format("{} {{ {} }}", name, joined);
+}
+
+} // namespace detail
+
+export template <class T>
+concept DebuggableAggr = detail::DebuggableAggr<T>;
+
+export template <class T>
+concept DebuggableEnum = detail::DebuggableEnum<T>;
+
+export template <class T>
+concept Debuggable = DebuggableAggr<T> or DebuggableEnum<T>;
+
+/// Returns the reflected spelling of an enum value.
+///
+/// Exact visible enumerators win. If no exact enumerator matches, the single visible `[[= debug::prefer]]`
+/// enumerator is returned. Otherwise the stable `<unnamed>` spelling is returned. Aliases naturally resolve
+/// to the first reflected enumerator.
+export template <Enum T>
+constexpr auto enumName(T value) -> StringView {
+  return detail::enum_name(value);
 }
 
 } // namespace Nyx::debug
@@ -192,14 +197,14 @@ struct std::formatter<T> : std::formatter<Nyx::String> {
   }
 
   constexpr auto format(const T &obj, format_context &ctx) const -> std::format_context::iterator {
-    return std::formatter<Nyx::String>::format(Nyx::debug::map_fields(obj, pretty), ctx);
+    return std::formatter<Nyx::String>::format(Nyx::debug::detail::format_fields(obj, pretty), ctx);
   }
 };
 
 export template <Nyx::debug::DebuggableEnum T>
-struct std::formatter<T> : std::formatter<Nyx::String> {
+struct std::formatter<T> : std::formatter<Nyx::StringView> {
   constexpr auto format(const T &obj, format_context &ctx) const -> std::format_context::iterator {
-    return std::formatter<Nyx::String>::format(Nyx::debug::map_enum(obj), ctx);
+    return std::formatter<Nyx::StringView>::format(Nyx::debug::enumName(obj), ctx);
   }
 };
 // NOLINTEND(readability-identifier-naming, bugprone-reserved-identifier)

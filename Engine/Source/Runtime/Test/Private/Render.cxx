@@ -10,17 +10,6 @@ namespace Nyx::Test {
 
 namespace {
 
-[[nodiscard]] constexpr auto levelName(DiagnosticLevel level) noexcept -> StringView {
-  switch (level) {
-    case DiagnosticLevel::Error: return "error";
-    case DiagnosticLevel::Warning: return "warning";
-    case DiagnosticLevel::Note: return "note";
-    case DiagnosticLevel::Help: return "help";
-    case DiagnosticLevel::Marker: return "marker";
-    default: return "diagnostic";
-  }
-}
-
 [[nodiscard]] constexpr auto levelColor(DiagnosticLevel level) noexcept -> StringView {
   switch (level) {
     case DiagnosticLevel::Error: return "\x1b[1;31m";
@@ -246,7 +235,7 @@ constexpr auto renderNote(const DiagnosticNote &note,
     std::ostream &output,
     bool useColor) -> void {
   output << paint(
-      std::format("{}{}:", gutter.detail(), levelName(note.level)), levelColor(note.level), useColor);
+      std::format("{}{}:", gutter.detail(), debug::enumName(note.level)), levelColor(note.level), useColor);
   if (not note.message.empty() or not note.fragments.empty())
     output << ' ';
   output << note.message;
@@ -1012,7 +1001,7 @@ auto AnsiRenderer::render(const Diagnostic &diagnostic,
 
   if (has(sections, DiagnosticSection::Header))
     output << std::format("{}: {}\n",
-        paint(std::format("{}[{}]", levelName(diagnostic.level), diagnostic.code()),
+        paint(std::format("{}[{}]", debug::enumName(diagnostic.level), diagnostic.code()),
             levelColor(diagnostic.level),
             useColor),
         diagnostic.description());

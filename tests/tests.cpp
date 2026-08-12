@@ -10,7 +10,7 @@ inline constexpr bool renderJson{false};
 auto main() -> int { // NOLINT
   const Vec<TestExecution> executions = runAll(
       TestSelection{
-          // .group = "math",
+          // .group = "core",
       },
       RunOptions{
           .jobs = 0,

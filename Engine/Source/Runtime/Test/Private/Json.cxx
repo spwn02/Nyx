@@ -125,53 +125,6 @@ private:
   Vec<JsonFrame> frames_;
 };
 
-[[nodiscard]] constexpr auto diagnosticLevelName(DiagnosticLevel level) noexcept -> StringView {
-  switch (level) {
-    case DiagnosticLevel::Error: return "error";
-    case DiagnosticLevel::Warning: return "warning";
-    case DiagnosticLevel::Note: return "note";
-    case DiagnosticLevel::Help: return "help";
-    case DiagnosticLevel::Marker: return "marker";
-    default: return "unknown";
-  }
-
-  std::unreachable();
-}
-
-[[nodiscard]] constexpr auto spanKindName(SpanKind kind) noexcept -> StringView {
-  switch (kind) {
-    case SpanKind::Primary: return "primary";
-    case SpanKind::Secondary: return "secondary";
-    default: return "unknown";
-  }
-
-  std::unreachable();
-}
-
-[[nodiscard]] constexpr auto spanSelectionName(SpanSelection selection) noexcept -> StringView {
-  switch (selection) {
-    case SpanSelection::Point: return "point";
-    case SpanSelection::Invocation: return "invocation";
-    case SpanSelection::EnclosingExpression: return "enclosing_expression";
-    case SpanSelection::EnclosingStatement: return "enclosing_statement";
-    case SpanSelection::Declaration: return "declaration";
-    default: return "unknown";
-  }
-
-  std::unreachable();
-}
-
-[[nodiscard]] constexpr auto traceModeName(TraceMode mode) noexcept -> StringView {
-  switch (mode) {
-    case TraceMode::Annotations: return "annotations";
-    case TraceMode::ForcedFailures: return "forced_failures";
-    case TraceMode::ForcedAll: return "forced_all";
-    default: return "unknown";
-  }
-
-  std::unreachable();
-}
-
 [[nodiscard]] constexpr auto executionStatus(const TestExecution &execution) noexcept -> StringView {
   return execution.passed() ? "passed" : "failed";
 }
@@ -209,8 +162,8 @@ auto writeRange(JsonWriter &writer, const SourceRange &range) -> void {
 
 auto writeSpan(JsonWriter &writer, const SourceSpan &span, const SourceManager &sources) -> void {
   writer.beginObject();
-  writer.field("kind", [&writer, &span] -> void { writer.text(spanKindName(span.kind)); });
-  writer.field("selection", [&writer, &span] -> void { writer.text(spanSelectionName(span.selection)); });
+  writer.field("kind", [&writer, &span] -> void { writer.text(debug::enumName(span.kind)); });
+  writer.field("selection", [&writer, &span] -> void { writer.text(debug::enumName(span.selection)); });
   writer.field("label", [&writer, &span] -> void { writer.text(span.label); });
   writer.field("location", [&writer, &span] -> void { writeLocation(writer, span.location); });
   writer.field("range", [&writer, &span, &sources] -> void {
@@ -250,7 +203,7 @@ auto writeFragment(JsonWriter &writer, const DiagnosticFragment &fragment) -> vo
 
 auto writeNote(JsonWriter &writer, const DiagnosticNote &note, const SourceManager &sources) -> void {
   writer.beginObject();
-  writer.field("level", [&writer, &note] -> void { writer.text(diagnosticLevelName(note.level)); });
+  writer.field("level", [&writer, &note] -> void { writer.text(debug::enumName(note.level)); });
   writer.field("message", [&writer, &note] -> void { writer.text(note.message); });
   writer.field("span", [&writer, &note, &sources] -> void { writeOptionalSpan(writer, note.span, sources); });
   writer.field("fragments", [&writer, &note] -> void {
@@ -300,8 +253,7 @@ auto writeExpansion(JsonWriter &writer, const DiagnosticExpansion &expansion) ->
 
 auto writeDiagnostic(JsonWriter &writer, const Diagnostic &diagnostic, const SourceManager &sources) -> void {
   writer.beginObject();
-  writer.field(
-      "level", [&writer, &diagnostic] -> void { writer.text(diagnosticLevelName(diagnostic.level)); });
+  writer.field("level", [&writer, &diagnostic] -> void { writer.text(debug::enumName(diagnostic.level)); });
   writer.field("code", [&writer, &diagnostic] -> void { writer.text(diagnostic.code()); });
   writer.field("description", [&writer, &diagnostic] -> void { writer.text(diagnostic.description()); });
   writer.field("spans", [&writer, &diagnostic, &sources] -> void {
@@ -532,7 +484,7 @@ auto writeExecution(JsonWriter &writer, const TestExecution &execution, const So
   writer.field("attempt",
       [&writer, &execution] -> void { writeAttemptIndex(writer, execution.attempt, execution.warmup); });
   writer.field(
-      "trace_mode", [&writer, &execution] -> void { writer.text(traceModeName(execution.traceMode)); });
+      "trace_mode", [&writer, &execution] -> void { writer.text(debug::enumName(execution.traceMode)); });
   writer.field(
       "descriptor", [&writer, &execution] -> void { writeDescriptor(writer, execution.descriptor); });
   writer.field(

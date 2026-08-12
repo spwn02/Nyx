@@ -24,7 +24,7 @@ constexpr auto enum_to_string(E value) -> String { // NOLINT
   return "<unnamed>";
 }
 
-enum Color : u8 { red, green, blue };
+enum class[[= debug::derive]] Color : u8 { red, green, blue };
 
 [[
   = test,

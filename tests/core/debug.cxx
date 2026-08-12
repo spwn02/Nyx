@@ -129,7 +129,7 @@ struct[[= Nyx::debug::derive]] AllHidden {
   [[= Nyx::debug::hide]] bool c{};
 };
 
-[[ = test, = group("core"), = tag("debug") ]] auto allHiddenStruct() -> void {
+[[ = test, = group("core"), = tag("debug") ]] auto allHiddenStructs() -> void {
   /// Same as Empty
   check(std::format("{}", AllHidden{}) == "AllHidden"_exp);
 }
@@ -140,11 +140,26 @@ enum class[[= Nyx::debug::derive]] Color : u8 {
   Blue = 3,
 };
 
+enum class[[= Nyx::debug::derive]] AliasedColor : u8 {
+  Red = 1,
+  Crimson = 1,
+};
+
 [[ = test, = group("core"), = tag("debug") ]] auto enumDisplay() -> void {
+  check(Nyx::debug::enumName(Color::Red) == "Red"_exp);
+  check(Nyx::debug::enumName(Color::Green) == "Green"_exp);
+  check(Nyx::debug::enumName(Color::Blue) == "Blue"_exp);
+  check(Nyx::debug::enumName(static_cast<Color>(69)) == "<unnamed>"_exp);
   check(std::format("{}", Color::Red) == "Red"_exp);
   check(std::format("{}", Color::Green) == "Green"_exp);
   check(std::format("{}", Color::Blue) == "Blue"_exp);
   check(std::format("{}", static_cast<Color>(69)) == "<unnamed>"_exp);
+}
+
+[[ = test, = group("core"), = tag("debug") ]] auto enumAliasesUseFirstVisibleName() -> void {
+  check(Nyx::debug::enumName(AliasedColor::Red) == "Red"_exp);
+  check(Nyx::debug::enumName(AliasedColor::Crimson) == "Red"_exp);
+  check(std::format("{}", AliasedColor::Crimson) == "Red"_exp);
 }
 
 [[ = test, = group("core"), = tag("debug") ]] auto renamedEnum() -> void {
@@ -157,6 +172,9 @@ enum class[[= Nyx::debug::derive]] Color : u8 {
   check(std::format("{}", Status::Failed) == "failed"_exp);
   check(std::format("{}", Status::Skipped) == "skipped"_exp);
   check(std::format("{}", Status::Success) == "success"_exp);
+  check(Nyx::debug::enumName(Status::Failed) == "failed"_exp);
+  check(Nyx::debug::enumName(Status::Skipped) == "skipped"_exp);
+  check(Nyx::debug::enumName(Status::Success) == "success"_exp);
 }
 
 [[ = test, = group("core"), = tag("debug") ]] auto hiddenEnum() -> void {
@@ -177,6 +195,7 @@ enum class[[= Nyx::debug::derive]] Color : u8 {
   };
 
   check(std::format("{}", HiddenEnum::Hidden) == "default"_exp);
+  check(Nyx::debug::enumName(HiddenEnum::Hidden) == "default"_exp);
 }
 
 } // namespace Tests

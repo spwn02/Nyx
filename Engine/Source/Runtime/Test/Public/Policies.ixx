@@ -10,9 +10,9 @@ export namespace Nyx::Test {
 /// ForcedFailures captures every case but renders its trace only with a failure. ForcedAll additionally
 /// renders traces for passing cases. The test-level [[= trace]] annotation is always honored.
 enum class TraceMode : u8 {
-  Annotations,
-  ForcedFailures,
-  ForcedAll,
+  Annotations[[= debug::rename("annotations")]],
+  ForcedFailures[[= debug::rename("forced_failures")]],
+  ForcedAll[[=debug::rename("forced_all")]],
 };
 
 struct TestPolicy final {

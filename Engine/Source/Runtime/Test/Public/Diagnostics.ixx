@@ -7,16 +7,16 @@ import :Annotations;
 export namespace Nyx::Test {
 
 enum class[[= debug::derive]] DiagnosticLevel : u8 {
-  Error,
-  Warning,
-  Note,
-  Help,
-  Marker,
+  Error[[= debug::rename("error")]],
+  Warning[[= debug::rename("warning")]],
+  Note[[= debug::rename("note")]],
+  Help[[= debug::rename("help")]],
+  Marker[[= debug::rename("marker")]],
 };
 
 enum class[[= debug::derive]] SpanKind : u8 {
-  Primary,
-  Secondary,
+  Primary[[= debug::rename("primary")]],
+  Secondary[[= debug::rename("secondary")]],
 };
 
 enum class[[ = debug::derive, = diagnostics::prefix("NYX") ]] DiagnosticCode : u8 {
@@ -43,7 +43,7 @@ enum class[[= debug::derive]] DetailMode : u8 {
 };
 
 /// Identifies the portion of a diagnostic that a renderer may display.
-enum class[[ = bitflags, = debug::derive ]] DiagnosticSection : u8 {
+enum class[[= bitflags]] DiagnosticSection : u8 {
   None = 0,
   Header = 1 << 0,
   Source = 1 << 1,
@@ -72,11 +72,11 @@ struct SourceRange final {
 
 /// Describes how a source span should be expanded by the source resolver.
 enum class[[= debug::derive]] SpanSelection : u8 {
-  Point,
-  Invocation,
-  EnclosingExpression,
-  EnclosingStatement,
-  Declaration,
+  Point[[= debug::rename("point")]],
+  Invocation[[= debug::rename("invocation")]],
+  EnclosingExpression[[= debug::rename("enclosing_expression")]],
+  EnclosingStatement[[= debug::rename("enclosing_statement")]],
+  Declaration[[= debug::rename("declaration")]],
 };
 
 struct SourceSpan final {
@@ -183,7 +183,7 @@ struct Diagnostic final {
       return String{diagnostics::annotationMessage<item>()};
   }
 
-  return std::format("{}", code);
+  return String{debug::enumName(code)};
 }
 
 [[nodiscard]] auto makeDiagnostic(DiagnosticCode code,
