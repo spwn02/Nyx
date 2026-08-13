@@ -131,6 +131,7 @@ auto awaitBeyondTimeout() -> Task<void> {
       .timeMode = TimeMode::Virtual,
       .repeat = repeatCount,
       .seed = 0x51A7,
+      .isolation = CrashIsolation::InProcess,
   });
 
   require(executions.size() == expectedExecutions);
@@ -155,6 +156,7 @@ auto awaitBeyondTimeout() -> Task<void> {
       .timeMode = TimeMode::Virtual,
       .repeat = repeatCount,
       .seed = 0xCA11CE,
+      .isolation = CrashIsolation::InProcess,
   });
 
   require(executions.size() == expectedExecutions);

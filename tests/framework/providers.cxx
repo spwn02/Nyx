@@ -95,7 +95,8 @@ auto writeFile(const Path &path) -> void {
   constexpr usize expectedPassed{10};
   constexpr usize expectedFailed{1};
   Vec<TestDescriptor> descriptors = describe<^^ProviderSubjects>();
-  Vec<TestExecution> executions = runAll<^^ProviderSubjects>();
+  Vec<TestExecution> executions =
+      runAll<^^ProviderSubjects>(RunOptions{.isolation = CrashIsolation::InProcess});
   const TestSummary summary = Reporter::summarize(executions);
 
   const Option<Ref<const TestExecution>> noFiles =

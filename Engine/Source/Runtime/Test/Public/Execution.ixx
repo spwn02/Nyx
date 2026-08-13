@@ -32,6 +32,25 @@ struct AttemptIndex final {
   usize runIteration{};
   usize sample{};
   usize retry{};
+
+  [[nodiscard]] constexpr auto operator==(const AttemptIndex &) const noexcept -> bool = default;
+};
+
+/// Identifies the native mechanism that terminated an isolated worker.
+enum class[[= debug::derive]] NativeFaultKind : u8 {
+  Signal[[= debug::rename("signal")]],
+  StructuredException[[= debug::rename("structured_exception")]],
+  Terminated[[= debug::rename("terminated")]],
+  IsolationUnavailable[[= debug::rename("isolation_unavailable")]],
+};
+
+/// Minimal, allocation-free fault data collected by a worker boundary.
+struct NativeFault final {
+  NativeFaultKind kind{NativeFaultKind::Terminated};
+  i32 code{};
+  u64 address{};
+  u64 instruction{};
+  bool symbolsAvailable{};
 };
 
 struct TestExecution final {
@@ -52,6 +71,8 @@ struct TestExecution final {
   AttemptIndex attempt{};
   bool warmup{};
   TraceMode traceMode{TraceMode::Annotations};
+  /// Is set when the parent reconstructs a terminal native fault from an isolated worker.
+  Option<NativeFault> fault;
 
   [[nodiscard]] auto passed() const noexcept -> bool;
 
@@ -89,6 +110,9 @@ concept TestInvocable = std::invocable<Function> or ContextInvocable<Function>;
 [[nodiscard]] auto panickedDiagnostic(String message, std::source_location location) -> Diagnostic;
 
 [[nodiscard]] auto taskLifecycleDiagnostic(const TaskLifecycleError &error, std::source_location location)
+    -> Diagnostic;
+
+[[nodiscard]] auto nativeFaultDiagnostic(const NativeFault &fault, std::source_location location)
     -> Diagnostic;
 
 auto applyPolicy(const TestPolicy &policy,

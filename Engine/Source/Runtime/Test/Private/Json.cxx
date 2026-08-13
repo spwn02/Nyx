@@ -145,6 +145,14 @@ auto writeLocation(JsonWriter &writer, const std::source_location &location) -> 
   writer.endObject();
 }
 
+auto writeLocation(JsonWriter &writer, const SourceLocationData &location) -> void {
+  writer.beginObject();
+  writer.field("file", [&writer, &location] -> void { writer.text(location.file); });
+  writer.field("line", [&writer, &location] -> void { writer.number(location.line); });
+  writer.field("column", [&writer, &location] -> void { writer.number(location.column); });
+  writer.endObject();
+}
+
 auto writePosition(JsonWriter &writer, const SourcePosition &position) -> void {
   writer.beginObject();
   writer.field("line", [&writer, &position] -> void { writer.number(position.line); });
@@ -165,7 +173,12 @@ auto writeSpan(JsonWriter &writer, const SourceSpan &span, const SourceManager &
   writer.field("kind", [&writer, &span] -> void { writer.text(debug::enumName(span.kind)); });
   writer.field("selection", [&writer, &span] -> void { writer.text(debug::enumName(span.selection)); });
   writer.field("label", [&writer, &span] -> void { writer.text(span.label); });
-  writer.field("location", [&writer, &span] -> void { writeLocation(writer, span.location); });
+  writer.field("location", [&writer, &span] -> void {
+    if (span.remoteLocation)
+      writeLocation(writer, *span.remoteLocation);
+    else
+      writeLocation(writer, span.location);
+  });
   writer.field("range", [&writer, &span, &sources] -> void {
     const Option<SourceResolution> resolution = sources.resolve(span);
     if (resolution)
@@ -359,7 +372,12 @@ auto writeState(JsonWriter &writer, const TestState &state, const SourceManager 
       writer.element([&writer, &trace] -> void {
         writer.beginObject();
         writer.field("message", [&writer, &trace] -> void { writer.text(trace.message); });
-        writer.field("location", [&writer, &trace] -> void { writeLocation(writer, trace.location); });
+        writer.field("location", [&writer, &trace] -> void {
+          if (trace.remoteLocation)
+            writeLocation(writer, *trace.remoteLocation);
+          else
+            writeLocation(writer, trace.location);
+        });
         writer.endObject();
       });
     });
@@ -437,6 +455,21 @@ auto writeMemory(JsonWriter &writer, const Option<memory::ProcessMemorySnapshot>
   writer.endObject();
 }
 
+auto writeFault(JsonWriter &writer, const Option<NativeFault> &fault) -> void {
+  if (not fault) {
+    writer.nullValue();
+    return;
+  }
+
+  writer.beginObject();
+  writer.field("kind", [&writer, &fault] -> void { writer.text(debug::enumName(fault->kind)); });
+  writer.field("code", [&writer, &fault] -> void { writer.number(fault->code); });
+  writer.field("address", [&writer, &fault] -> void { writer.number(fault->address); });
+  writer.field("instruction", [&writer, &fault] -> void { writer.number(fault->instruction); });
+  writer.field("symbols_available", [&writer, &fault] -> void { writer.boolean(fault->symbolsAvailable); });
+  writer.endObject();
+}
+
 auto writeAttemptIndex(JsonWriter &writer, const AttemptIndex &index, bool warmup) -> void {
   writer.beginObject();
   writer.field("run_iteration", [&writer, &index] -> void { writer.number(index.runIteration); });
@@ -494,6 +527,7 @@ auto writeExecution(JsonWriter &writer, const TestExecution &execution, const So
   writer.field(
       "memory_before", [&writer, &execution] -> void { writeMemory(writer, execution.memoryBefore); });
   writer.field("memory_after", [&writer, &execution] -> void { writeMemory(writer, execution.memoryAfter); });
+  writer.field("fault", [&writer, &execution] -> void { writeFault(writer, execution.fault); });
   writer.endObject();
 }
 

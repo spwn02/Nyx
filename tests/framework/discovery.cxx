@@ -288,7 +288,8 @@ namespace SelectionSubjects {
 [[ = test, = group("framework"), = tag("discovery") ]] auto dispatchesParameterisedTests() -> void {
   constexpr usize expectedCases{4};
   constexpr usize expectedAssertions{4};
-  const Vec<TestExecution> executions = runAll<^^PassingTests>();
+  const Vec<TestExecution> executions =
+      runAll<^^PassingTests>(RunOptions{.isolation = CrashIsolation::InProcess});
   const TestSummary summary = Reporter::summarize(executions);
 
   check(executions.size() == expectedCases);
@@ -302,7 +303,8 @@ namespace SelectionSubjects {
   constexpr usize expectedCases{2};
   constexpr usize expectedPassed{1};
   constexpr usize expectedFailed{1};
-  const Vec<TestExecution> executions = runAll<^^FailingTests>();
+  const Vec<TestExecution> executions =
+      runAll<^^FailingTests>(RunOptions{.isolation = CrashIsolation::InProcess});
   const TestSummary summary = Reporter::summarize(executions);
 
   require(executions.size() == expectedCases);
@@ -319,6 +321,7 @@ namespace SelectionSubjects {
   ParallelTests::reset();
   const Vec<TestExecution> executions = runAll<^^ParallelTests>(RunOptions{
       .jobs = workerCount,
+      .isolation = CrashIsolation::InProcess,
   });
   const TestSummary summary = Reporter::summarize(executions);
 
@@ -339,6 +342,7 @@ preservesFixtureScopesAndVirtualTimeAcrossParallelCases() -> void {
   const Vec<TestExecution> executions = runAll<^^ParallelFixtureTests>(RunOptions{
       .jobs = workerCount,
       .timeMode = TimeMode::Virtual,
+      .isolation = CrashIsolation::InProcess,
   });
 
   require(executions.size() == expectedCases);
@@ -367,7 +371,8 @@ flattensIndependentSuitesAndUsesAutomaticWorkerCount() -> void {
     detail::RunSession session{};
     detail::suiteEntry<^^CrossSuiteLeft, detail::DiscoveryConfiguration<>>.plan(session);
     detail::suiteEntry<^^CrossSuiteRight, detail::DiscoveryConfiguration<>>.plan(session);
-    executions = detail::executePlannedCases(session, RunOptions{.jobs = 0});
+    executions =
+        detail::executePlannedCases(session, RunOptions{.jobs = 0, .isolation = CrashIsolation::InProcess});
 
     require(executions.size() == expectedCases);
     require(std::ranges::all_of(executions, passed));
@@ -398,7 +403,8 @@ flattensIndependentSuitesAndUsesAutomaticWorkerCount() -> void {
   const Vec<TestDescriptor> all = list<^^SelectionSubjects>();
   const Vec<TestDescriptor> selected = list<^^SelectionSubjects>(fastMath);
   const Vec<TestDescriptor> withoutAdds = list<^^SelectionSubjects>(excluded);
-  const Vec<TestExecution> executions = runAll<^^SelectionSubjects>(fastMath);
+  const Vec<TestExecution> executions = runAll<^^SelectionSubjects>(fastMath,
+      RunOptions{.isolation = CrashIsolation::InProcess});
 
   require(all.size() == expectedDescriptors);
   require(selected.size() == 1_exp);

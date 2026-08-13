@@ -9,6 +9,7 @@ using namespace Nyx::Test;
 // NOLINTBEGIN(cppcoreguidelines-avoid-magic-numbers, readability-magic-numbers)
 namespace Tests::json {
 
+// NOLINTNEXTLINE(readability-function-size)
 [[ = test, = group("framework"), = tag("json", "reporting") ]] auto writesCompleteMachineReports() -> void {
   const auto location = std::source_location::current();
   TestExecution passing = run(
@@ -53,6 +54,12 @@ namespace Tests::json {
       .right = "3",
   });
   failing.state.diagnostics.front().addAttachment("input", "2 != 3");
+  failing.fault = NativeFault{
+      .kind = NativeFaultKind::Signal,
+      .code = 11,
+      .address = 0x10,
+      .instruction = 0x20,
+  };
 
   const Vec<TestExecution> executions{std::move(passing), std::move(failing)};
   const RunReport report = Reporter::makeReport(executions);
@@ -90,6 +97,9 @@ namespace Tests::json {
   check(output.contains(R"("highlighted": true)"));
   check(output.contains(R"("name": "input")"));
   check(output.contains(R"("content": "2 != 3")"));
+  check(output.contains(R"("fault": {)"));
+  check(output.contains(R"("kind": "signal")"));
+  check(output.contains(R"("symbols_available": false)"));
 
   const String compact = JsonReporter{}.render(executions);
   check(compact.find('\n') == String::npos);

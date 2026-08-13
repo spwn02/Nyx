@@ -10,6 +10,8 @@ export namespace Nyx::Test {
 struct TraceEvent final {
   String message;
   std::source_location location;
+  /// Set when the trace crossed an isolated worker boundary.
+  Option<SourceLocationData> remoteLocation;
 };
 
 struct TestState final {

@@ -160,6 +160,34 @@ auto detail::taskLifecycleDiagnostic(const TaskLifecycleError &error, std::sourc
   return diagnostic;
 }
 
+auto detail::nativeFaultDiagnostic(const NativeFault &fault, std::source_location location) -> Diagnostic {
+  const DiagnosticCode code = fault.kind == NativeFaultKind::IsolationUnavailable
+                                  ? DiagnosticCode::WorkerLaunchFailed
+                                  : DiagnosticCode::NativeFault;
+  Diagnostic diagnostic = makeDiagnostic(code, location);
+  diagnostic.details.spans.front().label = "worker boundary";
+  diagnostic.details.spans.front().selection = SpanSelection::Declaration;
+
+  if (fault.kind == NativeFaultKind::IsolationUnavailable) {
+    diagnostic.addNote("the requested process-per-case worker backend is unavailable");
+    return diagnostic;
+  }
+
+  diagnostic.addNote(
+      std::format("worker terminated with {} code {}", debug::enumName(fault.kind), fault.code));
+
+  if (fault.address != 0)
+    diagnostic.addNote(std::format("fault address: 0x{:x}", fault.address));
+
+  if (fault.instruction != 0)
+    diagnostic.addNote(std::format("instruction address: 0x{:x}", fault.instruction));
+
+  if (not fault.symbolsAvailable)
+    diagnostic.addNote("symbols unavailable; native stack frames were not resolved", DiagnosticLevel::Help);
+
+  return diagnostic;
+}
+
 auto detail::applyPolicy(const TestPolicy &policy,
     TestEnvironment &environment,
     std::chrono::steady_clock::duration elapsed,

@@ -49,6 +49,7 @@ namespace NoRetrySubjects {
   const Vec<TestExecution> executions = runAll<^^Subjects>(RunOptions{
       .timeMode = TimeMode::Virtual,
       .seed = 42,
+      .isolation = CrashIsolation::InProcess,
   });
   const RunReport report = Reporter::makeReport(executions);
   const TestSummary summary = Reporter::summarize(report);
@@ -124,6 +125,7 @@ namespace NoRetrySubjects {
   const Vec<TestExecution> executions = runAll<^^NoRetrySubjects>(RunOptions{
       .timeMode = TimeMode::Virtual,
       .seed = 43,
+      .isolation = CrashIsolation::InProcess,
   });
 
   require(executions.size() == 1_exp);

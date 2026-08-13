@@ -68,7 +68,8 @@ auto executionNamed(const Vec<TestExecution> &executions, StringView identifier)
   constexpr usize expectedTests{6};
   constexpr usize expectedPassed{4};
   constexpr usize expectedFailed{2};
-  const Vec<TestExecution> executions = runAll<^^PolicySubjects>();
+  const Vec<TestExecution> executions =
+      runAll<^^PolicySubjects>(RunOptions{.isolation = CrashIsolation::InProcess});
   const TestSummary summary = Reporter::summarize(executions);
   const Option<Ref<const TestExecution>> traced =
       executionNamed(executions, "Tests::policies::PolicySubjects::traced");

@@ -208,8 +208,10 @@ namespace runnerProbe {
 
 [[ = test, = group("framework"), = tag("virtual_time") ]] auto runOptionsPropagateVirtualTime() -> void {
   const Clock::time_point started = Clock::now();
-  const Vec<TestExecution> executions =
-      runAll<^^Tests::virtualTime::runnerProbe>(RunOptions{.timeMode = TimeMode::Virtual});
+  const Vec<TestExecution> executions = runAll<^^Tests::virtualTime::runnerProbe>(RunOptions{
+      .timeMode = TimeMode::Virtual,
+      .isolation = CrashIsolation::InProcess,
+  });
   const Clock::duration wallElapsed = Clock::now() - started;
 
   require(executions.size() == 1);

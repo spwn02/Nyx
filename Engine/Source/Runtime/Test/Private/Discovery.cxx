@@ -1,6 +1,8 @@
 module Nyx.Test;
 
 import :Discovery;
+import :FaultIsolation;
+import :Worker;
 
 import std;
 import Nyx.Core;
@@ -54,8 +56,17 @@ private:
   return catalog_;
 }
 
+[[nodiscard]] auto workerCatalog() -> SuiteCatalog & {
+  static SuiteCatalog catalog_{};
+  return catalog_;
+}
+
 [[nodiscard]] auto registeredSuites() -> Vec<SuiteEntry> {
   return catalog().snapshot();
+}
+
+[[nodiscard]] auto registeredWorkerSuites() -> Vec<SuiteEntry> {
+  return workerCatalog().snapshot();
 }
 
 [[nodiscard]] auto globMatches(StringView pattern, StringView value) -> bool {
@@ -136,6 +147,10 @@ auto appendRegisteredSuite(const SuiteEntry &suite) -> void {
   catalog().append(suite);
 }
 
+auto appendWorkerSuite(const SuiteEntry &suite) -> void {
+  workerCatalog().append(suite);
+}
+
 } // namespace detail
 
 auto TestSelection::matches(const TestDescriptor &descriptor) const -> bool {
@@ -179,10 +194,25 @@ auto runAll(RunOptions options) -> Vec<TestExecution> {
 
 auto runAll(TestSelection selection, RunOptions options) -> Vec<TestExecution> { // NOLINT
   if constexpr (build::tests) {
-    const Vec<SuiteEntry> suites = registeredSuites();
+    const Option<detail::WorkerRequest> worker = detail::consumeWorkerRequest();
+    if (worker)
+      static_cast<void>(detail::isolation::installWorkerFaultHandler(worker->faultPath));
+    Vec<SuiteEntry> suites = registeredSuites();
+    if (worker) {
+      suites.append_range(registeredWorkerSuites() | std::views::as_rvalue);
+      std::ranges::stable_sort(suites, suiteComesBefore);
+    }
     detail::RunSession session{};
 
     std::ranges::for_each(suites, [&session](const SuiteEntry &suite) -> void { suite.plan(session); });
+
+    if (worker) {
+      detail::executeWorkerCase(session, *worker, options);
+      // A worker has already persisted its result journal. Exit before the caller's normal main() reporter
+      // can render an empty parent-side run or write to the parent's terminal.
+      std::exit(build::exitSuccess); // NOLINT(concurrency-mt-unsafe)
+    }
+
     detail::filterPlannedCases(session, selection);
 
     Vec<TestExecution> executions = detail::executePlannedCases(session, options);

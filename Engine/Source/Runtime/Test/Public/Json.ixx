@@ -16,9 +16,9 @@ struct JsonReporterOptions final {
 
 /// Emits complete test-run state as JSON without ANSI colours or human-rendering policies.
 ///
-/// The root object uses schema_version == 1. The schema deliberately keeps diagnostics, source spans, notes,
-/// attachments, traces, execution seeds, and fixture-independent descriptors in the report so external tools
-/// do not need to scrape the human renderer.
+/// The root object uses the current schema version. The schema deliberately keeps diagnostics, source spans,
+/// notes, attachments, traces, execution seeds, and fixture-independent descriptors in the report so external
+/// tools do not need to scrape the human renderer.
 class JsonReporter final {
 public:
   explicit JsonReporter(JsonReporterOptions options = {});

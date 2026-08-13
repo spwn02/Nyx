@@ -126,6 +126,22 @@ struct SourceGutter final {
   return std::to_string(value).size();
 }
 
+[[nodiscard]] constexpr auto spanLine(const SourceSpan &span) noexcept -> usize {
+  return span.remoteLocation ? span.remoteLocation->line : static_cast<usize>(span.location.line());
+}
+
+[[nodiscard]] constexpr auto spanColumn(const SourceSpan &span) noexcept -> usize {
+  return span.remoteLocation ? span.remoteLocation->column : static_cast<usize>(span.location.column());
+}
+
+[[nodiscard]] auto spanFile(const SourceSpan &span) -> StringView {
+  if (span.remoteLocation)
+    return span.remoteLocation->file;
+
+  const char *file = span.location.file_name();
+  return file == nullptr ? StringView{} : file;
+}
+
 [[nodiscard]] constexpr auto marker(StringView text, bool useColor) -> String {
   return paint(text, levelColor(DiagnosticLevel::Marker), useColor);
 }
@@ -136,11 +152,10 @@ constexpr auto renderSpanTo(const SourceSpan &span,
     const SourceGutter &gutter,
     std::ostream &output,
     bool useColor) -> void {
-  const auto line = static_cast<usize>(span.location.line());
-  const usize column = std::max(static_cast<usize>(span.location.column()), usize{1});
+  const usize line = spanLine(span);
+  const usize column = std::max(spanColumn(span), 1UZ);
 
-  output << std::format(
-      "{}{}:{}:{}\n", marker(gutter.location(), useColor), span.location.file_name(), line, column);
+  output << std::format("{}{}:{}:{}\n", marker(gutter.location(), useColor), spanFile(span), line, column);
 
   if (not options.showSource or not has(options.effectiveSections(), DiagnosticSection::Source))
     return;
@@ -171,9 +186,9 @@ constexpr auto renderSpanTo(const SourceSpan &span,
       std::views::iota(firstHighlightLine, lastHighlightLine + 1), [&](usize number) -> void {
         const StringView text = document.line(number);
         const usize begin =
-            number == highlight.begin.line ? std::max<usize>(highlight.begin.column, 1) - 1 : usize{};
+            number == highlight.begin.line ? std::max(highlight.begin.column, 1UZ) - 1 : usize{};
         const usize end =
-            number == highlight.end.line ? std::max<usize>(highlight.end.column, begin + 2) - 1 : text.size();
+            number == highlight.end.line ? std::max(highlight.end.column, begin + 2) - 1 : text.size();
         const usize prefix = visualColumn(text, begin, options);
         const usize width = visualWidth(text, begin, end, options);
 
@@ -189,8 +204,7 @@ constexpr auto renderSpanTo(const SourceSpan &span,
     -> SourceGutter {
   SourceGutter result{};
   std::ranges::for_each(diagnostic.details.spans, [&](const SourceSpan &span) -> void {
-    result.lineNumberWidth =
-        std::max(result.lineNumberWidth, decimalWidth(static_cast<usize>(span.location.line())));
+    result.lineNumberWidth = std::max(result.lineNumberWidth, decimalWidth(spanLine(span)));
 
     const Option<SourceResolution> resolution = sources.resolve(span);
     if (resolution)
@@ -759,8 +773,8 @@ struct SourceOffsets final {
   if (document.lineOffsets.empty())
     return {};
 
-  const usize line = span.location.line() == 0 ? 1 : static_cast<usize>(span.location.line());
-  const usize column = std::max(static_cast<usize>(span.location.column()), usize{1});
+  const usize line = std::max(spanLine(span), 1UZ);
+  const usize column = std::max(spanColumn(span), 1UZ);
   const usize lineIndex = std::min(line - 1, document.lineOffsets.size() - 1);
   const usize anchor = std::min(document.lineOffsets[lineIndex] + column - 1, document.contents.size());
 
@@ -914,11 +928,12 @@ auto SourceManager::load(const Path &path) const -> Option<Ref<const SourceDocum
 }
 
 auto SourceManager::resolve(const SourceSpan &span) const -> Option<SourceResolution> {
-  const std::source_location &location = span.location;
-  if (location.line() == 0 or location.file_name() == nullptr or *location.file_name() == '\0')
+  const StringView file = spanFile(span);
+  const usize line = spanLine(span);
+  if (line == 0 or file.empty())
     return None;
 
-  const Option<Path> resolved = resolvePath(location.file_name());
+  const Option<Path> resolved = resolvePath(Path{file});
   if (not resolved)
     return None;
 
@@ -927,7 +942,7 @@ auto SourceManager::resolve(const SourceSpan &span) const -> Option<SourceResolu
     return None;
 
   const SourceDocument &source = document->get();
-  if (static_cast<usize>(location.line()) > source.lineCount())
+  if (line > source.lineCount())
     return None;
 
   const SourceOffsets offsets = sourceOffsets(source, span);
@@ -952,7 +967,7 @@ auto SourceManager::sourceLine(const SourceSpan &span) const -> Option<SourceLin
     return None;
 
   const SourceDocument &document = resolution->document.get();
-  const usize number = span.location.line() == 0 ? 1 : static_cast<usize>(span.location.line());
+  const usize number = std::max(spanLine(span), 1UZ);
   const StringView text = document.line(number);
   if (text.empty() and number > document.lineCount())
     return None;

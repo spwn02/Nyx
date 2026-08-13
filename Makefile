@@ -8,11 +8,11 @@ config:
 config-tests:
 	cmake --preset development-tests
 
-build: config
-	cmake --build --preset debug --parallel $(JOBS) --target NyxEngine
+build: config-tests
+	cmake --build --preset development-tests --parallel $(JOBS) --target unit_tests
 
-build-nproc: config
-	cmake --build --preset debug --parallel $$(nproc) --target NyxEngine
+build-nproc: config-tests
+	cmake --build --preset development-tests --parallel $$(nproc) --target unit_tests
 
 run: build
 	./build/debug/Engine/Source/Runtime/Launch/NyxEngine

@@ -332,8 +332,12 @@ auto Reporter::renderTrace(const TestExecution &execution, std::ostream &output)
   const bool useColor = colorEnabled();
   std::ranges::for_each(execution.state.traces, [&](const TraceEvent &event) -> void {
     output << paint("  = trace:", cyan, useColor) << ' ' << event.message;
-    if (event.location.line() != 0)
+    if (event.remoteLocation) {
+      output << std::format(
+          " ({}:{})", normalizePath(event.remoteLocation->file), event.remoteLocation->line);
+    } else {
       output << std::format(" ({}:{})", normalizePath(event.location.file_name()), event.location.line());
+    }
 
     output << '\n';
   });
@@ -365,7 +369,7 @@ auto Reporter::renderMeasurement(const TestCaseResult &testCase, std::ostream &o
       durationLabel(measurement.deviation));
 }
 
-// NOLINTNEXTLINE(readability-function-cognitive-complexity)
+// NOLINTNEXTLINE(readability-function-cognitive-complexity, readability-function-size)
 auto Reporter::report(Span<const TestExecution> executions, std::ostream &output) const -> TestSummary {
   if constexpr (not build::tests)
     return {};
@@ -386,13 +390,42 @@ auto Reporter::report(Span<const TestExecution> executions, std::ostream &output
           });
       if (representative != testCase.attempts.end())
         renderTrace(representative->execution, output);
+
+      std::ranges::for_each(testCase.attempts, [&](const TestAttempt &attempt) -> void {
+        if (not attempt.execution.failed() or recoveredBy(attempt, testCase.attempts))
+          return;
+
+        output << '\n';
+        if (shouldRenderTrace(attempt.execution))
+          renderTrace(attempt.execution, output);
+        renderProfile(attempt.execution, output);
+        renderFailure(attempt.execution, sources, output);
+        previousFailure = true;
+      });
       return;
     }
 
     std::ranges::for_each(testCase.attempts, [&](const TestAttempt &attempt) -> void {
       const TestExecution &execution = attempt.execution;
-      if (execution.warmup)
+      if (execution.warmup and execution.passed())
         return;
+
+      if (execution.warmup) {
+        if (previousFailure)
+          output << '\n';
+
+        output << std::format("test {} ({}) ... {} {}\n",
+            execution.descriptor.identifier,
+            attemptLabel(execution),
+            paint("FAILED", red, useColor),
+            durationLabel(execution.duration));
+        if (shouldRenderTrace(execution))
+          renderTrace(execution, output);
+        renderProfile(execution, output);
+        renderFailure(execution, sources, output);
+        previousFailure = true;
+        return;
+      }
 
       const bool passed = execution.passed();
       const bool showTrace = shouldRenderTrace(execution);

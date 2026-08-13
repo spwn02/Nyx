@@ -10,14 +10,14 @@ inline constexpr bool renderJson{false};
 auto main() -> int { // NOLINT
   const Vec<TestExecution> executions = runAll(
       TestSelection{
-          // .group = "core",
+          // .group = "math",
       },
       RunOptions{
           .jobs = 0,
           .timeMode = TimeMode::Real,
           .traceMode = TraceMode::Annotations,
           .order = ExecutionOrder::Shuffled,
-          .failFast = true,
+          .failFast = false,
       });
   Reporter reporter{
       ReporterOptions{

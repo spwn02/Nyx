@@ -93,6 +93,7 @@ namespace TraceSubjects {
   const RunOptions options{
       .repeat = 2,
       .seed = seed,
+      .isolation = CrashIsolation::InProcess,
   };
 
   RepeatSubjects::reset();
@@ -132,6 +133,7 @@ namespace TraceSubjects {
   const RunOptions options{
       .order = ExecutionOrder::Shuffled,
       .seed = seed,
+      .isolation = CrashIsolation::InProcess,
   };
   const Vec<TestExecution> firstRun = runAll<^^OrderSubjects>(options);
   const Vec<TestExecution> secondRun = runAll<^^OrderSubjects>(options);
@@ -152,6 +154,7 @@ namespace TraceSubjects {
   FailFastSubjects::reset();
   const Vec<TestExecution> executions = runAll<^^FailFastSubjects>(RunOptions{
       .failFast = true,
+      .isolation = CrashIsolation::InProcess,
   });
 
   require(executions.size() == 2_exp);
@@ -163,7 +166,8 @@ namespace TraceSubjects {
 
 [[ = test, = group("framework"), = tag("runner") ]] auto
 defaultTraceCapturesEveryCaseAndRendersFailuresByDefault() -> void {
-  const Vec<TestExecution> executions = runAll<^^TraceSubjects>();
+  const Vec<TestExecution> executions =
+      runAll<^^TraceSubjects>(RunOptions{.isolation = CrashIsolation::InProcess});
   Reporter reporter{
       ReporterOptions{
           .renderer =
@@ -191,6 +195,7 @@ defaultTraceCapturesEveryCaseAndRendersFailuresByDefault() -> void {
 [[ = test, = group("framework"), = tag("runner") ]] auto forceTraceCanRenderSuccessfulCases() -> void {
   const Vec<TestExecution> executions = runAll<^^TraceSubjects>(RunOptions{
       .traceMode = TraceMode::ForcedAll,
+      .isolation = CrashIsolation::InProcess,
   });
   Reporter reporter{
       ReporterOptions{

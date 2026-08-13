@@ -1,6 +1,8 @@
 module Nyx.Test;
 
 import :Runner;
+import :FaultIsolation;
+import :Worker;
 
 import std;
 import Nyx.Core;
@@ -120,6 +122,26 @@ private:
   return execution;
 }
 
+[[nodiscard]] auto workerFailure(TestDescriptor descriptor, NativeFault fault, std::source_location location)
+    -> TestExecution {
+  TestExecution execution{
+      .descriptor = std::move(descriptor),
+      .fault = fault,
+  };
+  execution.state.diagnostics.push_back(nativeFaultDiagnostic(fault, location));
+  execution.state.errors = 1;
+  return execution;
+}
+
+[[nodiscard]] auto workerFailure(TestDescriptor descriptor, Diagnostic diagnostic) -> TestExecution {
+  TestExecution execution{
+      .descriptor = std::move(descriptor),
+  };
+  execution.state.diagnostics.push_back(std::move(diagnostic));
+  execution.state.errors = 1;
+  return execution;
+}
+
 auto executeAttempt(PlannedCase &plannedCase,
     usize plannedCaseIndex,
     usize runIteration,
@@ -210,7 +232,8 @@ auto executeCase(PlannedCase &plannedCase,
     const ScheduledCase &scheduledCase,
     const RunOptions &options,
     u64 runSeed,
-    bool captureMemory) -> Vec<TestExecution> {
+    bool captureMemory,
+    WorkerJournal *journal = nullptr) -> Vec<TestExecution> {
   std::unique_lock<std::mutex> lock{};
   if (lane != nullptr)
     lock = std::unique_lock<std::mutex>{lane->mutex()};
@@ -218,6 +241,9 @@ auto executeCase(PlannedCase &plannedCase,
   Vec<TestExecution> executions{};
   const usize samples = std::max<usize>(plannedCase.descriptor.policy.repeat, 1);
   const auto appendAttempt = [&](AttemptIndex attempt, bool warmup) -> const TestExecution & {
+    if (journal != nullptr)
+      journal->attemptStarted(attempt, warmup);
+
     TestExecution execution = executeAttempt(plannedCase,
         plannedCaseIndex,
         scheduledCase.runIteration,
@@ -227,6 +253,8 @@ auto executeCase(PlannedCase &plannedCase,
         options,
         runSeed);
     executions.push_back(std::move(execution));
+    if (journal != nullptr)
+      journal->attemptCompleted(executions.back());
     return executions.back();
   };
 
@@ -278,23 +306,255 @@ auto executeCase(PlannedCase &plannedCase,
 
   if (requested == 0) {
     const usize available = std::thread::hardware_concurrency();
-    return std::min(std::max<usize>(available, 1), workCount);
+    return std::min(std::max(available, 1UZ), workCount);
   }
 
   return std::min(requested, workCount);
 }
 
+[[nodiscard]] auto workerVariables(const WorkerRequest &request) -> Vec<Pair<String, String>> {
+  return Vec<Pair<String, String>>{
+      {"NYX_TEST_WORKER", "1"},
+      {"NYX_TEST_WORKER_RESULT", request.resultPath.string()},
+      {"NYX_TEST_WORKER_FAULT", request.faultPath.string()},
+      {"NYX_TEST_WORKER_IDENTIFIER", request.identifier},
+      {"NYX_TEST_WORKER_CASE", std::to_string(request.plannedCase)},
+      {"NYX_TEST_WORKER_ITERATION", std::to_string(request.runIteration)},
+      {"NYX_TEST_WORKER_SEED", std::to_string(request.runSeed)},
+      {"NYX_TEST_WORKER_TIME", std::to_string(static_cast<u8>(request.timeMode))},
+      {"NYX_TEST_WORKER_TRACE", std::to_string(static_cast<u8>(request.traceMode))},
+      {"NYX_TEST_WORKER_MEMORY", request.captureMemory ? "1" : "0"},
+  };
+}
+
+[[nodiscard]] auto workerPaths() -> Option<Pair<Path, Path>> {
+  const Result<Path> root = fs::temporaryDirectory("nyx-worker");
+  if (not root)
+    return None;
+
+  return Pair<Path, Path>{*root / "result.bin", *root / "fault.bin"};
+}
+
+auto removeWorkerFiles(const Path &resultPath, const Path &faultPath) noexcept -> void {
+  std::error_code error{};
+  static_cast<void>(std::filesystem::remove(resultPath, error));
+  error.clear();
+  static_cast<void>(std::filesystem::remove(faultPath, error));
+  error.clear();
+  static_cast<void>(std::filesystem::remove(resultPath.parent_path(), error));
+}
+
+auto appendWorkerFailure(Vec<TestExecution> &executions,
+    const ScheduledCase &scheduledCase,
+    const RunOptions &options,
+    u64 runSeed,
+    const WorkerJournalResult &journal,
+    TestExecution execution) -> void {
+  if (journal.activeAttempt and not journal.activeWarmup) {
+    const auto completed = std::ranges::find_if(
+        executions, [&journal](const TestExecution &execution) constexpr noexcept -> bool {
+          return execution.attempt == *journal.activeAttempt;
+        });
+    if (completed != executions.end())
+      return;
+  }
+
+  execution.runSeed = runSeed;
+  execution.iteration = scheduledCase.runIteration;
+  execution.attempt = journal.activeAttempt.value_or(AttemptIndex{
+      .runIteration = scheduledCase.runIteration,
+  });
+  execution.warmup = journal.activeWarmup;
+  execution.seed = deriveSeed(runSeed, scheduledCase.plannedCase, execution.attempt, execution.warmup);
+  execution.traceMode = options.traceMode;
+
+  if (not execution.state.diagnostics.empty()) {
+    Diagnostic &diagnostic = execution.state.diagnostics.front();
+    const String status = execution.fault
+                              ? std::format("native fault ({})", debug::enumName(execution.fault->kind))
+                              : String{"protocol failure"};
+    diagnostic.addNote(std::format("worker status: {}", status));
+    diagnostic.addNote(std::format("test case: {}", execution.descriptor.identifier));
+    diagnostic.addNote(std::format("attempt: run {}, sample {}, retry {}",
+        execution.attempt.runIteration + 1,
+        execution.attempt.sample + 1,
+        execution.attempt.retry));
+    diagnostic.addNote(std::format("seed: {}", execution.seed));
+  }
+
+  executions.push_back(std::move(execution));
+}
+
+auto appendWorkerFault(Vec<TestExecution> &executions,
+    const PlannedCase &plannedCase,
+    const ScheduledCase &scheduledCase,
+    const RunOptions &options,
+    u64 runSeed,
+    const WorkerJournalResult &journal,
+    NativeFault fault) -> void {
+  appendWorkerFailure(executions,
+      scheduledCase,
+      options,
+      runSeed,
+      journal,
+      workerFailure(plannedCase.descriptor, fault, plannedCase.descriptor.location));
+}
+
+auto appendWorkerProtocolFailure(Vec<TestExecution> &executions,
+    const PlannedCase &plannedCase,
+    const ScheduledCase &scheduledCase,
+    const RunOptions &options,
+    u64 runSeed,
+    const WorkerJournalResult &journal,
+    StringView message) -> void {
+  appendWorkerFailure(executions,
+      scheduledCase,
+      options,
+      runSeed,
+      journal,
+      workerFailure(
+          plannedCase.descriptor, workerProtocolDiagnostic(message, plannedCase.descriptor.location)));
+}
+
+// NOLINTNEXTLINE(readability-function-size)
+[[nodiscard]] auto executeIsolatedCase(PlannedCase &plannedCase,
+    usize plannedCaseIndex,
+    const ScheduledCase &scheduledCase,
+    const RunOptions &options,
+    u64 runSeed) -> Vec<TestExecution> {
+  const Option<Pair<Path, Path>> paths = workerPaths();
+  if (not paths) {
+    Vec<TestExecution> executions{};
+    appendWorkerFault(executions,
+        plannedCase,
+        scheduledCase,
+        options,
+        runSeed,
+        WorkerJournalResult{},
+        NativeFault{.kind = NativeFaultKind::IsolationUnavailable});
+    return executions;
+  }
+
+  const Result<Path> executable = isolation::executablePath();
+  if (not executable) {
+    Vec<TestExecution> executions{};
+    appendWorkerFault(executions,
+        plannedCase,
+        scheduledCase,
+        options,
+        runSeed,
+        WorkerJournalResult{},
+        NativeFault{.kind = NativeFaultKind::IsolationUnavailable});
+    return executions;
+  }
+
+  const WorkerRequest request{
+      .resultPath = paths->first,
+      .faultPath = paths->second,
+      .identifier = plannedCase.descriptor.identifier,
+      .plannedCase = plannedCaseIndex,
+      .runIteration = scheduledCase.runIteration,
+      .runSeed = runSeed,
+      .timeMode = options.timeMode,
+      .traceMode = options.traceMode,
+      .captureMemory = true,
+  };
+  isolation::WorkerOutcome outcome{};
+  try {
+    outcome = isolation::launchWorker(isolation::WorkerLaunch{
+        .executable = *executable,
+        .variables = workerVariables(request),
+    });
+  } catch (const std::exception &exception) {
+    outcome.error = exception.what() != nullptr ? exception.what() : "worker launch threw an exception";
+  } catch (...) {
+    outcome.error = "worker launch threw a non-standard exception";
+  }
+
+  WorkerJournalResult journal{};
+  const auto cleanupWorkerFiles =
+      std::scope_exit([&] -> void { removeWorkerFiles(paths->first, paths->second); });
+
+  try {
+    journal = readWorkerJournal(paths->first, plannedCase.descriptor);
+  } catch (const std::exception &exception) {
+    Vec<TestExecution> executions{};
+    appendWorkerProtocolFailure(executions,
+        plannedCase,
+        scheduledCase,
+        options,
+        runSeed,
+        journal,
+        exception.what() != nullptr ? exception.what() : "worker journal decoding threw an exception");
+    return executions;
+  } catch (...) {
+    Vec<TestExecution> executions{};
+    appendWorkerProtocolFailure(executions,
+        plannedCase,
+        scheduledCase,
+        options,
+        runSeed,
+        journal,
+        "worker journal decoding threw a non-standard exception");
+    return executions;
+  }
+
+  Vec<TestExecution> executions = std::move(journal.executions);
+
+  if (outcome.fault and not journal.completed) {
+    appendWorkerFault(executions, plannedCase, scheduledCase, options, runSeed, journal, *outcome.fault);
+  } else if (not outcome.error.empty()) {
+    appendWorkerProtocolFailure(
+        executions, plannedCase, scheduledCase, options, runSeed, journal, outcome.error);
+  } else if (not outcome.launched) {
+    appendWorkerProtocolFailure(executions,
+        plannedCase,
+        scheduledCase,
+        options,
+        runSeed,
+        journal,
+        "the process-per-case worker could not be launched");
+  } else if (journal.completed and executions.empty()) {
+    appendWorkerProtocolFailure(executions,
+        plannedCase,
+        scheduledCase,
+        options,
+        runSeed,
+        journal,
+        "worker completed its journal without an execution record");
+  } else if (not journal.completed) {
+    if (outcome.exitCode == 0) {
+      appendWorkerProtocolFailure(executions,
+          plannedCase,
+          scheduledCase,
+          options,
+          runSeed,
+          journal,
+          "worker exited without completing its journal");
+    } else {
+      appendWorkerFault(executions,
+          plannedCase,
+          scheduledCase,
+          options,
+          runSeed,
+          journal,
+          NativeFault{.kind = NativeFaultKind::Terminated, .code = outcome.exitCode});
+    }
+  }
+
+  return executions;
+}
+
 } // namespace
 
+// NOLINTNEXTLINE(readability-function-cognitive-complexity, readability-function-size)
 auto executePlannedCases(RunSession &session, const RunOptions &options) -> Vec<TestExecution> {
-  if constexpr (not build::tests) {
-    return {};
-  } else {
+  if constexpr (build::tests) {
     Vec<PlannedCase> plannedCases = session.takePlannedCases();
     const u64 runSeed = options.seed ? *options.seed : randomSeed();
     const Vec<ScheduledCase> scheduledCases = scheduleCases(plannedCases.size(), options, runSeed);
     const usize workers = workerCount(options.jobs, scheduledCases.size());
-    const bool captureMemory = workers == 1;
+    const bool captureMemory = options.isolation == CrashIsolation::ProcessPerCase or workers == 1;
 
     if (workers == 0)
       return {};
@@ -314,13 +574,19 @@ auto executePlannedCases(RunSession &session, const RunOptions &options) -> Vec<
         if (stopped)
           return;
 
-        Vec<TestExecution> batch = executeCase(plannedCases[scheduledCase.plannedCase],
-            laneFor(resourceLanes, scheduledCase.plannedCase),
-            scheduledCase.plannedCase,
-            scheduledCase,
-            options,
-            runSeed,
-            captureMemory);
+        Vec<TestExecution> batch = options.isolation == CrashIsolation::ProcessPerCase
+                                       ? executeIsolatedCase(plannedCases[scheduledCase.plannedCase],
+                                             scheduledCase.plannedCase,
+                                             scheduledCase,
+                                             options,
+                                             runSeed)
+                                       : executeCase(plannedCases[scheduledCase.plannedCase],
+                                             laneFor(resourceLanes, scheduledCase.plannedCase),
+                                             scheduledCase.plannedCase,
+                                             scheduledCase,
+                                             options,
+                                             runSeed,
+                                             captureMemory);
         stopped = options.failFast and batchFailed(batch);
         executions.append_range(std::move(batch));
       });
@@ -349,13 +615,19 @@ auto executePlannedCases(RunSession &session, const RunOptions &options) -> Vec<
           return;
 
         const ScheduledCase &scheduledCase = scheduledCases[index];
-        Vec<TestExecution> batch = executeCase(plannedCases[scheduledCase.plannedCase],
-            laneFor(resourceLanes, scheduledCase.plannedCase),
-            scheduledCase.plannedCase,
-            scheduledCase,
-            options,
-            runSeed,
-            captureMemory);
+        Vec<TestExecution> batch = options.isolation == CrashIsolation::ProcessPerCase
+                                       ? executeIsolatedCase(plannedCases[scheduledCase.plannedCase],
+                                             scheduledCase.plannedCase,
+                                             scheduledCase,
+                                             options,
+                                             runSeed)
+                                       : executeCase(plannedCases[scheduledCase.plannedCase],
+                                             laneFor(resourceLanes, scheduledCase.plannedCase),
+                                             scheduledCase.plannedCase,
+                                             scheduledCase,
+                                             options,
+                                             runSeed,
+                                             captureMemory);
         const bool failed = batchFailed(batch);
         executions[index].emplace(std::move(batch));
 
@@ -377,7 +649,65 @@ auto executePlannedCases(RunSession &session, const RunOptions &options) -> Vec<
       return std::move(*execution);
     }) | std::views::join |
            std::ranges::to<Vec<TestExecution>>();
+  } else {
+    return {};
   }
+}
+
+auto executeWorkerCase(RunSession &session, const WorkerRequest &request, RunOptions options) -> void {
+  Vec<PlannedCase> plannedCases = session.takePlannedCases();
+  const auto requested =
+      std::ranges::find_if(plannedCases, [&request](const PlannedCase &plannedCase) -> bool {
+        return plannedCase.descriptor.identifier == request.identifier;
+      });
+  if (requested == plannedCases.end())
+    return;
+
+  const usize plannedCase = static_cast<usize>(std::ranges::distance(plannedCases.begin(), requested));
+
+  options.isolation = CrashIsolation::InProcess;
+  options.jobs = 1;
+  options.repeat = 1;
+  options.seed = request.runSeed;
+  options.timeMode = request.timeMode;
+  options.traceMode = request.traceMode;
+
+  WorkerJournal journal{request.resultPath};
+  if (not journal.ready())
+    return;
+
+  const ScheduledCase scheduledCase{
+      .plannedCase = request.plannedCase,
+      .runIteration = request.runIteration,
+  };
+
+  if (not isolation::installWorkerFaultHandler(request.faultPath)) {
+    const TestDescriptor descriptor = plannedCases[plannedCase].descriptor;
+    const NativeFault fault{
+        .kind = NativeFaultKind::IsolationUnavailable,
+    };
+    Vec<TestExecution> failures{};
+    appendWorkerFailure(failures,
+        scheduledCase,
+        options,
+        request.runSeed,
+        WorkerJournalResult{},
+        workerFailure(descriptor, fault, descriptor.location));
+    journal.attemptStarted(failures.front().attempt, false);
+    journal.attemptCompleted(failures.front());
+    journal.complete();
+    return;
+  }
+
+  static_cast<void>(executeCase(plannedCases[plannedCase],
+      nullptr,
+      request.plannedCase,
+      scheduledCase,
+      options,
+      request.runSeed,
+      request.captureMemory,
+      std::addressof(journal)));
+  journal.complete();
 }
 
 } // namespace Nyx::Test::detail

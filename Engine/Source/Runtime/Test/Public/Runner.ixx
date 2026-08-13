@@ -6,6 +6,15 @@ import :Execution;
 
 export namespace Nyx::Test {
 
+/// Selects the safety boundary used for one logical test case.
+///
+/// ProcessPerCase is the safe DevelopmentTests default: a native fault terminates only the worker that owns
+/// the current logical case. InProcess is intentionally explicit and is useful for trusted microbenchmarks.
+enum class[[= debug::derive]] CrashIsolation : u8 {
+  InProcess[[= debug::rename("in_process")]],
+  ProcessPerCase[[= debug::rename("process_per_case")]],
+};
+
 /// Determines how expanded test cases are arranged before dispatch.
 enum class ExecutionOrder : u8 {
   Declaration,
@@ -38,9 +47,14 @@ struct RunOptions final {
 
   /// Optional root seed for ordering and per-case Context::seed derivationm.
   Option<u64> seed;
+
+  /// Contains native faults at the logical-case process boundary by default.
+  CrashIsolation isolation{CrashIsolation::ProcessPerCase};
 };
 
 namespace detail {
+
+struct WorkerRequest;
 
 /// One fully expanded reflected Case/provider combination ready for indepndent execution.
 struct PlannedCase final {
@@ -50,8 +64,9 @@ struct PlannedCase final {
 
 /// Owns opaque suite-local state while its PlannedCase values execute.
 ///
-/// Discovery materializes each suite's FixtureScope here. The storage is type-erased because every reflected
-/// suite has a distinct FixtureScope<Scope> type, while RunSession schedules all of their cases together.
+/// Discovery materializes each suite's FixtureScope here. The storage is type-erased because every
+/// reflected suite has a distinct FixtureScope<Scope> type, while RunSession schedules all of their cases
+/// together.
 class SuiteState final {
 private:
   class Storage {
@@ -113,8 +128,8 @@ private:
 
 /// Collects every selected suite and its independently schedulable cases for one run.
 ///
-/// Hive preserves SuiteState addresses as discovery appends suites. PlannedCase stays contiguous for indexed
-/// worker dispatch. The member order deliberately destroys cases before suite fixture state.
+/// Hive preserves SuiteState addresses as discovery appends suites. PlannedCase stays contiguous for
+/// indexed worker dispatch. The member order deliberately destroys cases before suite fixture state.
 class RunSession final {
 public:
   RunSession() = default;
@@ -148,6 +163,9 @@ private:
 };
 
 [[nodiscard]] auto executePlannedCases(RunSession &session, const RunOptions &options) -> Vec<TestExecution>;
+
+/// Executes one worker request after the child process has rebuilt the reflected plan.
+auto executeWorkerCase(RunSession &session, const WorkerRequest &request, RunOptions options) -> void;
 
 } // namespace detail
 

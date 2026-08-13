@@ -32,6 +32,8 @@ enum class[[ = debug::derive, = diagnostics::prefix("NYX") ]] DiagnosticCode : u
   ProviderProducedNoValues[[= diagnostics::message("provider produced no values")]] = 15,
   TaskStranded[[= diagnostics::message("asynchronous task was stranded")]] = 16,
   ResourceCleanupFailed[[= diagnostics::message("test resource cleanup failed")]] = 17,
+  NativeFault[[= diagnostics::message("test worker terminated by a native fault")]] = 18,
+  WorkerLaunchFailed[[= diagnostics::message("test worker could not be started")]] = 19,
 };
 
 /// Legacy rendering shorthand retained for source compatibility.
@@ -63,6 +65,14 @@ struct SourcePosition final {
   usize column{};
 };
 
+/// A serializable source-location snapshot used when an isolated worker returns diagnostics to its parent.
+struct SourceLocationData final {
+  String file;
+  String function;
+  usize line{};
+  usize column{};
+};
+
 /// A source range resolved from a source plan by a report-local SourceManager.
 struct SourceRange final {
   Path file;
@@ -84,6 +94,8 @@ struct SourceSpan final {
   SpanSelection selection{SpanSelection::Point};
   SpanKind kind{SpanKind::Primary};
   String label;
+  /// Set only for diagnostics reconstructed from an isolated worker.
+  Option<SourceLocationData> remoteLocation;
 };
 
 [[nodiscard]] auto makeSpan(String label = {},
