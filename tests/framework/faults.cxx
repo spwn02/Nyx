@@ -97,7 +97,7 @@ preservesFilteredPlanIdentityInAWorker() -> void {
   constexpr u64 seed{0xF17E2ED};
   const Vec<TestExecution> isolated = runAll<^^FilteredSubjects>(RunOptions{
       .seed = seed,
-      .isolation = CrashIsolation::InProcess,
+      .isolation = CrashIsolation::ProcessPerCase,
   });
 
   require(not processIsolationUnavailable(isolated));

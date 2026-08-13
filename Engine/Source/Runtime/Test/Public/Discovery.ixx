@@ -737,7 +737,7 @@ template <std::meta::info Scope, detail::DiscoveryOption... Options>
   requires(sizeof...(Options) != 0)
 [[nodiscard]]
 auto runAll(RunOptions options, Options... /*unused*/) -> Vec<TestExecution> {
-  if constexpr (not build::tests) {
+  if constexpr (build::tests) {
     using Configuration = detail::DiscoveryConfiguration<std::remove_cvref_t<Options>...>;
     static_assert(std::meta::is_namespace(Scope) or Configuration::staticMemberFunctions_,
         "Nyx::Test class-member discovery requires the staticMemberFunctions options.");
@@ -751,7 +751,7 @@ auto runAll(RunOptions options, Options... /*unused*/) -> Vec<TestExecution> {
 template <std::meta::info Scope, detail::DiscoveryOption... Options>
   requires(sizeof...(Options) != 0)
 [[nodiscard]] auto runAll(TestSelection selection, Options... /*unused*/) -> Vec<TestExecution> {
-  if constexpr (not build::tests) {
+  if constexpr (build::tests) {
     using Configuration = detail::DiscoveryConfiguration<std::remove_cvref_t<Options>...>;
     static_assert(std::meta::is_namespace(Scope) or Configuration::staticMemberFunctions_,
         "Nyx::Test class-member discovery requires the staticMemberFunctions options.");
@@ -765,7 +765,7 @@ template <std::meta::info Scope, detail::DiscoveryOption... Options>
 template <std::meta::info Scope, detail::DiscoveryOption... Options>
 [[nodiscard]] auto runAll(TestSelection selection, RunOptions options, Options... /*unused*/)
     -> Vec<TestExecution> {
-  if constexpr (not build::tests) {
+  if constexpr (build::tests) {
     using Configuration = detail::DiscoveryConfiguration<std::remove_cvref_t<Options>...>;
     static_assert(std::meta::is_namespace(Scope) or Configuration::staticMemberFunctions_,
         "Nyx::Test class-member discovery requires the staticMemberFunctions option.");
