@@ -12,11 +12,13 @@ export namespace Nyx::Test {
 enum class TraceMode : u8 {
   Annotations[[= debug::rename("annotations")]],
   ForcedFailures[[= debug::rename("forced_failures")]],
-  ForcedAll[[=debug::rename("forced_all")]],
+  ForcedAll[[= debug::rename("forced_all")]],
 };
 
 struct TestPolicy final {
   bool trace{};
+  /// Forces this test through a fresh process-per-case worker even when the run uses in-proces execution.
+  bool isolated{};
   Option<String> expectedPanic;
   Option<std::chrono::steady_clock::duration> timeout;
   usize repeat{1};

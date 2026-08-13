@@ -297,6 +297,14 @@ auto executeCase(PlannedCase &plannedCase,
   return resourceLanes[plannedCase].get();
 }
 
+[[nodiscard]] constexpr auto isolationFor(const PlannedCase &plannedCase, const RunOptions &options) noexcept
+    -> CrashIsolation {
+  if (plannedCase.descriptor.policy.isolated)
+    return CrashIsolation::ProcessPerCase;
+
+  return options.isolation;
+}
+
 [[nodiscard]] constexpr auto workerCount(usize requested, usize workCount) -> usize {
   if (workCount == 0)
     return 0;
@@ -574,19 +582,18 @@ auto executePlannedCases(RunSession &session, const RunOptions &options) -> Vec<
         if (stopped)
           return;
 
-        Vec<TestExecution> batch = options.isolation == CrashIsolation::ProcessPerCase
-                                       ? executeIsolatedCase(plannedCases[scheduledCase.plannedCase],
-                                             scheduledCase.plannedCase,
-                                             scheduledCase,
-                                             options,
-                                             runSeed)
-                                       : executeCase(plannedCases[scheduledCase.plannedCase],
-                                             laneFor(resourceLanes, scheduledCase.plannedCase),
-                                             scheduledCase.plannedCase,
-                                             scheduledCase,
-                                             options,
-                                             runSeed,
-                                             captureMemory);
+        usize plannedCaseIndex = scheduledCase.plannedCase;
+        PlannedCase &plannedCase = plannedCases[plannedCaseIndex];
+        Vec<TestExecution> batch =
+            isolationFor(plannedCase, options) == CrashIsolation::ProcessPerCase
+                ? executeIsolatedCase(plannedCase, plannedCaseIndex, scheduledCase, options, runSeed)
+                : executeCase(plannedCase,
+                      laneFor(resourceLanes, plannedCaseIndex),
+                      plannedCaseIndex,
+                      scheduledCase,
+                      options,
+                      runSeed,
+                      captureMemory);
         stopped = options.failFast and batchFailed(batch);
         executions.append_range(std::move(batch));
       });
@@ -615,19 +622,18 @@ auto executePlannedCases(RunSession &session, const RunOptions &options) -> Vec<
           return;
 
         const ScheduledCase &scheduledCase = scheduledCases[index];
-        Vec<TestExecution> batch = options.isolation == CrashIsolation::ProcessPerCase
-                                       ? executeIsolatedCase(plannedCases[scheduledCase.plannedCase],
-                                             scheduledCase.plannedCase,
-                                             scheduledCase,
-                                             options,
-                                             runSeed)
-                                       : executeCase(plannedCases[scheduledCase.plannedCase],
-                                             laneFor(resourceLanes, scheduledCase.plannedCase),
-                                             scheduledCase.plannedCase,
-                                             scheduledCase,
-                                             options,
-                                             runSeed,
-                                             captureMemory);
+        usize plannedCaseIndex = scheduledCase.plannedCase;
+        PlannedCase &plannedCase = plannedCases[plannedCaseIndex];
+        Vec<TestExecution> batch =
+            isolationFor(plannedCase, options) == CrashIsolation::ProcessPerCase
+                ? executeIsolatedCase(plannedCase, plannedCaseIndex, scheduledCase, options, runSeed)
+                : executeCase(plannedCase,
+                      laneFor(resourceLanes, plannedCaseIndex),
+                      plannedCaseIndex,
+                      scheduledCase,
+                      options,
+                      runSeed,
+                      captureMemory);
         const bool failed = batchFailed(batch);
         executions[index].emplace(std::move(batch));
 

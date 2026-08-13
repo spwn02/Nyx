@@ -270,6 +270,7 @@ auto policyOf() -> TestPolicy {
 
   TestPolicy policy{
       .trace = Nyx::meta::has_annotation<Trace, Function>(),
+      .isolated = Nyx::meta::has_annotation<Isolated, Function>(),
   };
 
   template for (constexpr std::meta::info annotation : meta::annotations<Function>) {

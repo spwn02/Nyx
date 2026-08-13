@@ -322,6 +322,7 @@ auto writeMetadata(JsonWriter &writer, const TestMetadata &metadata) -> void {
 auto writePolicy(JsonWriter &writer, const TestPolicy &policy) -> void {
   writer.beginObject();
   writer.field("trace", [&writer, &policy] -> void { writer.boolean(policy.trace); });
+  writer.field("isolated", [&writer, &policy] -> void { writer.boolean(policy.isolated); });
   writer.field("expected_panic", [&writer, &policy] -> void {
     if (policy.expectedPanic)
       writer.text(*policy.expectedPanic);

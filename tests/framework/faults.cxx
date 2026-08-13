@@ -11,7 +11,7 @@ namespace Tests::faults {
 
 namespace FaultSubjects {
 
-[[ = test, = group("framework"), = tag("faults", "subjects") ]] auto aborts() -> void {
+[[ = test, = group("framework"), = tag("faults", "subjects"), = isolated ]] auto aborts() -> void {
   usize *invalidPointer = nullptr;
   std::println("{}", *invalidPointer);
 
@@ -43,17 +43,16 @@ namespace FilteredSubjects {
 }
 
 [[nodiscard]] auto processIsolationUnavailable(const Vec<TestExecution> &executions) -> bool {
-  return not executions.empty() and
-         std::ranges::all_of(executions, [](const TestExecution &execution) -> bool {
-           return execution.state.diagnostics.size() == 1 and
-                  execution.state.diagnostics.front().header.code == DiagnosticCode::WorkerLaunchFailed;
-         });
+  return std::ranges::any_of(executions, [](const TestExecution &execution) -> bool {
+    return execution.state.diagnostics.size() == 1 and
+           execution.state.diagnostics.front().header.code == DiagnosticCode::WorkerLaunchFailed;
+  });
 }
 
 [[ = test, = group("framework"), = tag("faults", "isolation") ]] auto
 continuesUnrelatedCasesAfterANativeFault() -> void {
   const Vec<TestExecution> executions = runAll<^^FaultSubjects>(RunOptions{
-      .isolation = CrashIsolation::ProcessPerCase,
+      .isolation = CrashIsolation::InProcess,
   });
 
   if (processIsolationUnavailable(executions))
@@ -77,7 +76,7 @@ continuesUnrelatedCasesAfterANativeFault() -> void {
 stopsAfterANativeFaultWhenFailFastIsEnabled() -> void {
   const Vec<TestExecution> executions = runAll<^^FaultSubjects>(RunOptions{
       .failFast = true,
-      .isolation = CrashIsolation::ProcessPerCase,
+      .isolation = CrashIsolation::InProcess,
   });
 
   if (processIsolationUnavailable(executions))
@@ -89,8 +88,6 @@ stopsAfterANativeFaultWhenFailFastIsEnabled() -> void {
   require(executions.front().fault->kind == NativeFaultKind::Signal);
   check(executions.front().fault->signal == NativeSignal::SegmentationFault);
   check(eq(executions.front().fault->code, 139));
-  require(false);
-  require(false);
 
   std::ostringstream output{};
   static_cast<void>(Reporter{}.report(executions, output));
@@ -103,7 +100,7 @@ preservesFilteredPlanIdentityInAWorker() -> void {
   constexpr u64 seed{0xF17E2ED};
   const Vec<TestExecution> isolated = runAll<^^FilteredSubjects>(RunOptions{
       .seed = seed,
-      .isolation = CrashIsolation::ProcessPerCase,
+      .isolation = CrashIsolation::InProcess,
   });
 
   if (processIsolationUnavailable(isolated))

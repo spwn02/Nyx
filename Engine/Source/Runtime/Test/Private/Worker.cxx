@@ -156,6 +156,7 @@ auto writeSourceLocationOption(WireWriter &writer, const Option<SourceLocationDa
 
 auto writePolicy(WireWriter &writer, const TestPolicy &policy) -> void {
   writer.pod(static_cast<u8>(policy.trace));
+  writer.pod(static_cast<u8>(policy.isolated));
   writeStringOption(writer, policy.expectedPanic);
   writer.pod(static_cast<u8>(policy.timeout.has_value()));
   if (policy.timeout)
@@ -168,6 +169,7 @@ auto writePolicy(WireWriter &writer, const TestPolicy &policy) -> void {
 [[nodiscard]] auto readPolicy(WireReader &reader) -> TestPolicy {
   TestPolicy policy{
       .trace = reader.pod<u8>() != 0,
+      .isolated = reader.pod<u8>() != 0,
       .expectedPanic = readStringOption(reader),
   };
   if (reader.pod<u8>() != 0)
