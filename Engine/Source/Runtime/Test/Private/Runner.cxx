@@ -299,6 +299,9 @@ auto executeCase(PlannedCase &plannedCase,
 
 [[nodiscard]] constexpr auto isolationFor(const PlannedCase &plannedCase, const RunOptions &options) noexcept
     -> CrashIsolation {
+  if (plannedCase.descriptor.policy.parent)
+    return CrashIsolation::InProcess;
+
   if (plannedCase.descriptor.policy.isolated)
     return CrashIsolation::ProcessPerCase;
 
@@ -361,10 +364,13 @@ auto appendWorkerFailure(Vec<TestExecution> &executions,
   if (journal.activeAttempt and not journal.activeWarmup) {
     const auto completed = std::ranges::find_if(
         executions, [&journal](const TestExecution &execution) constexpr noexcept -> bool {
-          return execution.attempt == *journal.activeAttempt;
-        });
-    if (completed != executions.end())
+           return execution.attempt == *journal.activeAttempt;
+         });
+    if (completed != executions.end()) {
+      completed->fault = execution.fault;
+      completed->state = std::move(execution.state);
       return;
+    }
   }
 
   execution.runSeed = runSeed;
@@ -662,12 +668,23 @@ auto executePlannedCases(RunSession &session, const RunOptions &options) -> Vec<
 
 auto executeWorkerCase(RunSession &session, const WorkerRequest &request, RunOptions options) -> void {
   Vec<PlannedCase> plannedCases = session.takePlannedCases();
+  WorkerJournal journal{request.resultPath};
+  if (not journal.ready())
+    return;
+
   const auto requested =
       std::ranges::find_if(plannedCases, [&request](const PlannedCase &plannedCase) -> bool {
         return plannedCase.descriptor.identifier == request.identifier;
       });
-  if (requested == plannedCases.end())
+  if (requested == plannedCases.end()) {
+    TestExecution failure = workerFailure(
+        TestDescriptor{.identifier = request.identifier},
+        workerProtocolDiagnostic("worker could not find the requested test case", std::source_location::current()));
+    journal.attemptStarted(AttemptIndex{.runIteration = request.runIteration}, false);
+    journal.attemptCompleted(failure);
+    journal.complete();
     return;
+  }
 
   const usize plannedCase = static_cast<usize>(std::ranges::distance(plannedCases.begin(), requested));
 
@@ -677,10 +694,6 @@ auto executeWorkerCase(RunSession &session, const WorkerRequest &request, RunOpt
   options.seed = request.runSeed;
   options.timeMode = request.timeMode;
   options.traceMode = request.traceMode;
-
-  WorkerJournal journal{request.resultPath};
-  if (not journal.ready())
-    return;
 
   const ScheduledCase scheduledCase{
       .plannedCase = request.plannedCase,

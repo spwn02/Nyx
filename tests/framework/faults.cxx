@@ -44,19 +44,17 @@ namespace FilteredSubjects {
 
 [[nodiscard]] auto processIsolationUnavailable(const Vec<TestExecution> &executions) -> bool {
   return std::ranges::any_of(executions, [](const TestExecution &execution) -> bool {
-    return execution.state.diagnostics.size() == 1 and
-           execution.state.diagnostics.front().header.code == DiagnosticCode::WorkerLaunchFailed;
+    return execution.fault and execution.fault->kind == NativeFaultKind::IsolationUnavailable;
   });
 }
 
-[[ = test, = group("framework"), = tag("faults", "isolation") ]] auto
+[[ = test, = trace, = group("framework"), = tag("faults", "isolation"), = parent ]] auto
 continuesUnrelatedCasesAfterANativeFault() -> void {
   const Vec<TestExecution> executions = runAll<^^FaultSubjects>(RunOptions{
-      .isolation = CrashIsolation::InProcess,
+      .isolation = CrashIsolation::ProcessPerCase,
   });
 
-  if (processIsolationUnavailable(executions))
-    return;
+  require(not processIsolationUnavailable(executions));
 
   require(executions.size() == 2_exp);
   const Option<Ref<const TestExecution>> crashed = executionNamed(executions, "aborts");
@@ -72,15 +70,14 @@ continuesUnrelatedCasesAfterANativeFault() -> void {
   check(survived->get().passed());
 }
 
-[[ = test, = group("framework"), = tag("faults", "isolation", "failfast") ]] auto
+[[ = test, = trace, = group("framework"), = tag("faults", "isolation", "failfast"), = parent ]] auto
 stopsAfterANativeFaultWhenFailFastIsEnabled() -> void {
   const Vec<TestExecution> executions = runAll<^^FaultSubjects>(RunOptions{
       .failFast = true,
-      .isolation = CrashIsolation::InProcess,
+      .isolation = CrashIsolation::ProcessPerCase,
   });
 
-  if (processIsolationUnavailable(executions))
-    return;
+  require(not processIsolationUnavailable(executions));
 
   require(executions.size() == 1_exp);
   require(executions.front().failed());
@@ -95,7 +92,7 @@ stopsAfterANativeFaultWhenFailFastIsEnabled() -> void {
   check(executions.front().state.diagnostics.front().header.code == DiagnosticCode::NativeFault);
 }
 
-[[ = test, = group("framework"), = tag("faults", "isolation", "filtered") ]] auto
+[[ = test, = group("framework"), = tag("faults", "isolation", "filtered"), = parent ]] auto
 preservesFilteredPlanIdentityInAWorker() -> void {
   constexpr u64 seed{0xF17E2ED};
   const Vec<TestExecution> isolated = runAll<^^FilteredSubjects>(RunOptions{
@@ -103,8 +100,7 @@ preservesFilteredPlanIdentityInAWorker() -> void {
       .isolation = CrashIsolation::InProcess,
   });
 
-  if (processIsolationUnavailable(isolated))
-    return;
+  require(not processIsolationUnavailable(isolated));
 
   const Vec<TestExecution> inProcess = runAll<^^FilteredSubjects>(RunOptions{
       .seed = seed,

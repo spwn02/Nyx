@@ -85,6 +85,9 @@ struct DiscoveryConfiguration final {
 /// the anchor invokes this function during ordinary static initialization before main().
 auto appendRegisteredSuite(const SuiteEntry &suite) -> void;
 
+/// Registers a scope that may need to be reconstructed by an exec'd test worker.
+auto appendWorkerSuite(const SuiteEntry &suite) -> void;
+
 template <std::meta::info Entity>
 consteval auto appendQualifiedName(String &result) -> void {
   if constexpr (Entity != ^^::) {
@@ -268,9 +271,14 @@ auto policyOf() -> TestPolicy {
   static_assert(
       retryCount<Function>() <= 1, "Nyx::Test tests may declare at most one [[= retry(...)]] annotation.");
 
+  constexpr bool isolated = Nyx::meta::has_annotation<Isolated, Function>();
+  constexpr bool parent = Nyx::meta::has_annotation<Parent, Function>();
+  static_assert(not(isolated and parent), "Nyx::Test tests cannot combine [[= isolated]] and [[= parent]]");
+
   TestPolicy policy{
       .trace = Nyx::meta::has_annotation<Trace, Function>(),
-      .isolated = Nyx::meta::has_annotation<Isolated, Function>(),
+      .isolated = isolated,
+      .parent = parent,
   };
 
   template for (constexpr std::meta::info annotation : meta::annotations<Function>) {
@@ -595,8 +603,24 @@ template <std::meta::info Scope, class Configuration>
 inline SuiteRegistration<Scope, Configuration> suiteRegistration{}; // NOLINT
 
 template <std::meta::info Scope, class Configuration>
+struct WorkerSuiteRegistration final {
+  WorkerSuiteRegistration() {
+    if constexpr (build::tests)
+      appendWorkerSuite(suiteEntry<Scope, Configuration>);
+  }
+};
+
+template <std::meta::info Scope, class Configuration>
+inline WorkerSuiteRegistration<Scope, Configuration> workerSuiteRegistration{}; // NOLINT
+
+template <std::meta::info Scope, class Configuration>
 consteval auto materializeRegistration() -> void {
   static_cast<void>(&suiteRegistration<Scope, Configuration>);
+}
+
+template <std::meta::info Scope, class Configuration>
+consteval auto materializeWorkerRegistration() -> void {
+  static_cast<void>(&workerSuiteRegistration<Scope, Configuration>);
 }
 
 template <std::meta::info Scope, class Configuration>
@@ -673,6 +697,7 @@ template <std::meta::info Namespace>
 auto runAll(RunOptions options = {}) -> Vec<TestExecution> {
   if constexpr (build::tests) {
     static_assert(std::meta::is_namespace(Namespace), "Provided Namespace should be a namespace.");
+    detail::materializeWorkerRegistration<Namespace, detail::DiscoveryConfiguration<>>();
     return detail::runScope<Namespace, detail::DiscoveryConfiguration<>>({}, options);
   } else {
     return {};
@@ -685,6 +710,7 @@ template <std::meta::info Namespace>
 auto runAll(TestSelection selection, RunOptions options = {}) -> Vec<TestExecution> {
   if constexpr (build::tests) {
     static_assert(std::meta::is_namespace(Namespace), "Provided Namespace should be a namespace.");
+    detail::materializeWorkerRegistration<Namespace, detail::DiscoveryConfiguration<>>();
     return detail::runScope<Namespace, detail::DiscoveryConfiguration<>>(selection, options);
   } else {
     return {};

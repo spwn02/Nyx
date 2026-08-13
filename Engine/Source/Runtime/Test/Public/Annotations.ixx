@@ -147,6 +147,14 @@ struct Isolated final {};
 
 inline constexpr Isolated isolated{};
 
+/// Keeps the annotated orchestration test in the parent process.
+///
+/// This is intended for tests that launch nested `runAll()` calls. It prevents the orchestration test itself
+/// from consuming the worker boundary before it can launch and inspect isolated child cases.
+struct Parent final {};
+
+inline constexpr Parent parent{};
+
 struct IncludeDotFiles final {};
 
 inline constexpr IncludeDotFiles includeDotFiles{};
