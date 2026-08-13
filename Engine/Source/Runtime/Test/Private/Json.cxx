@@ -65,7 +65,7 @@ public:
 
     output_ << '\"';
     std::ranges::for_each(value, [this, hexadecimal](char character) -> void {
-      const Byte code = static_cast<Byte>(character);
+      const u8 code = static_cast<u8>(character);
       switch (code) {
         case '\"': output_ << "\\\""; return;
         case '\\': output_ << "\\\\"; return;
@@ -463,6 +463,7 @@ auto writeFault(JsonWriter &writer, const Option<NativeFault> &fault) -> void {
 
   writer.beginObject();
   writer.field("kind", [&writer, &fault] -> void { writer.text(debug::enumName(fault->kind)); });
+  writer.field("signal", [&writer, &fault] -> void { writer.text(debug::enumName(fault->signal)); });
   writer.field("code", [&writer, &fault] -> void { writer.number(fault->code); });
   writer.field("address", [&writer, &fault] -> void { writer.number(fault->address); });
   writer.field("instruction", [&writer, &fault] -> void { writer.number(fault->instruction); });

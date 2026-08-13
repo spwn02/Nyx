@@ -44,9 +44,21 @@ enum class[[= debug::derive]] NativeFaultKind : u8 {
   IsolationUnavailable[[= debug::rename("isolation_unavailable")]],
 };
 
+/// Identifies the portable class of a POSIX signal that terminated a test worker.
+enum class[[= debug::derive]] NativeSignal : u8 {
+  Unknown[[= debug::rename("unknown signal")]],
+  Abort[[= debug::rename("abort")]],
+  BusError[[= debug::rename("bus error")]],
+  FloatingPointException[[= debug::rename("floating-point exception")]],
+  IllegalInstruction[[= debug::rename("illegal instruction")]],
+  SegmentationFault[[= debug::rename("segmentation fault")]],
+  Trap[[= debug::rename("trace or breakpoint Trap")]],
+};
+
 /// Minimal, allocation-free fault data collected by a worker boundary.
 struct NativeFault final {
   NativeFaultKind kind{NativeFaultKind::Terminated};
+  NativeSignal signal{NativeSignal::Unknown};
   i32 code{};
   u64 address{};
   u64 instruction{};

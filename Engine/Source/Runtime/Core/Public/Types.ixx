@@ -22,7 +22,7 @@ using isize = std::make_signed_t<usize>;
 using String = std::string;
 using StringView = std::string_view;
 
-using Byte = u8;
+using Byte = std::byte;
 using Path = std::filesystem::path;
 
 template <class T, usize N>

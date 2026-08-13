@@ -20,17 +20,51 @@ namespace {
 
 volatile std::sig_atomic_t faultDescriptor{-1};
 
+[[nodiscard]] constexpr auto nativeSignal(int signalNumber) noexcept -> NativeSignal {
+  switch (signalNumber) {
+    case SIGABRT: return NativeSignal::Abort;
+    case SIGBUS: return NativeSignal::BusError;
+    case SIGFPE: return NativeSignal::FloatingPointException;
+    case SIGILL: return NativeSignal::IllegalInstruction;
+    case SIGSEGV: return NativeSignal::SegmentationFault;
+    case SIGTRAP: return NativeSignal::Trap;
+    default: return NativeSignal::Unknown;
+  }
+}
+
+[[nodiscard]] constexpr auto signalFault(int signalNumber) noexcept -> NativeFault {
+  return NativeFault{
+      .kind = NativeFaultKind::Signal,
+      .signal = nativeSignal(signalNumber),
+      .code = 128 + signalNumber,
+  };
+}
+
 auto faultHandler(int signalNumber, siginfo_t *information, void *) noexcept -> void {
-  FaultRecord record{
-      .kind = static_cast<u8>(NativeFaultKind::Signal),
-      .code = signalNumber,
+  const FaultRecord record = makeFaultRecord(NativeFault{
+      .kind = NativeFaultKind::Signal,
+      .signal = nativeSignal(signalNumber),
+      .code = 128 + signalNumber,
       .address = information == nullptr ? 0 : reinterpret_cast<u64>(information->si_addr),
       .instruction = 0,
-      .symbolsAvailable = 0,
-  };
+      .symbolsAvailable = false,
+  });
 
-  if (faultDescriptor >= 0)
-    static_cast<void>(::write(faultDescriptor, &record, sizeof(record)));
+  if (faultDescriptor >= 0) {
+    const Byte *data = reinterpret_cast<const Byte *>(std::addressof(record));
+    usize remaining = sizeof(record);
+    while (remaining != 0) {
+      const ssize_t written = ::write(faultDescriptor, data, remaining);
+      if (written > 0) {
+        data += written;
+        remaining -= static_cast<usize>(written);
+      } else if (written < 0 and errno == EINTR) {
+        continue;
+      } else {
+        break;
+      }
+    }
+  }
 
   ::_exit(128 + signalNumber);
 }
@@ -117,14 +151,14 @@ auto launchWorker(const WorkerLaunch &launch) -> WorkerOutcome {
       .launched = true,
   };
   if (WIFSIGNALED(status)) {
-    result.fault = NativeFault{
-        .kind = NativeFaultKind::Signal,
-        .code = WTERMSIG(status),
-    };
+    result.fault = signalFault(WTERMSIG(status));
   } else if (WIFEXITED(status)) {
     result.exitCode = WEXITSTATUS(status);
     if (result.exitCode != 0) {
-      if (result.exitCode == 127)
+      const int signalNumber = result.exitCode - 128;
+      if (nativeSignal(signalNumber) != NativeSignal::Unknown)
+        result.fault = signalFault(signalNumber);
+      else if (result.exitCode == 127)
         result.error = "execve() failed while starting a Nyx.Test worker";
       else
         result.fault = NativeFault{
@@ -171,26 +205,29 @@ auto installWorkerFaultHandler(const Path &path) noexcept -> bool {
 }
 
 auto readFaultRecord(const Path &path) noexcept -> Option<NativeFault> {
-  try {
-    std::ifstream input{path, std::ios::binary};
-    if (not input)
-      return None;
-
-    FaultRecord record{};
-    input.read(reinterpret_cast<char *>(std::addressof(record)), sizeof(record));
-    if (input.gcount() != static_cast<std::streamsize>(sizeof(record)) or record.magic != faultRecordMagic)
-      return None;
-
-    return NativeFault{
-        .kind = static_cast<NativeFaultKind>(record.kind),
-        .code = record.code,
-        .address = record.address,
-        .instruction = record.instruction,
-        .symbolsAvailable = record.symbolsAvailable != 0,
-    };
-  } catch (...) {
+  const String filename{path};
+  const int descriptor = ::open(filename.c_str(), O_RDONLY);
+  if (descriptor < 0)
     return None;
+
+  const auto closeDescriptor =
+      std::scope_exit([descriptor] noexcept -> void { static_cast<void>(::close(descriptor)); });
+  FaultRecord record{};
+  Byte *data = reinterpret_cast<Byte *>(std::addressof(record));
+  usize remaining = sizeof(record);
+  while (remaining != 0) {
+    const ssize_t count = ::read(descriptor, data, remaining);
+    if (count > 0) {
+      data += count;
+      remaining -= static_cast<usize>(count);
+    } else if (count < 0 and errno == EINTR) {
+      continue;
+    } else {
+      return None;
+    }
   }
+
+  return decodeFaultRecord(record);
 }
 
 } // namespace Nyx::Test::detail::isolation

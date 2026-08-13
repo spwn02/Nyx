@@ -12,6 +12,9 @@ namespace Tests::faults {
 namespace FaultSubjects {
 
 [[ = test, = group("framework"), = tag("faults", "subjects") ]] auto aborts() -> void {
+  usize *invalidPointer = nullptr;
+  std::println("{}", *invalidPointer);
+
   std::abort();
 }
 
@@ -83,6 +86,15 @@ stopsAfterANativeFaultWhenFailFastIsEnabled() -> void {
   require(executions.size() == 1_exp);
   require(executions.front().failed());
   require(executions.front().fault);
+  require(executions.front().fault->kind == NativeFaultKind::Signal);
+  check(executions.front().fault->signal == NativeSignal::SegmentationFault);
+  check(eq(executions.front().fault->code, 139));
+  require(false);
+  require(false);
+
+  std::ostringstream output{};
+  static_cast<void>(Reporter{}.report(executions, output));
+  check(output.str().contains("worker terminated with signal code 139 (segmentation fault)"));
   check(executions.front().state.diagnostics.front().header.code == DiagnosticCode::NativeFault);
 }
 

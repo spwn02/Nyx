@@ -173,8 +173,14 @@ auto detail::nativeFaultDiagnostic(const NativeFault &fault, std::source_locatio
     return diagnostic;
   }
 
-  diagnostic.addNote(
-      std::format("worker terminated with {} code {}", debug::enumName(fault.kind), fault.code));
+  if (fault.kind == NativeFaultKind::Signal) {
+    diagnostic.addNote(std::format("worker terminated with signal code {} ({})",
+        fault.code,
+        debug::enumName(fault.signal)));
+  } else {
+    diagnostic.addNote(
+        std::format("worker terminated with {} code {}", debug::enumName(fault.kind), fault.code));
+  }
 
   if (fault.address != 0)
     diagnostic.addNote(std::format("fault address: 0x{:x}", fault.address));

@@ -17,8 +17,8 @@ namespace {
 HANDLE faultHandle{INVALID_HANDLE_VALUE};
 
 LONG WINAPI faultHandler(EXCEPTION_POINTERS *information) noexcept {
-  FaultRecord record{
-      .kind = static_cast<u8>(NativeFaultKind::StructuredException),
+  const FaultRecord record = makeFaultRecord(NativeFault{
+      .kind = NativeFaultKind::StructuredException,
       .code = information == nullptr or information->ExceptionRecord == nullptr
                   ? 0
                   : static_cast<i32>(information->ExceptionRecord->ExceptionCode),
@@ -26,8 +26,8 @@ LONG WINAPI faultHandler(EXCEPTION_POINTERS *information) noexcept {
                      ? 0
                      : reinterpret_cast<u64>(information->ExceptionRecord->ExceptionAddress),
       .instruction = 0,
-      .symbolsAvailable = 0,
-  };
+      .symbolsAvailable = false,
+  });
 
   if (faultHandle != INVALID_HANDLE_VALUE) {
     DWORD written{};
@@ -161,16 +161,10 @@ auto readFaultRecord(const Path &path) noexcept -> Option<NativeFault> {
 
     FaultRecord record{};
     input.read(reinterpret_cast<char *>(std::addressof(record)), sizeof(record));
-    if (input.gcount() != static_cast<std::streamsize>(sizeof(record)) or record.magic != faultRecordMagic)
+    if (input.gcount() != static_cast<std::streamsize>(sizeof(record)))
       return None;
 
-    return NativeFault{
-        .kind = static_cast<NativeFaultKind>(record.kind),
-        .code = record.code,
-        .address = record.address,
-        .instruction = record.instruction,
-        .symbolsAvailable = record.symbolsAvailable != 0,
-    };
+    return decodeFaultRecord(record);
   } catch (...) {
     return None;
   }

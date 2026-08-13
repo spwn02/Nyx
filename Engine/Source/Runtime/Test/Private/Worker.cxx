@@ -395,11 +395,11 @@ auto writeState(WireWriter &writer, const TestState &state) -> void {
       .errors = static_cast<usize>(reader.pod<u64>()),
       .aborted = reader.pod<u8>() != 0,
   };
-  const usize diagnosticCount = reader.count(sizeof(u8) + sizeof(u8) + sizeof(u8) + 3 * sizeof(u64));
+  const usize diagnosticCount = reader.count(sizeof(u8) + sizeof(u8) + sizeof(u8) + (3 * sizeof(u64)));
   std::ranges::for_each(std::views::indices(diagnosticCount), [&reader, &state, fallback](usize) -> void {
     state.diagnostics.push_back(readDiagnostic(reader, fallback));
   });
-  const usize traceCount = reader.count(2 * sizeof(u64) + sizeof(u8));
+  const usize traceCount = reader.count((2 * sizeof(u64)) + sizeof(u8));
   std::ranges::for_each(std::views::indices(traceCount), [&reader, &state, fallback](usize) -> void {
     const String message = reader.string();
     const SourceLocationData location = readLocation(reader);
@@ -439,7 +439,7 @@ auto writeProfile(WireWriter &writer, const profiling::ProfileSnapshot &profile)
   profiling::ProfileSnapshot profile{
       .duration = std::chrono::steady_clock::duration{reader.pod<i64>()},
   };
-  const usize eventCount = reader.count(3 * sizeof(u64) + sizeof(u8));
+  const usize eventCount = reader.count((3 * sizeof(u64)) + sizeof(u8));
   std::ranges::for_each(std::views::indices(eventCount), [&reader, &profile, fallback](usize) -> void {
     String name = reader.string();
     const auto duration = std::chrono::steady_clock::duration{reader.pod<i64>()};
@@ -523,6 +523,7 @@ auto writeExecution(WireWriter &writer, const TestExecution &execution) -> void 
   writer.pod(static_cast<u8>(execution.fault.has_value()));
   if (execution.fault) {
     writer.pod(static_cast<u8>(execution.fault->kind));
+    writer.pod(static_cast<u8>(execution.fault->signal));
     writer.pod(execution.fault->code);
     writer.pod(execution.fault->address);
     writer.pod(execution.fault->instruction);
@@ -560,6 +561,7 @@ auto writeExecution(WireWriter &writer, const TestExecution &execution) -> void 
   if (reader.pod<u8>() != 0) {
     execution.fault = NativeFault{
         .kind = static_cast<NativeFaultKind>(reader.pod<u8>()),
+        .signal = static_cast<NativeSignal>(reader.pod<u8>()),
         .code = reader.pod<i32>(),
         .address = reader.pod<u64>(),
         .instruction = reader.pod<u64>(),
@@ -699,8 +701,8 @@ auto consumeWorkerRequest() -> Option<WorkerRequest> {
   const Option<u64> runSeedValue = parseU64(*runSeed);
   const Option<u64> timeModeValue = parseU64(*timeMode);
   const Option<u64> traceModeValue = parseU64(*traceMode);
-  if (not plannedCaseValue.has_value() or not runIterationValue.has_value() or
-      not runSeedValue.has_value() or not timeModeValue.has_value() or not traceModeValue.has_value())
+  if (not plannedCaseValue.has_value() or not runIterationValue.has_value() or not runSeedValue.has_value() or
+      not timeModeValue.has_value() or not traceModeValue.has_value())
     return WorkerRequest{};
 
   return WorkerRequest{
