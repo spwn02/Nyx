@@ -164,6 +164,187 @@ auto scheduleAfter(std::coroutine_handle<> handle, RunLoop::Clock::duration dura
 
 [[nodiscard]] auto stopRequested() noexcept -> bool;
 
+/// Stores the lifecycle state shared by every Nyx::Test task promise.
+///
+/// The promise owns the exception and continuation until the coroutine frame is destroyed. Result consumption
+/// is deliberately one-shot so a completed task cannot be observed through two owners.
+class TaskPromiseBase {
+public:
+  struct FinalAwaiter final {
+    // NOLINTNEXTLINE(readability-convert-member-functions-to-static)
+    [[nodiscard]] constexpr auto await_ready() const noexcept -> bool {
+      return false;
+    }
+
+    template <class Promise>
+    [[nodiscard]] auto await_suspend(std::coroutine_handle<Promise> handle) const noexcept
+        -> std::coroutine_handle<> {
+      const std::coroutine_handle<> continuation = handle.promise().continuation();
+      return continuation ? continuation : std::noop_coroutine();
+    }
+
+    constexpr auto await_resume() const noexcept -> void {
+    }
+  };
+
+  [[nodiscard]] static constexpr auto initial_suspend() noexcept -> std::suspend_always {
+    return {};
+  }
+
+  // NOLINTNEXTLINE(readability-convert-member-functions-to-static)
+  [[nodiscard]] constexpr auto final_suspend() noexcept -> FinalAwaiter {
+    return {};
+  }
+
+  auto unhandled_exception() noexcept -> void {
+    exception_ = std::current_exception();
+  }
+
+  [[nodiscard]] auto hasContinuation() const noexcept -> bool {
+    return static_cast<bool>(continuation_);
+  }
+
+  [[nodiscard]] auto continuation() const noexcept -> std::coroutine_handle<> {
+    return continuation_;
+  }
+
+  auto setContinuation(std::coroutine_handle<> continuation) noexcept -> void {
+    continuation_ = continuation;
+  }
+
+protected:
+  auto consumeResult(StringView alreadyConsumedMessage,
+      std::source_location location = std::source_location::current()) -> void {
+    if (resultTaken_)
+      fatal(alreadyConsumedMessage, {}, location);
+
+    resultTaken_ = true;
+
+    if (exception_)
+      std::rethrow_exception(exception_);
+  }
+
+private:
+  std::exception_ptr exception_;
+  std::coroutine_handle<> continuation_;
+  bool resultTaken_{};
+};
+
+/// Owns a coroutine handle and provides the move-only lifetime policy shared by Task specialization.
+template <class Handle>
+class TaskHandleStorage final {
+public:
+  TaskHandleStorage() = default;
+
+  explicit TaskHandleStorage(Handle handle) noexcept
+      : handle_(handle) {
+  }
+
+  ~TaskHandleStorage() noexcept {
+    reset();
+  }
+
+  TaskHandleStorage(const TaskHandleStorage &) = delete ("TaskHandleStorage owns a coroutine handle.");
+  auto operator=(const TaskHandleStorage &)
+      -> TaskHandleStorage & = delete ("TaskHandleStorage owns a coroutine handle.");
+
+  TaskHandleStorage(TaskHandleStorage &&other) noexcept
+      : handle_(std::exchange(other.handle_, {})) {
+  }
+
+  auto operator=(TaskHandleStorage &&other) noexcept -> TaskHandleStorage & {
+    if (this == std::addressof(other))
+      return *this;
+
+    reset();
+    handle_ = std::exchange(other.handle_, {});
+    return *this;
+  }
+
+  [[nodiscard]] auto handle() const noexcept -> Handle {
+    return handle_;
+  }
+
+  [[nodiscard]] auto release() noexcept -> Handle {
+    return std::exchange(handle_, {});
+  }
+
+private:
+  auto reset() noexcept -> void {
+    if (handle_)
+      handle_.destroy();
+
+    handle_ = {};
+  }
+
+  Handle handle_{};
+};
+
+/// Provides one awaiter implementation for value and void tasks.
+template <class Handle, class Value>
+class TaskAwaiter final {
+public:
+  TaskAwaiter(Handle handle, bool ownsHandle) noexcept
+      : handle_(handle)
+      , ownsHandle_(ownsHandle) {
+  }
+
+  ~TaskAwaiter() noexcept {
+    if (ownsHandle_ and handle_)
+      handle_.destroy();
+  }
+
+  TaskAwaiter(const TaskAwaiter &) = delete (
+      "TaskAwaiter may own a value, which is destroyed in its destructor.");
+  auto operator=(const TaskAwaiter &)
+      -> TaskAwaiter & = delete ("TaskAwaiter may own a value, which is destroyed in its destructor.");
+
+  TaskAwaiter(TaskAwaiter &&other) noexcept
+      : handle_(std::exchange(other.handle_, {}))
+      , ownsHandle_(std::exchange(other.ownsHandle_, false)) {
+  }
+
+  auto operator=(TaskAwaiter &&other) noexcept -> TaskAwaiter & {
+    if (this == std::addressof(other))
+      return *this;
+
+    if (ownsHandle_ and handle_)
+      handle_.destroy();
+
+    handle_ = std::exchange(other.handle_, {});
+    ownsHandle_ = std::exchange(other.ownsHandle_, false);
+    return *this;
+  }
+
+  [[nodiscard]] auto await_ready() const noexcept -> bool {
+    return handle_ and handle_.done();
+  }
+
+  auto await_suspend(std::coroutine_handle<> continuation) -> bool {
+    if (not handle_)
+      fatal("Nyx::Test cannot await an empty Task<T>.");
+
+    if (handle_.promise().hasContinuation())
+      fatal("Nyx::Test Task<T> may be awaited only once.");
+
+    handle_.promise().setContinuation(continuation);
+    detail::schedule(handle_);
+    return true;
+  }
+
+  [[nodiscard]] auto await_resume() -> Value {
+    if constexpr (std::is_void_v<Value>) {
+      handle_.promise().takeResult();
+    } else {
+      return handle_.promise().takeResult();
+    }
+  }
+
+private:
+  Handle handle_{};
+  bool ownsHandle_{};
+};
+
 /// Drives one task until completion, cancellation, or a broken lifecycle is observed.
 template <class Value, class Resume>
 auto drive(Task<Value> &task, Resume &&resume) -> TaskDriveResult;
@@ -244,32 +425,12 @@ public:
   class promise_type;
   using Handle = std::coroutine_handle<promise_type>;
 
-  class promise_type final {
+  class promise_type final : public detail::TaskPromiseBase {
   public:
-    struct FinalAwaiter final {
-      [[nodiscard]] constexpr auto await_ready() const noexcept -> bool {
-        return false;
-      }
-
-      [[nodiscard]] auto await_suspend(Handle handle) const noexcept -> std::coroutine_handle<> {
-        const std::coroutine_handle<> continuation = handle.promise().continuation_;
-        return continuation ? continuation : std::noop_coroutine();
-      }
-
-      constexpr auto await_resume() const noexcept -> void {
-      }
-    };
+    using FinalAwaiter = detail::TaskPromiseBase::FinalAwaiter;
 
     [[nodiscard]] auto get_return_object() noexcept -> Task {
       return Task{Handle::from_promise(*this)};
-    }
-
-    [[nodiscard]] static constexpr auto initial_suspend() noexcept -> std::suspend_always {
-      return {};
-    }
-
-    [[nodiscard]] static constexpr auto final_suspend() noexcept -> FinalAwaiter {
-      return {};
     }
 
     template <class Return>
@@ -278,18 +439,8 @@ public:
       value_.emplace(std::forward<Return>(value));
     }
 
-    auto unhandled_exception() noexcept -> void {
-      exception_ = std::current_exception();
-    }
-
     [[nodiscard]] auto takeResult() -> Value {
-      if (resultTaken_)
-        fatal("Nyx::Test Task<T> result may be read only once.");
-
-      resultTaken_ = true;
-
-      if (exception_)
-        std::rethrow_exception(exception_);
+      consumeResult("Nyx::Test Task<T> result may be read only once.");
 
       if (not value_)
         fatal("Nyx::Test Task<T> completed without a value.");
@@ -297,122 +448,45 @@ public:
       return std::move(*value_);
     }
 
-    [[nodiscard]] auto hasContinuation() const noexcept -> bool {
-      return static_cast<bool>(continuation_);
-    }
-
-    auto setContinuation(std::coroutine_handle<> continuation) noexcept -> void {
-      continuation_ = continuation;
-    }
-
   private:
-    std::exception_ptr exception_;
-    std::coroutine_handle<> continuation_;
     Option<Value> value_{};
-    bool resultTaken_{};
   };
 
-  class Awaiter final {
-  public:
-    Awaiter(Handle handle, bool ownsHandle) noexcept
-        : handle_(handle)
-        , ownsHandle_(ownsHandle) {
-    }
-
-    ~Awaiter() noexcept {
-      if (ownsHandle_ and handle_)
-        handle_.destroy();
-    }
-
-    Awaiter(const Awaiter &) = delete ("Awaiter may own value, which is destroyed in its destructor.");
-    auto operator=(const Awaiter &)
-        -> Awaiter & = delete ("Awaiter may own value, which is destroyed in its destructor.");
-
-    Awaiter(Awaiter &&other) noexcept
-        : handle_(std::exchange(other.handle_, {}))
-        , ownsHandle_(std::exchange(other.ownsHandle_, false)) {
-    }
-
-    auto operator=(Awaiter &&other) noexcept -> Awaiter & {
-      if (this == std::addressof(other))
-        return *this;
-
-      if (ownsHandle_ and handle_)
-        handle_.destroy();
-
-      handle_ = std::exchange(other.handle_, {});
-      ownsHandle_ = std::exchange(other.ownsHandle_, false);
-      return *this;
-    }
-
-    [[nodiscard]] auto await_ready() const noexcept -> bool {
-      return handle_ and handle_.done();
-    }
-
-    auto await_suspend(std::coroutine_handle<> continuation) -> bool {
-      if (not handle_)
-        fatal("Nyx::Test cannot await an empty Task<T>.");
-
-      if (handle_.promise().hasContinuation())
-        fatal("Nyx::Test Task<T> may be awaited only once.");
-
-      handle_.promise().setContinuation(continuation);
-      detail::schedule(handle_);
-      return true;
-    }
-
-    [[nodiscard]] auto await_resume() -> Value {
-      return handle_.promise().takeResult();
-    }
-
-  private:
-    Handle handle_{};
-    bool ownsHandle_{};
-  };
+  using Awaiter = detail::TaskAwaiter<Handle, Value>;
 
   Task() = default;
 
-  ~Task() noexcept {
-    reset();
-  }
+  ~Task() noexcept = default;
 
   Task(const Task &) = delete ("Task<T> owns coroutine handle");
   auto operator=(const Task &) -> Task & = delete ("Task<T> owns coroutine handle");
 
-  Task(Task &&other) noexcept
-      : handle_(std::exchange(other.handle_, {})) {
-  }
-
-  auto operator=(Task &&other) noexcept -> Task & {
-    if (this == std::addressof(other))
-      return *this;
-
-    reset();
-    handle_ = std::exchange(other.handle_, {});
-    return *this;
-  }
+  Task(Task &&) noexcept = default;
+  auto operator=(Task &&) noexcept -> Task & = default;
 
   [[nodiscard]] auto valid() const noexcept -> bool {
-    return static_cast<bool>(handle_);
+    return static_cast<bool>(storage_.handle());
   }
 
   [[nodiscard]] auto done() const noexcept -> bool {
-    return not handle_ or handle_.done();
+    const Handle handle = storage_.handle();
+    return not handle or handle.done();
   }
 
   [[nodiscard]] auto takeResult() && -> Value {
-    if (not handle_ or not handle_.done())
+    const Handle handle = storage_.handle();
+    if (not handle or not handle.done())
       fatal("Nyx::Test cannot read an incomplete Task<T>.");
 
-    return handle_.promise().takeResult();
+    return handle.promise().takeResult();
   }
 
   [[nodiscard]] auto operator co_await() & noexcept -> Awaiter {
-    return Awaiter{handle_, false};
+    return Awaiter{storage_.handle(), false};
   }
 
   [[nodiscard]] auto operator co_await() && noexcept -> Awaiter {
-    return Awaiter{std::exchange(handle_, {}), true};
+    return Awaiter{storage_.release(), true};
   }
 
 private:
@@ -424,17 +498,14 @@ private:
       NextWakeUp &&nextWakeUp) -> detail::TaskDriveResult;
 
   explicit Task(Handle handle) noexcept
-      : handle_(handle) {
+      : storage_(handle) {
   }
 
-  auto reset() noexcept -> void {
-    if (handle_)
-      handle_.destroy();
-
-    handle_ = {};
+  [[nodiscard]] auto handle() const noexcept -> Handle {
+    return storage_.handle();
   }
 
-  Handle handle_{};
+  detail::TaskHandleStorage<Handle> storage_{};
 };
 
 template <>
@@ -443,166 +514,57 @@ public:
   class promise_type;
   using Handle = std::coroutine_handle<promise_type>;
 
-  class promise_type final {
+  class promise_type final : public detail::TaskPromiseBase {
   public:
-    struct FinalAwaiter final {
-      [[nodiscard]] constexpr auto await_ready() const noexcept -> bool { // NOLINT
-        return false;
-      }
-
-      [[nodiscard]] auto await_suspend(Handle handle) const noexcept -> std::coroutine_handle<> { // NOLINT
-        const std::coroutine_handle<> continuation = handle.promise().continuation_;
-        return continuation ? continuation : std::noop_coroutine();
-      }
-
-      constexpr auto await_resume() const noexcept -> void {
-      }
-    };
+    using FinalAwaiter = detail::TaskPromiseBase::FinalAwaiter;
 
     [[nodiscard]] auto get_return_object() noexcept -> Task {
       return Task{Handle::from_promise(*this)};
     }
 
-    [[nodiscard]] static constexpr auto initial_suspend() noexcept -> std::suspend_always {
-      return {};
-    }
-
-    [[nodiscard]] static constexpr auto final_suspend() noexcept -> FinalAwaiter {
-      return {};
-    }
-
     auto return_void() -> void {
     }
 
-    auto unhandled_exception() noexcept -> void {
-      exception_ = std::current_exception();
-    }
-
     auto takeResult() -> void {
-      if (resultTaken_)
-        fatal("Nyx::Test Task<T> result may be read only once.");
-
-      resultTaken_ = true;
-
-      if (exception_)
-        std::rethrow_exception(exception_);
+      consumeResult("Nyx::Test Task<T> result may be read only once.");
     }
-
-    [[nodiscard]] auto hasContinuation() const noexcept -> bool {
-      return static_cast<bool>(continuation_);
-    }
-
-    auto setContinuation(std::coroutine_handle<> continuation) noexcept -> void {
-      continuation_ = continuation;
-    }
-
-  private:
-    std::exception_ptr exception_;
-    std::coroutine_handle<> continuation_;
-    bool resultTaken_{};
   };
 
-  class Awaiter final {
-  public:
-    Awaiter(Handle handle, bool ownsHandle) noexcept
-        : handle_(handle)
-        , ownsHandle_(ownsHandle) {
-    }
-
-    ~Awaiter() noexcept {
-      if (ownsHandle_ and handle_)
-        handle_.destroy();
-    }
-
-    Awaiter(const Awaiter &) = delete ("Awaiter may own value, which is destroyed in its destructor.");
-    auto operator=(const Awaiter &)
-        -> Awaiter & = delete ("Awaiter may own value, which is destroyed in its destructor.");
-
-    Awaiter(Awaiter &&other) noexcept
-        : handle_(std::exchange(other.handle_, {}))
-        , ownsHandle_(std::exchange(other.ownsHandle_, false)) {
-    }
-
-    auto operator=(Awaiter &&other) noexcept -> Awaiter & {
-      if (this == std::addressof(other))
-        return *this;
-
-      if (ownsHandle_ and handle_)
-        handle_.destroy();
-
-      handle_ = std::exchange(other.handle_, {});
-      ownsHandle_ = std::exchange(other.ownsHandle_, false);
-      return *this;
-    }
-
-    [[nodiscard]] auto await_ready() const noexcept -> bool {
-      return handle_ and handle_.done();
-    }
-
-    auto await_suspend(std::coroutine_handle<> continuation) -> bool {
-      if (not handle_)
-        fatal("Nyx::Test cannot await an empty Task<T>.");
-
-      if (handle_.promise().hasContinuation())
-        fatal("Nyx::Test Task<T> may be awaited only once.");
-
-      handle_.promise().setContinuation(continuation);
-      detail::schedule(handle_);
-      return true;
-    }
-
-    auto await_resume() -> void {
-      handle_.promise().takeResult();
-    }
-
-  private:
-    Handle handle_;
-    bool ownsHandle_{};
-  };
+  using Awaiter = detail::TaskAwaiter<Handle, void>;
 
   Task() = default;
 
-  ~Task() noexcept {
-    reset();
-  }
+  ~Task() noexcept = default;
 
   Task(const Task &) = delete ("Task<T> owns coroutine handle");
   auto operator=(const Task &) -> Task & = delete ("Task<T> owns coroutine handle");
 
-  Task(Task &&other) noexcept
-      : handle_(std::exchange(other.handle_, {})) {
-  }
-
-  auto operator=(Task &&other) noexcept -> Task & {
-    if (this == std::addressof(other))
-      return *this;
-
-    reset();
-    handle_ = std::exchange(other.handle_, {});
-    return *this;
-  }
+  Task(Task &&other) noexcept = default;
+  auto operator=(Task &&other) noexcept -> Task & = default;
 
   [[nodiscard]] auto valid() const noexcept -> bool {
-    return static_cast<bool>(handle_);
+    return static_cast<bool>(storage_.handle());
   }
 
   [[nodiscard]] auto done() const noexcept -> bool {
-    return not handle_ or handle_.done();
+    const Handle handle = storage_.handle();
+    return not handle or handle.done();
   }
 
   auto takeResult() && -> void {
-    if (not handle_ or not handle_.done())
+    const Handle handle = storage_.handle();
+    if (not handle or not handle.done())
       fatal("Nyx::Test cannot read an incomplete Task<T>.");
 
-    handle_.promise().takeResult();
+    handle.promise().takeResult();
   }
 
   [[nodiscard]] auto operator co_await() & noexcept -> Awaiter {
-    return Awaiter{handle_, false};
+    return Awaiter{storage_.handle(), false};
   }
 
   [[nodiscard]] auto operator co_await() && noexcept -> Awaiter {
-    return Awaiter{std::exchange(handle_, {}), true};
+    return Awaiter{storage_.release(), true};
   }
 
 private:
@@ -614,17 +576,14 @@ private:
       NextWakeUp &&nextWakeUp) -> detail::TaskDriveResult;
 
   explicit Task(Handle handle) noexcept
-      : handle_(handle) {
+      : storage_(handle) {
   }
 
-  auto reset() noexcept -> void {
-    if (handle_)
-      handle_.destroy();
-
-    handle_ = {};
+  [[nodiscard]] auto handle() const noexcept -> Handle {
+    return storage_.handle();
   }
 
-  Handle handle_;
+  detail::TaskHandleStorage<Handle> storage_;
 };
 
 namespace detail {
@@ -639,7 +598,7 @@ auto drive(Task<Value> &task,
     return TaskDriveResult{.status = TaskDriveStatus::Empty};
 
   const auto discardPending = std::scope_exit([&runLoop] -> void { runLoop.discardPending(); });
-  runLoop.enqueue(task.handle_);
+  runLoop.enqueue(task.handle());
 
   while (not task.done()) {
     if (const Option<std::coroutine_handle<>> handle = runLoop.dequeue()) {
