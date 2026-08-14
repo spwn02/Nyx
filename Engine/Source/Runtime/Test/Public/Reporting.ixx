@@ -110,7 +110,7 @@ auto measureAsync(StringView name,
 
   const auto started = measurementNow();
   {
-    auto proifle = profiling::profileScope(name, location);
+    auto profile = profiling::profileScope(name, location);
     using Return = std::remove_cvref_t<std::invoke_result_t<Function &>>;
     if constexpr (std::same_as<Return, Task<void>>) {
       co_await std::invoke(function);
@@ -210,9 +210,28 @@ public:
   auto report(Span<const TestExecution> executions, std::ostream &output) const -> TestSummary;
 
 private:
+  struct RenderState;
+
   [[nodiscard]] auto colorEnabled() const noexcept -> bool;
 
   [[nodiscard]] auto shouldRenderTrace(const TestExecution &execution) const noexcept -> bool;
+
+  auto renderCase(const TestCaseResult &testCase,
+      const SourceManager &sources,
+      std::ostream &output,
+      bool useColor,
+      RenderState &state) const -> void;
+
+  auto renderMeasuredCase(const TestCaseResult &testCase,
+      const SourceManager &sources,
+      std::ostream &output,
+      RenderState &state) const -> void;
+
+  auto renderAttempt(const TestAttempt &attempt,
+      const SourceManager &sources,
+      std::ostream &output,
+      bool useColor,
+      RenderState &state) const -> void;
 
   auto renderFailure(const TestExecution &execution, const SourceManager &sources, std::ostream &output) const
       -> void;

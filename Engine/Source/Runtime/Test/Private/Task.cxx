@@ -132,11 +132,10 @@ auto RunLoop::waitForWork(Option<TimePoint> externalWake) -> WaitResult {
 
   promoteDueTimers();
 
-  if (externalFirst and now() >= *externalWake)
+  if (externalFirst and now() >= *externalWake) {
     timeoutTriggered_ = true;
-
-  if (externalFirst and now() >= *externalWake)
     return WaitResult::ExternalWake;
+  }
 
   return WaitResult::TimerReady;
 }

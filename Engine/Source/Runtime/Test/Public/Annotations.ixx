@@ -139,7 +139,7 @@ struct Trace final {};
 
 inline constexpr Trace trace{};
 
-/// Forces the annotated test case through the proces-per-case fault boundary.
+/// Forces the annotated test case through the process-per-case fault boundary.
 ///
 /// This is useful when a run globally uses `CrashIsolation::InProcess`, but one subject may experience
 /// aborts, invalid memory access, illegal instructions, or another native fault.

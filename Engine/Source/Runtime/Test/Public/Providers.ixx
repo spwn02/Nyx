@@ -4,6 +4,7 @@ import std;
 import Nyx.Core;
 import :Annotations;
 import :Context;
+import :Metadata;
 
 export namespace Nyx::Test {
 
@@ -17,7 +18,7 @@ struct FileQuery final {
 
 [[nodiscard]] auto findFiles(const FileQuery &query) -> Vec<Path>;
 
-// NOLINTBEGIN(bugprone-reserved-identifier)
+// NOLINTBEGIN(readability-identifier-naming, bugprone-reserved-identifier)
 namespace detail {
 
 enum class[[= debug::derive]] ProviderKind : u8 {
@@ -25,135 +26,6 @@ enum class[[= debug::derive]] ProviderKind : u8 {
   Values,
   Files,
 };
-
-// NOLINTBEGIN(readability-identifier-naming)
-template <class>
-struct IsValues final : std::false_type {};
-
-template <class... Items>
-struct IsValues<Values<Items...>> final : std::true_type {};
-
-template <class>
-struct IsFiles final : std::false_type {};
-
-template <usize Size>
-struct IsFiles<Files<Size>> final : std::true_type {};
-
-template <class>
-struct IsExclude final : std::false_type {};
-
-template <usize Size>
-struct IsExclude<Exclude<Size>> final : std::true_type {};
-
-template <class>
-struct IsIncludeDotFiles final : std::false_type {};
-
-template <>
-struct IsIncludeDotFiles<IncludeDotFiles> final : std::true_type {};
-
-template <class>
-struct IsContextParameter final : std::false_type {};
-
-template <>
-struct IsContextParameter<ContextParameter> final : std::true_type {};
-
-template <class>
-struct IsFromCaseParameter final : std::false_type {};
-
-template <>
-struct IsFromCaseParameter<FromCase> final : std::true_type {};
-// NOLINTEND(readability-identifier-naming)
-
-template <class Property>
-inline constexpr bool isSupportedArgumentProperty =
-    IsValues<Property>::value or IsFiles<Property>::value or IsExclude<Property>::value or
-    IsIncludeDotFiles<Property>::value or IsContextParameter<Property>::value or
-    IsFromCaseParameter<Property>::value;
-
-template <template <class> class Predicate, usize Index, class... Properties>
-struct FirstPropertyIndex;
-
-template <template <class> class Predicate, usize Index, class First, class... Rest>
-struct FirstPropertyIndex<Predicate, Index, First, Rest...>
-    : std::conditional_t<Predicate<First>::value,
-          std::integral_constant<usize, Index>,
-          FirstPropertyIndex<Predicate, Index + 1, Rest...>> {};
-
-template <class>
-struct ArgumentTraits;
-
-template <ArgumentName Name, class... Properties>
-struct ArgumentTraits<Argument<Name, Properties...>> final {
-  [[nodiscard]] static constexpr auto name() -> StringView {
-    return Argument<Name, Properties...>::name();
-  }
-
-  template <template <class> class Predicate>
-  [[nodiscard]] static consteval auto count() -> usize {
-    return (static_cast<usize>(Predicate<Properties>::value) + ... + usize{});
-  }
-
-  template <template <class> class Predicate>
-  [[nodiscard]] static consteval auto contains() -> bool {
-    return count<Predicate>() != 0;
-  }
-
-  template <template <class> class Predicate>
-  [[nodiscard]] static consteval auto firstIndex() -> usize {
-    return FirstPropertyIndex<Predicate, 0, Properties...>::value;
-  }
-
-  [[nodiscard]] static consteval auto propertiesAreSupported() -> bool {
-    return (isSupportedArgumentProperty<Properties> and ... and true);
-  }
-};
-
-template <std::meta::info Parameter, class ArgumentType>
-consteval auto argumentTargetsParameter() -> bool {
-  return ArgumentTraits<ArgumentType>::name() == meta::identifier<Parameter>;
-}
-
-template <std::meta::info Function, std::meta::info Parameter>
-consteval auto argumentBindingCount() -> usize {
-  usize count{};
-
-  template for (constexpr std::meta::info annotation : meta::annotations<Function>) {
-    using Annotation = meta::TypeObject<annotation>;
-
-    if constexpr (is_argument_v<Annotation>) {
-      if constexpr (argumentTargetsParameter<Parameter, Annotation>())
-        ++count;
-    }
-  }
-
-  return count;
-}
-
-template <std::meta::info Function, std::meta::info Parameter, template <class> class Predicate>
-consteval auto argumentPropertyCount() -> usize {
-  usize count{};
-
-  template for (constexpr std::meta::info annotation : meta::annotations<Function>) {
-    using Annotation = meta::TypeObject<annotation>;
-
-    if constexpr (is_argument_v<Annotation>) {
-      if constexpr (argumentTargetsParameter<Parameter, Annotation>())
-        count += ArgumentTraits<Annotation>::template count<Predicate>();
-    }
-  }
-
-  return count;
-}
-
-template <std::meta::info Function, class ArgumentType>
-consteval auto argumentTargetsFunctionParameter() -> bool {
-  template for (constexpr std::meta::info parameter : meta::parameters<Function>) {
-    if constexpr (argumentTargetsParameter<parameter, ArgumentType>())
-      return true;
-  }
-
-  return false;
-}
 
 template <std::meta::info Function, std::meta::info Parameter>
 consteval auto validateArgumentBinding() -> void {
@@ -165,30 +37,30 @@ consteval auto validateArgumentBinding() -> void {
 
   static_assert(
       bindingCount <= 1, "Nyx:Test parameters may have at most one [[= arg<\"name\">(...)]] binding.");
-  static_assert(contextCount <= 1, "Nyx:Test [[= arg<\"name\">(...)]] may contain [[= context]] only once.");
-  static_assert(caseCount <= 1, "Nyx:Test [[= arg<\"name\">(...)]] may contain [[= fromCase]] only once.");
+  static_assert(contextCount <= 1, "Nyx:Test parameters may contain [[= context]] only once.");
+  static_assert(caseCount <= 1, "Nyx:Test parameters may contain [[= fromCase]] only once.");
   static_assert(valuesCount + filesCount <= 1,
-      "Nyx:Test [[= arg<\"name\">(...)]] may contain one provider: [[= values(...)]] or [[= files(...)]].");
+      "Nyx:Test parameters may contain one provider: [[= values(...)]] or [[= files(...)]].");
   static_assert(contextCount + caseCount + valuesCount + filesCount <= 1,
-      "Nyx:Test [[= arg<\"name\">(...)]] may select one input source: [[= context]], [[= fromCase]], [[= "
+      "Nyx:Test parameters may select one input source: [[= context]], [[= fromCase]], [[= "
       "values(...)]], or [[= files(...)]].");
 }
 
 template <std::meta::info Function>
 consteval auto validateArgumentBindings() -> void {
-  template for (constexpr std::meta::info annotation : meta::annotations<Function>) {
+  template for (constexpr std::meta::info annotation : ReflectedFunctionMetadata<Function>::arguments) {
     using Annotation = meta::TypeObject<annotation>;
 
     if constexpr (is_argument_v<Annotation>) {
       static_assert(ArgumentTraits<Annotation>::propertiesAreSupported(),
-          "Nyx:Test [[= arg<\"name\">(...)]] accepts only [[= context]], [[= fromCase]], [[= values(...)]], "
+          "Nyx:Test parameter accepts only [[= context]], [[= fromCase]], [[= values(...)]], "
           "[[= files(...)]], [[= exclude(...)]], and [[= includeDotFiles]].");
       static_assert(argumentTargetsFunctionParameter<Function, Annotation>(),
           "Nyx:Test [[= arg<\"name\">(...)]] must name a parameter of its test function.");
     }
   }
 
-  template for (constexpr std::meta::info parameter : meta::parameters<Function>) {
+  template for (constexpr std::meta::info parameter : ReflectedFunctionMetadata<Function>::parameters) {
     validateArgumentBinding<Function, parameter>();
   }
 }
@@ -201,9 +73,9 @@ consteval auto providerCount() -> usize {
 
 template <std::meta::info Function, std::meta::info Parameter>
 consteval auto providerKindOf() -> ProviderKind {
-  if constexpr (argumentPropertyCount<Function, Parameter, IsValues>() != 0)
+  if constexpr (parameterSource<Function, Parameter>() == ParameterSource::Values)
     return ProviderKind::Values;
-  else if constexpr (argumentPropertyCount<Function, Parameter, IsFiles>() != 0)
+  else if constexpr (parameterSource<Function, Parameter>() == ParameterSource::Files)
     return ProviderKind::Files;
   else
     return ProviderKind::None;
@@ -211,18 +83,18 @@ consteval auto providerKindOf() -> ProviderKind {
 
 template <std::meta::info Function, std::meta::info Parameter>
 consteval auto isProviderParameter() -> bool {
-  return providerKindOf<Function, Parameter>() != ProviderKind::None;
+  return parameterSource<Function, Parameter>() == ParameterSource::Values or
+         parameterSource<Function, Parameter>() == ParameterSource::Files;
 }
 
 template <std::meta::info Function, std::meta::info Parameter>
 consteval auto isContextParameter() -> bool {
-  return std::same_as<meta::TypeObject<Parameter>, Context> or
-         argumentPropertyCount<Function, Parameter, IsContextParameter>() != 0;
+  return parameterSource<Function, Parameter>() == ParameterSource::Context;
 }
 
 template <std::meta::info Function, std::meta::info Parameter>
 consteval auto isFromCaseParameter() -> bool {
-  return argumentPropertyCount<Function, Parameter, IsFromCaseParameter>() != 0;
+  return parameterSource<Function, Parameter>() == ParameterSource::Case;
 }
 
 template <std::meta::info Function, std::meta::info Parameter>
@@ -234,16 +106,22 @@ consteval auto hasFileModifiers() -> bool {
 template <std::meta::info Function, std::meta::info Parameter, template <class> class Predicate>
 consteval auto argumentProperty() -> auto {
   if constexpr (argumentPropertyCount<Function, Parameter, Predicate>() != 0) {
-    template for (constexpr std::meta::info annotation : meta::annotations<Function>) {
-      using Annotation = meta::TypeObject<annotation>;
+    if constexpr (directPropertyCountFor<Function, Parameter, Predicate>() != 0) {
+      template for (constexpr std::meta::info annotation : meta::annotations<Parameter>) {
+        using Annotation = meta::TypeObject<annotation>;
 
-      if constexpr (is_argument_v<Annotation>) {
-        if constexpr (argumentTargetsParameter<Parameter, Annotation>()) {
-          if constexpr (ArgumentTraits<Annotation>::template contains<Predicate>()) {
-            constexpr Annotation argument = std::meta::extract<Annotation>(annotation);
-            constexpr usize index = ArgumentTraits<Annotation>::template firstIndex<Predicate>();
-            return argument.template property<index>();
-          }
+        if constexpr (Predicate<Annotation>::value)
+          return std::meta::extract<Annotation>(annotation);
+      }
+    } else {
+      template for (constexpr std::meta::info annotation : ReflectedFunctionMetadata<Function>::arguments) {
+        using Annotation = meta::TypeObject<annotation>;
+
+        if constexpr (argumentTargetsParameter<Parameter, Annotation>() and
+                      ArgumentTraits<Annotation>::template contains<Predicate>()) {
+          constexpr Annotation argument = std::meta::extract<Annotation>(annotation);
+          constexpr usize index = ArgumentTraits<Annotation>::template firstIndex<Predicate>();
+          return argument.template property<index>();
         }
       }
     }
@@ -251,7 +129,7 @@ consteval auto argumentProperty() -> auto {
     std::unreachable();
   } else {
     static_assert(meta::always_false_v<meta::TypeObject<Parameter>>,
-        "Nyx::Test could not find the requested [[= arg<\"name\">(...)]] property.");
+        "Nyx::Test could not find the requested parameter annotation or legacy arg property.");
   }
 }
 
@@ -265,14 +143,12 @@ consteval auto filesAnnotation() -> auto {
   return argumentProperty<Function, Parameter, IsFiles>();
 }
 
-// NOLINTBEGIN(readability-identifier-naming)
 template <std::meta::info Parameter, class ValueList>
 inline constexpr bool values_constructible_v{};
 
 template <std::meta::info Parameter, class... ValueTypes>
 inline constexpr bool values_constructible_v<Parameter, Values<ValueTypes...>> =
     (std::constructible_from<meta::TypeObject<Parameter>, ValueTypes> and ...);
-// NOLINTEND(readability-identifier-naming)
 
 template <std::meta::info Function, std::meta::info Parameter>
 consteval auto validateProviderParameter() -> void {
@@ -284,22 +160,22 @@ consteval auto validateProviderParameter() -> void {
     static_assert(values_constructible_v<Parameter, ValueList>,
         "Nyx::Test [[= values(...)]] contains a value incompatible with its parameter type.");
     static_assert(not hasFileModifiers<Function, Parameter>(),
-        "Nyx::Test [[= exclude(...)]] and [[= includeDotFiles]] require[[=files(...)]] in the same "
-        "arg<\"name\">(...).");
+        "Nyx::Test [[= exclude(...)]] and [[= includeDotFiles]] require [[= files(...)]] on the same "
+        "parameter.");
   } else if constexpr (providerKindOf<Function, Parameter>() == ProviderKind::Files) {
     static_assert(std::same_as<meta::TypeObject<Parameter>, Path>,
         "Nyx::Test [[= files(...)]] bindings must target a Path parameter.");
   } else {
     static_assert(not hasFileModifiers<Function, Parameter>(),
-        "Nyx::Test [[= exclude(...)]] and [[= includeDotFiles]] require[[= files(...)]] on the same "
-        "arg<\"<name\">(...).");
+        "Nyx::Test [[= exclude(...)]] and [[= includeDotFiles]] require [[= files(...)]] on the same "
+        "parameter.");
   }
 }
 
 template <std::meta::info Function, usize ParameterIndex = 0>
 consteval auto validateProviderParameters() -> void {
-  if constexpr (ParameterIndex < meta::parameters<Function>.size()) {
-    constexpr std::meta::info parameter = meta::parameters<Function>[ParameterIndex];
+  if constexpr (ParameterIndex < ReflectedFunctionMetadata<Function>::parameters.size()) {
+    constexpr std::meta::info parameter = ReflectedFunctionMetadata<Function>::parameters[ParameterIndex];
     validateProviderParameter<Function, parameter>();
     validateProviderParameters<Function, ParameterIndex + 1>();
   }
@@ -313,6 +189,20 @@ constexpr auto forEachValues(Callback &&callback) -> void {
   });
 }
 
+struct FilePropertyAppender final {
+  Ref<FileQuery> query;
+
+  template <class Property>
+  constexpr auto operator()(const Property &property) const -> void {
+    using Type = std::remove_cvref_t<Property>;
+
+    if constexpr (is_exclude_v<Type>)
+      query.get().excludes.emplace_back(property.apply());
+    else if constexpr (std::same_as<Type, IncludeDotFiles>)
+      query.get().includeDotFiles = true;
+  }
+};
+
 template <std::meta::info Function, std::meta::info Parameter>
 constexpr auto fileQuery() -> FileQuery {
   constexpr auto files = filesAnnotation<Function, Parameter>();
@@ -320,23 +210,16 @@ constexpr auto fileQuery() -> FileQuery {
       .pattern = String{files.apply()},
   };
 
-  template for (constexpr std::meta::info annotation : meta::annotations<Function>) {
-    using Annotation = meta::TypeObject<annotation>;
+  template for (constexpr ParameterProperty property :
+      ReflectedFunctionMetadata<Function>::parameterProperties) {
+    if constexpr (property.parameter == Parameter) {
+      using Annotation = meta::TypeObject<property.annotation>;
 
-    if constexpr (is_argument_v<Annotation>) {
-      if constexpr (argumentTargetsParameter<Parameter, Annotation>()) {
-        constexpr Annotation argument = std::meta::extract<Annotation>(annotation);
-        argument.apply([&query](const auto &...properties) constexpr -> void {
-          const auto appendProperty = [&query]<class Property>(const Property &property) constexpr -> void {
-            using Type = std::remove_cvref_t<Property>;
-
-            if constexpr (is_exclude_v<Type>)
-              query.excludes.emplace_back(property.apply());
-            else if constexpr (std::same_as<Type, IncludeDotFiles>)
-              query.includeDotFiles = true;
-          };
-          (appendProperty(properties), ...);
-        });
+      if constexpr (property.legacy) {
+        constexpr Annotation argument = std::meta::extract<Annotation>(property.annotation);
+        argument.apply(FilePropertyAppender{query});
+      } else if constexpr (is_exclude_v<Annotation> or std::same_as<Annotation, IncludeDotFiles>) {
+        FilePropertyAppender{query}(std::meta::extract<Annotation>(property.annotation));
       }
     }
   }
@@ -367,10 +250,10 @@ constexpr auto forEachProviderValue(Callback &&callback) -> void {
 
 template <std::meta::info Function, usize ParameterIndex = 0>
 consteval auto providerParameterCount() -> usize {
-  if constexpr (ParameterIndex == meta::parameters<Function>.size()) {
+  if constexpr (ParameterIndex == ReflectedFunctionMetadata<Function>::parameters.size()) {
     return 0;
   } else {
-    constexpr std::meta::info parameter = meta::parameters<Function>[ParameterIndex];
+    constexpr std::meta::info parameter = ReflectedFunctionMetadata<Function>::parameters[ParameterIndex];
     return (isProviderParameter<Function, parameter>() ? 1 : 0) +
            providerParameterCount<Function, ParameterIndex + 1>();
   }
@@ -381,7 +264,7 @@ consteval auto providerArgumentIndex() -> usize {
   if constexpr (CandidateIndex == ParameterIndex) {
     return 0;
   } else {
-    constexpr std::meta::info parameter = meta::parameters<Function>[CandidateIndex];
+    constexpr std::meta::info parameter = ReflectedFunctionMetadata<Function>::parameters[CandidateIndex];
     return (isProviderParameter<Function, parameter>() ? 1 : 0) +
            providerArgumentIndex<Function, ParameterIndex, CandidateIndex + 1>();
   }
@@ -389,10 +272,10 @@ consteval auto providerArgumentIndex() -> usize {
 
 template <std::meta::info Function, usize ProviderIndex, usize ParameterIndex = 0>
 consteval auto providerParameterIndex() -> usize {
-  static_assert(ParameterIndex < meta::parameters<Function>.size(),
+  static_assert(ParameterIndex < ReflectedFunctionMetadata<Function>::parameters.size(),
       "Nyx::Test provider parameter index is outside the reflected function signature.");
 
-  constexpr std::meta::info parameter = meta::parameters<Function>[ParameterIndex];
+  constexpr std::meta::info parameter = ReflectedFunctionMetadata<Function>::parameters[ParameterIndex];
   if constexpr (isProviderParameter<Function, parameter>()) {
     if constexpr (ProviderIndex == 0)
       return ParameterIndex;
@@ -405,10 +288,10 @@ consteval auto providerParameterIndex() -> usize {
 
 template <std::meta::info Function, usize ParameterIndex = 0>
 consteval auto firstProviderLocation() -> std::source_location {
-  if constexpr (ParameterIndex == meta::parameters<Function>.size()) {
+  if constexpr (ParameterIndex == ReflectedFunctionMetadata<Function>::parameters.size()) {
     return std::meta::source_location_of(Function);
   } else {
-    constexpr std::meta::info parameter = meta::parameters<Function>[ParameterIndex];
+    constexpr std::meta::info parameter = ReflectedFunctionMetadata<Function>::parameters[ParameterIndex];
     if constexpr (isProviderParameter<Function, parameter>())
       return std::meta::source_location_of(parameter);
     else
@@ -418,11 +301,11 @@ consteval auto firstProviderLocation() -> std::source_location {
 
 template <std::meta::info Function, usize ParameterIndex, class Callback, class... Values>
 auto forEachProviderCombinationImpl(Callback &&callback, usize &count, const Values &...values) -> void {
-  if constexpr (ParameterIndex == meta::parameters<Function>.size()) {
+  if constexpr (ParameterIndex == ReflectedFunctionMetadata<Function>::parameters.size()) {
     std::invoke(std::forward<Callback>(callback), values...);
     ++count;
   } else {
-    constexpr std::meta::info parameter = meta::parameters<Function>[ParameterIndex];
+    constexpr std::meta::info parameter = ReflectedFunctionMetadata<Function>::parameters[ParameterIndex];
 
     if constexpr (isProviderParameter<Function, parameter>()) {
       forEachProviderValue<Function, parameter>([&callback, &count, &values...](const auto &value) -> void {
@@ -467,7 +350,7 @@ template <std::meta::info Function, usize ProviderIndex = 0, class Tuple>
 auto appendProviderDescription(String &result, const Tuple &values) -> void {
   if constexpr (ProviderIndex < std::tuple_size_v<std::remove_cvref_t<Tuple>>) {
     constexpr usize parameterIndex = providerParameterIndex<Function, ProviderIndex>();
-    constexpr std::meta::info parameter = meta::parameters<Function>[parameterIndex];
+    constexpr std::meta::info parameter = ReflectedFunctionMetadata<Function>::parameters[parameterIndex];
     constexpr StringView name = meta::identifier<parameter>;
 
     if (not result.empty())
@@ -492,7 +375,7 @@ template <std::meta::info Function, usize ProviderIndex = 0>
 auto appendMissingProviderDescription(String &result) -> void {
   if constexpr (ProviderIndex < providerParameterCount<Function>()) {
     constexpr usize parameterIndex = providerParameterIndex<Function, ProviderIndex>();
-    constexpr std::meta::info parameter = meta::parameters<Function>[parameterIndex];
+    constexpr std::meta::info parameter = ReflectedFunctionMetadata<Function>::parameters[parameterIndex];
     constexpr StringView name = meta::identifier<parameter>;
 
     if (not result.empty())
@@ -512,6 +395,6 @@ template <std::meta::info Function>
 }
 
 } // namespace
-// NOLINTEND(bugprone-reserved-identifier)
+// NOLINTEND(readability-identifier-naming, bugprone-reserved-identifier)
 
 } // namespace Nyx::Test

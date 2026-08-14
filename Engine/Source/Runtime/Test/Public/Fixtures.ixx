@@ -4,6 +4,7 @@ import std;
 import Nyx.Core;
 import :Annotations;
 import :Context;
+import :Metadata;
 import :Providers;
 import :Task;
 
@@ -26,12 +27,12 @@ consteval auto isFixture() -> bool {
   if constexpr (not std::meta::is_function(Function))
     return false;
   else
-    return Nyx::meta::has_annotation<Fixture, Function>();
+    return ReflectedFunctionMetadata<Function>::fixtureMarkers.size() != 0;
 }
 
 template <std::meta::info FixtureFunction>
 consteval auto isOnce() -> bool {
-  return Nyx::meta::has_annotation<Once, FixtureFunction>();
+  return ReflectedFunctionMetadata<FixtureFunction>::onceMarkers.size() != 0;
 }
 
 // NOLINTBEGIN(readability-identifier-naming)
@@ -140,8 +141,9 @@ template <std::meta::info Namespace,
     std::meta::info... Path>
 consteval auto validateFixtureDependency() -> void {
   validateInputParameter<Parameter>();
-  static_assert(argumentBindingCount<FixtureFunction, Parameter>() == 0,
-      "Nyx::Test fixture parameters are dependencies and cannot use [[= arg<\"name\">(...)]] bindings.");
+  static_assert(argumentBindingCount<FixtureFunction, Parameter>() == 0 and
+                    directPropertyCount<FixtureFunction, Parameter>() == 0,
+      "Nyx::Test fixture parameters are dependencies and cannot use parameter provider annotations.");
 
   using Value = meta::TypeObject<Parameter>;
   constexpr usize candidateCount = fixtureCount<Namespace, Value>();
@@ -172,7 +174,7 @@ consteval auto validateFixtureDependencyGraph() -> void {
       "Nyx::Test fixture dependencies cannot form a cycle.");
   validateFixtureSignature<FixtureFunction>();
 
-  template for (constexpr std::meta::info parameter : meta::parameters<FixtureFunction>)
+  template for (constexpr std::meta::info parameter : ReflectedFunctionMetadata<FixtureFunction>::parameters)
       validateFixtureDependency<Namespace, FixtureFunction, parameter, Path...>();
 }
 
@@ -194,10 +196,10 @@ consteval auto fixtureDeclarationsAreValid() -> bool {
 
 template <std::meta::info Function, usize ParameterIndex = 0>
 consteval auto caseParameterCount() -> usize {
-  if constexpr (ParameterIndex == meta::parameters<Function>.size()) {
+  if constexpr (ParameterIndex == ReflectedFunctionMetadata<Function>::parameters.size()) {
     return 0;
   } else {
-    constexpr std::meta::info parameter = meta::parameters<Function>[ParameterIndex];
+    constexpr std::meta::info parameter = ReflectedFunctionMetadata<Function>::parameters[ParameterIndex];
     return (isFromCaseParameter<Function, parameter>() ? 1 : 0) +
            caseParameterCount<Function, ParameterIndex + 1>();
   }
@@ -205,20 +207,20 @@ consteval auto caseParameterCount() -> usize {
 
 template <std::meta::info Function, usize ParameterIndex = 0>
 consteval auto hasContextParameter() -> bool {
-  if constexpr (ParameterIndex == meta::parameters<Function>.size()) {
+  if constexpr (ParameterIndex == ReflectedFunctionMetadata<Function>::parameters.size()) {
     return false;
   } else {
-    constexpr std::meta::info parameter = meta::parameters<Function>[ParameterIndex];
+    constexpr std::meta::info parameter = ReflectedFunctionMetadata<Function>::parameters[ParameterIndex];
     return isContextParameter<Function, parameter>() or hasContextParameter<Function, ParameterIndex + 1>();
   }
 }
 
 template <std::meta::info Namespace, std::meta::info Function, usize ParameterIndex = 0>
 consteval auto hasAutomaticFixtureParameter() -> bool {
-  if constexpr (ParameterIndex == meta::parameters<Function>.size()) {
+  if constexpr (ParameterIndex == ReflectedFunctionMetadata<Function>::parameters.size()) {
     return false;
   } else {
-    constexpr std::meta::info parameter = meta::parameters<Function>[ParameterIndex];
+    constexpr std::meta::info parameter = ReflectedFunctionMetadata<Function>::parameters[ParameterIndex];
     using Value = meta::TypeObject<parameter>;
 
     if constexpr (isContextParameter<Function, parameter>() or isFromCaseParameter<Function, parameter>() or
@@ -242,7 +244,7 @@ consteval auto caseArgumentIndex() -> usize {
   if constexpr (CandidateIndex == ParameterIndex) {
     return 0;
   } else {
-    constexpr std::meta::info parameter = meta::parameters<Function>[CandidateIndex];
+    constexpr std::meta::info parameter = ReflectedFunctionMetadata<Function>::parameters[CandidateIndex];
     return (isFromCaseParameter<Function, parameter>() ? 1 : 0) +
            caseArgumentIndex<Function, ParameterIndex, CandidateIndex + 1>();
   }
@@ -357,14 +359,15 @@ private:
 
 template <std::meta::info Namespace, std::meta::info FixtureFunction, usize ParameterIndex>
 auto fixtureDependencyArgument(FixtureResolver<Namespace> &resolver) -> decltype(auto) {
-  constexpr std::meta::info parameter = meta::parameters<FixtureFunction>[ParameterIndex];
+  constexpr std::meta::info parameter =
+      ReflectedFunctionMetadata<FixtureFunction>::parameters[ParameterIndex];
   using Value = meta::TypeObject<parameter>;
   return resolver.template resolve<Value>();
 }
 
 template <std::meta::info Namespace, std::meta::info FixtureFunction>
 auto invokeFixture(FixtureResolver<Namespace> &resolver) -> meta::ReturnObject<FixtureFunction> {
-  constexpr usize parameterCount = meta::parameters<FixtureFunction>.size();
+  constexpr usize parameterCount = ReflectedFunctionMetadata<FixtureFunction>::parameters.size();
 
   return withIndices<parameterCount>([&]<usize... Indices>(std::integral_constant<usize, Indices>...)
                                          -> meta::ReturnObject<FixtureFunction> {
@@ -445,7 +448,7 @@ auto bindArgument(const Context &context,
     FixtureResolver<Namespace> &fixtures,
     const CaseValues &caseValues,
     const ProviderValues &providerValues) -> decltype(auto) {
-  constexpr std::meta::info parameter = meta::parameters<Function>[ParameterIndex];
+  constexpr std::meta::info parameter = ReflectedFunctionMetadata<Function>::parameters[ParameterIndex];
   using Value = meta::TypeObject<parameter>;
   constexpr usize caseValueCount = std::tuple_size_v<std::remove_cvref_t<CaseValues>>;
   constexpr usize providerValueCount = std::tuple_size_v<std::remove_cvref_t<ProviderValues>>;
@@ -499,7 +502,7 @@ constexpr auto invokeTest(const Context &context,
     FixtureResolver<Namespace> &fixtures,
     const CaseValues &caseValues,
     const ProviderValues &providerValues) -> decltype(auto) {
-  constexpr usize parameterCount = meta::parameters<Function>.size();
+  constexpr usize parameterCount = ReflectedFunctionMetadata<Function>::parameters.size();
   constexpr bool usesLegacyBinding = usesLegacyCaseBinding<Namespace, Function>();
   constexpr usize expectedCaseValues = usesLegacyBinding ? parameterCount : caseParameterCount<Function>();
   constexpr usize expectedProviderValues = providerParameterCount<Function>();

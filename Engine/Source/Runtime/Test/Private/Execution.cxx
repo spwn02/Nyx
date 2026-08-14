@@ -143,6 +143,7 @@ auto detail::taskLifecycleDiagnostic(const TaskLifecycleError &error, std::sourc
   switch (error.failure()) {
     case TaskLifecycleFailure::Empty:
       diagnostic.addNote("the coroutine task was empty and could not be executed");
+      break;
     case TaskLifecycleFailure::Stranded:
       diagnostic.addNote("the coroutine suspended without scheduling further work");
       diagnostic.addNote(
@@ -174,9 +175,8 @@ auto detail::nativeFaultDiagnostic(const NativeFault &fault, std::source_locatio
   }
 
   if (fault.kind == NativeFaultKind::Signal) {
-    diagnostic.addNote(std::format("worker terminated with signal code {} ({})",
-        fault.code,
-        debug::enumName(fault.signal)));
+    diagnostic.addNote(
+        std::format("worker terminated with signal code {} ({})", fault.code, debug::enumName(fault.signal)));
   } else {
     diagnostic.addNote(
         std::format("worker terminated with {} code {}", debug::enumName(fault.kind), fault.code));
@@ -194,28 +194,27 @@ auto detail::nativeFaultDiagnostic(const NativeFault &fault, std::source_locatio
   return diagnostic;
 }
 
-auto detail::applyPolicy(const TestPolicy &policy,
-    TestEnvironment &environment,
-    std::chrono::steady_clock::duration elapsed,
-    bool retry,
-    bool cancelled,
-    bool timeoutTriggered,
-    std::source_location location) -> void {
+auto detail::applyPolicy(const PolicyApplication &application) -> void {
+  const TestPolicy &policy = application.policy.get();
+  TestEnvironment &environment = application.environment.get();
+
   if (policy.expectedPanic) {
     const Option<usize> index = matchingPanicIndex(environment.state(), *policy.expectedPanic);
     if (index) {
       environment.recordTrace(std::format("expected panic observed: {}", *policy.expectedPanic));
       environment.acceptExpectedPanic(*index);
     } else {
-      environment.recordError(expectedPanicDiagnostic(*policy.expectedPanic, location));
+      environment.recordError(expectedPanicDiagnostic(*policy.expectedPanic, application.location));
     }
   }
 
   const bool timeoutReached =
-      policy.timeout and (retry ? cancelled or timeoutTriggered or elapsed > *policy.timeout
-                                : environment.stopRequested() or elapsed >= *policy.timeout);
+      policy.timeout and
+      (application.retry
+              ? application.cancelled or application.timeoutTriggered or application.elapsed > *policy.timeout
+              : environment.stopRequested() or application.elapsed >= *policy.timeout);
   if (timeoutReached)
-    environment.recordError(timeoutDiagnostic(*policy.timeout, elapsed, location));
+    environment.recordError(timeoutDiagnostic(*policy.timeout, application.elapsed, application.location));
 }
 
 } // namespace Nyx::Test

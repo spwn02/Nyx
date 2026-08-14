@@ -128,8 +128,8 @@ auto filterDescriptors(Vec<TestDescriptor> descriptors, const TestSelection &sel
 }
 
 auto filterPlannedCases(detail::RunSession &session, const TestSelection &selection) -> void {
-  std::erase_if(session.plannedCases(), [&selection](const detail::PlannedCase &plannedCases) -> bool {
-    return not selection.matches(plannedCases.descriptor);
+  std::erase_if(session.plannedCases(), [&selection](const detail::PlannedCase &plannedCase) -> bool {
+    return not selection.matches(plannedCase.descriptor());
   });
 }
 

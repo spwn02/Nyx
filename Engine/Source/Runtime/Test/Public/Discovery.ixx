@@ -8,6 +8,7 @@ import :Diagnostics;
 import :Environment;
 import :Execution;
 import :Fixtures;
+import :Metadata;
 import :Policies;
 import :Providers;
 import :Runner;
@@ -127,107 +128,54 @@ consteval auto isTest() -> bool {
   if constexpr (not std::meta::is_function(Function))
     return false;
   else
-    return Nyx::meta::has_annotation<Test, Function>();
-}
-
-consteval auto isCase(std::meta::info annotation) -> bool {
-  using namespace std::meta;
-
-  const info type = dealias(type_of(annotation));
-  return has_template_arguments(type) and template_of(type) == ^^Case;
+    return ReflectedFunctionMetadata<Function>::testMarkers.size() != 0;
 }
 
 template <std::meta::info Function>
 consteval auto caseCount() -> usize {
-  usize count{};
-
-  template for (constexpr std::meta::info annotation : meta::annotations<Function>) {
-    if constexpr (isCase(annotation))
-      ++count;
-  }
-
-  return count;
+  return ReflectedFunctionMetadata<Function>::cases.size();
 }
 
 template <std::meta::info Function>
 consteval auto descriptionOf() -> StringView {
-  template for (constexpr std::meta::info annotation : meta::annotations<Function>) {
+  if constexpr (ReflectedFunctionMetadata<Function>::descriptions.empty()) {
+    return {};
+  } else {
+    constexpr std::meta::info annotation = ReflectedFunctionMetadata<Function>::descriptions.front();
     using Annotation = meta::TypeObject<annotation>;
 
-    if constexpr (is_description_v<Annotation>)
-      return std::meta::extract<Annotation>(annotation).apply();
+    return std::meta::extract<Annotation>(annotation).apply();
   }
-
-  return {};
 }
 
 template <std::meta::info Function>
 consteval auto shouldPanicCount() -> usize {
-  usize count{};
-
-  template for (constexpr std::meta::info annotation : meta::annotations<Function>) {
-    using Annotation = meta::TypeObject<annotation>;
-
-    if constexpr (is_should_panic_v<Annotation>)
-      ++count;
-  }
-
-  return count;
+  return ReflectedFunctionMetadata<Function>::expectedPanics.size();
 }
 
 template <std::meta::info Function>
 consteval auto timeoutCount() -> usize {
-  usize count{};
-
-  template for (constexpr std::meta::info annotation : meta::annotations<Function>) {
-    using Annotation = meta::TypeObject<annotation>;
-
-    if constexpr (std::same_as<Annotation, Timeout>)
-      ++count;
-  }
-
-  return count;
-}
-
-template <class Annotation, std::meta::info Function>
-consteval auto annotationCount() -> usize {
-  usize count{};
-
-  template for (constexpr std::meta::info annotation : meta::annotations<Function>) {
-    if constexpr (std::same_as<meta::TypeObject<annotation>, Annotation>)
-      ++count;
-  }
-
-  return count;
+  return ReflectedFunctionMetadata<Function>::timeouts.size();
 }
 
 template <std::meta::info Function>
 consteval auto repeatCount() -> usize {
-  return annotationCount<Repeat, Function>();
+  return ReflectedFunctionMetadata<Function>::repeats.size();
 }
 
 template <std::meta::info Function>
 consteval auto warmupCount() -> usize {
-  return annotationCount<Warmup, Function>();
+  return ReflectedFunctionMetadata<Function>::warmups.size();
 }
 
 template <std::meta::info Function>
 consteval auto retryCount() -> usize {
-  return annotationCount<Retry, Function>();
+  return ReflectedFunctionMetadata<Function>::retries.size();
 }
 
 template <std::meta::info Function>
 consteval auto groupCount() -> usize {
-  usize count{};
-
-  template for (constexpr std::meta::info annotation : meta::annotations<Function>) {
-    using Annotation = meta::TypeObject<annotation>;
-
-    if constexpr (is_group_v<Annotation>)
-      ++count;
-  }
-
-  return count;
+  return ReflectedFunctionMetadata<Function>::groups.size();
 }
 
 template <std::meta::info Function>
@@ -243,16 +191,18 @@ auto metadataOf() -> TestMetadata {
       metadata.tags.emplace_back(tagName);
   };
 
-  template for (constexpr std::meta::info annotation : meta::annotations<Function>) {
+  template for (constexpr std::meta::info annotation : ReflectedFunctionMetadata<Function>::groups) {
     using Annotation = meta::TypeObject<annotation>;
 
-    if constexpr (is_group_v<Annotation>) {
-      constexpr Annotation groupAnnotation = std::meta::extract<Annotation>(annotation);
-      metadata.group = String{groupAnnotation.apply()};
-    } else if constexpr (is_tag_v<Annotation>) {
-      constexpr Annotation tagAnnotation = std::meta::extract<Annotation>(annotation);
-      tagAnnotation.apply([&appendTag](const auto &...tags) -> void { (appendTag(tags.apply()), ...); });
-    }
+    constexpr Annotation groupAnnotation = std::meta::extract<Annotation>(annotation);
+    metadata.group = String{groupAnnotation.apply()};
+  }
+
+  template for (constexpr std::meta::info annotation : ReflectedFunctionMetadata<Function>::tags) {
+    using Annotation = meta::TypeObject<annotation>;
+
+    constexpr Annotation tagAnnotation = std::meta::extract<Annotation>(annotation);
+    tagAnnotation.apply([&appendTag](const auto &...tags) -> void { (appendTag(tags.apply()), ...); });
   }
 
   return metadata;
@@ -271,33 +221,36 @@ auto policyOf() -> TestPolicy {
   static_assert(
       retryCount<Function>() <= 1, "Nyx::Test tests may declare at most one [[= retry(...)]] annotation.");
 
-  constexpr bool isolated = Nyx::meta::has_annotation<Isolated, Function>();
-  constexpr bool parent = Nyx::meta::has_annotation<Parent, Function>();
+  constexpr bool isolated = ReflectedFunctionMetadata<Function>::isolated.size() != 0;
+  constexpr bool parent = ReflectedFunctionMetadata<Function>::parents.size() != 0;
   static_assert(not(isolated and parent), "Nyx::Test tests cannot combine [[= isolated]] and [[= parent]]");
 
   TestPolicy policy{
-      .trace = Nyx::meta::has_annotation<Trace, Function>(),
+      .trace = ReflectedFunctionMetadata<Function>::traces.size() != 0,
       .isolated = isolated,
       .parent = parent,
   };
 
-  template for (constexpr std::meta::info annotation : meta::annotations<Function>) {
+  template for (constexpr std::meta::info annotation : ReflectedFunctionMetadata<Function>::expectedPanics) {
     using Annotation = meta::TypeObject<annotation>;
 
-    if constexpr (is_should_panic_v<Annotation>) {
-      constexpr Annotation expected = std::meta::extract<Annotation>(annotation);
-      policy.expectedPanic = String{expected.apply()};
-    } else if constexpr (std::same_as<Annotation, Timeout>) {
-      constexpr auto limit = std::meta::extract<Timeout>(annotation);
-      policy.timeout = std::chrono::duration_cast<std::chrono::steady_clock::duration>(limit.apply());
-    } else if constexpr (std::same_as<Annotation, Repeat>) {
-      policy.repeat = std::meta::extract<Repeat>(annotation).apply();
-    } else if constexpr (std::same_as<Annotation, Warmup>) {
-      policy.warmup = std::meta::extract<Warmup>(annotation).apply();
-    } else if constexpr (std::same_as<Annotation, Retry>) {
-      policy.retry = std::meta::extract<Retry>(annotation).apply();
-    }
+    constexpr Annotation expected = std::meta::extract<Annotation>(annotation);
+    policy.expectedPanic = String{expected.apply()};
   }
+
+  template for (constexpr std::meta::info annotation : ReflectedFunctionMetadata<Function>::timeouts) {
+    constexpr auto limit = std::meta::extract<Timeout>(annotation);
+    policy.timeout = std::chrono::duration_cast<std::chrono::steady_clock::duration>(limit.apply());
+  }
+
+  template for (constexpr std::meta::info annotation : ReflectedFunctionMetadata<Function>::repeats)
+      policy.repeat = std::meta::extract<Repeat>(annotation).apply();
+
+  template for (constexpr std::meta::info annotation : ReflectedFunctionMetadata<Function>::warmups)
+      policy.warmup = std::meta::extract<Warmup>(annotation).apply();
+
+  template for (constexpr std::meta::info annotation : ReflectedFunctionMetadata<Function>::retries)
+      policy.retry = std::meta::extract<Retry>(annotation).apply();
 
   return policy;
 }
@@ -372,15 +325,26 @@ auto appendDescriptors(Vec<TestDescriptor> &descriptors) -> void {
     return;
   }
 
-  template for (constexpr std::meta::info annotation : meta::annotations<Function>) {
-    if constexpr (isCase(annotation))
-      appendCaseDescriptors<Function, annotation>(descriptors, testCaseIndex);
+  template for (constexpr std::meta::info annotation : ReflectedFunctionMetadata<Function>::cases) {
+    appendCaseDescriptors<Function, annotation>(descriptors, testCaseIndex);
   }
 }
 
 template <class CaseType>
 [[nodiscard]] auto caseValues(const CaseType &testCase) -> auto {
   return testCase.apply([](const auto &...values) -> auto { return std::make_tuple(values...); });
+}
+
+template <std::meta::info Namespace, std::meta::info Function>
+consteval auto invocationCapabilities() -> InvocationCapabilities {
+  return InvocationCapabilities{
+      .context = hasContextParameter<Function>(),
+      .caseValues = caseParameterCount<Function>() != 0 or
+                    (usesLegacyCaseBinding<Namespace, Function>() and
+                        ReflectedFunctionMetadata<Function>::parameters.size() != 0),
+      .providerValues = providerParameterCount<Function>() != 0,
+      .fixtures = hasAutomaticFixtureParameter<Namespace, Function>(),
+  };
 }
 
 template <std::meta::info Function>
@@ -401,6 +365,41 @@ auto noProviderExecution(TestDescriptor descriptor, TimeMode timeMode) -> TestEx
       timeMode);
 }
 
+template <std::meta::info Function>
+class MissingProviderInvocationFactory final : public InvocationFactory {
+public:
+  [[nodiscard]] auto invoke(const InvocationRequest &request) const -> TestExecution override {
+    return noProviderExecution<Function>(TestDescriptor{request.descriptor.get()}, request.timeMode);
+  }
+};
+
+template <std::meta::info Namespace, std::meta::info Function, class CaseValues, class ProviderValues>
+class ReflectedInvocationFactory final : public InvocationFactory {
+public:
+  ReflectedInvocationFactory(CaseValues caseValues,
+      ProviderValues providerValues,
+      FixtureScope<Namespace> &suiteFixtures)
+      : caseValues_(std::move(caseValues))
+      , providerValues_(std::move(providerValues))
+      , suiteFixtures_(suiteFixtures) {
+  }
+
+  [[nodiscard]] auto invoke(const InvocationRequest &request) const -> TestExecution override {
+    return run(
+        TestDescriptor{request.descriptor.get()},
+        [this](const Context &context) -> decltype(auto) {
+          return detail::invokeWithFixtures<Namespace, Function>(
+              context, suiteFixtures_, caseValues_, providerValues_);
+        },
+        request.timeMode);
+  }
+
+private:
+  const CaseValues caseValues_;
+  const ProviderValues providerValues_;
+  Ref<FixtureScope<Namespace>> suiteFixtures_;
+};
+
 template <std::meta::info Namespace, std::meta::info Function, class CaseValues>
 auto appendProviderWorkItems(Vec<detail::PlannedCase> &plannedCases,
     FixtureScope<Namespace> &suiteFixtures,
@@ -411,22 +410,16 @@ auto appendProviderWorkItems(Vec<detail::PlannedCase> &plannedCases,
       [&plannedCases, &suiteFixtures, &caseValues, &caseDescription, &testCaseIndex](
           const auto &...providerValues) -> void {
         const String providerDescription = detail::providerDescription<Function>(providerValues...);
-        const auto providerTuple = std::make_tuple(providerValues...);
+        auto providerTuple = std::make_tuple(providerValues...);
         const TestDescriptor descriptor =
             makeTestDescriptor<Function>(testCaseIndex, caseDescription, StringView{providerDescription});
-        plannedCases.push_back(detail::PlannedCase{
-            .descriptor = descriptor,
-            .execute = [caseValues, providerTuple, &suiteFixtures](
-                           TestDescriptor descriptor, TimeMode timeMode) -> TestExecution {
-              return run(
-                  std::move(descriptor),
-                  [caseValues, providerTuple, &suiteFixtures](const Context &context) -> decltype(auto) {
-                    return detail::invokeWithFixtures<Namespace, Function>(
-                        context, suiteFixtures, caseValues, providerTuple);
-                  },
-                  timeMode);
-            },
-        });
+        using Factory = ReflectedInvocationFactory<Namespace,
+            Function,
+            CaseValues,
+            std::remove_cvref_t<decltype(providerTuple)>>;
+        plannedCases.emplace_back(descriptor,
+            invocationCapabilities<Namespace, Function>(),
+            std::make_unique<Factory>(caseValues, std::move(providerTuple), suiteFixtures));
         ++testCaseIndex;
       });
 
@@ -436,10 +429,9 @@ auto appendProviderWorkItems(Vec<detail::PlannedCase> &plannedCases,
   const String providerDescription = detail::missingProviderDescription<Function>();
   const TestDescriptor descriptor =
       makeTestDescriptor<Function>(testCaseIndex, caseDescription, StringView{providerDescription});
-  plannedCases.push_back(detail::PlannedCase{
-      .descriptor = descriptor, .execute = [](TestDescriptor descriptor, TimeMode timeMode) -> TestExecution {
-        return noProviderExecution<Function>(std::move(descriptor), timeMode);
-      }});
+  plannedCases.emplace_back(descriptor,
+      invocationCapabilities<Namespace, Function>(),
+      std::make_unique<MissingProviderInvocationFactory<Function>>());
   ++testCaseIndex;
 }
 
@@ -466,9 +458,8 @@ auto appendWorkItems(Vec<detail::PlannedCase> &plannedCases, FixtureScope<Namesp
     return;
   }
 
-  template for (constexpr std::meta::info annotation : meta::annotations<Function>) {
-    if constexpr (isCase(annotation))
-      appendCaseWorkItems<Namespace, Function, annotation>(plannedCases, suiteFixtures, testCaseIndex);
+  template for (constexpr std::meta::info annotation : ReflectedFunctionMetadata<Function>::cases) {
+    appendCaseWorkItems<Namespace, Function, annotation>(plannedCases, suiteFixtures, testCaseIndex);
   }
 }
 
@@ -510,7 +501,7 @@ auto appendScopeWorkItems(Vec<detail::PlannedCase> &plannedCases,
 
 template <std::meta::info Function>
 consteval auto hasDynamicProviders() -> bool {
-  template for (constexpr std::meta::info parameter : meta::parameters<Function>) {
+  template for (constexpr std::meta::info parameter : ReflectedFunctionMetadata<Function>::parameters) {
     if constexpr (isProviderParameter<Function, parameter>() and
                   providerKindOf<Function, parameter>() == ProviderKind::Files)
       return true;

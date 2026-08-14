@@ -17,7 +17,7 @@ enum class[[= debug::derive]] TraceMode : u8 {
 
 struct TestPolicy final {
   bool trace{};
-  /// Forces this test through a fresh process-per-case worker even when the run uses in-proces execution.
+  /// Forces this test through a fresh process-per-case worker even when the run uses in-process execution.
   bool isolated{};
   /// Keeps this test in the parent process so it can orchestrate nested isolated runs.
   bool parent{};

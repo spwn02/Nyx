@@ -327,102 +327,106 @@ struct LexicalState final {
   return newline == StringView::npos ? 0 : newline + 1;
 }
 
-// NOLINTNEXTLINE(readability-function-cognitive-complexity)
+/// Consumes one lexical unit while the source scanner is inside comments or literals.
+///
+/// A returned offset means the caller must continue scanning at that offset. An empty result leaves the
+/// current character in normal mode so the caller can interpret delimiters, semicolons, or the requested
+/// token.
+[[nodiscard]] auto consumeLexicalUnit(StringView text, // NOLINT(readability-function-cognitive-complexity)
+    usize index,
+    LexicalState &state) -> Option<usize> {
+  const char current = text[index];
+
+  if (state.mode == LexicalMode::LineComment) {
+    if (current == '\n') {
+      if (state.escaped)
+        state.escaped = false;
+      else
+        state.mode = LexicalMode::Normal;
+    } else {
+      state.escaped = current == '\\';
+    }
+    return index + 1;
+  }
+
+  if (state.mode == LexicalMode::BlockComment) {
+    if (current == '*' and index + 1 < text.size() and text[index + 1] == '/') {
+      state.mode = LexicalMode::Normal;
+      return index + 2;
+    }
+    return index + 1;
+  }
+
+  if (state.mode == LexicalMode::String or state.mode == LexicalMode::Character) {
+    if (state.escaped) {
+      state.escaped = false;
+    } else if (current == '\\') {
+      state.escaped = true;
+    } else if ((state.mode == LexicalMode::String and current == '"') or
+               (state.mode == LexicalMode::Character and current == '\'')) {
+      state.mode = LexicalMode::Normal;
+    }
+    return index + 1;
+  }
+
+  if (state.mode == LexicalMode::RawString) {
+    const String terminator = std::format("){}\"", state.rawDelimiter);
+    if (text.substr(index, terminator.size()) == terminator) {
+      state.mode = LexicalMode::Normal;
+      return index + terminator.size();
+    }
+    return index + 1;
+  }
+
+  if (current == '/' and index + 1 < text.size() and text[index + 1] == '/') {
+    state.mode = LexicalMode::LineComment;
+    return index + 2;
+  }
+
+  if (current == '/' and index + 1 < text.size() and text[index + 1] == '*') {
+    state.mode = LexicalMode::BlockComment;
+    return index + 2;
+  }
+
+  if (current == 'R' and index + 1 < text.size() and text[index + 1] == '"') {
+    const Option<usize> end = rawStringEnd(text, index, state.rawDelimiter);
+    if (end) {
+      state.mode = LexicalMode::Normal;
+      return *end;
+    }
+  }
+
+  if (current == '"') {
+    state.mode = LexicalMode::String;
+    state.escaped = false;
+    return index + 1;
+  }
+
+  if (current == '\'') {
+    state.mode = LexicalMode::Character;
+    state.escaped = false;
+    return index + 1;
+  }
+
+  return None;
+}
+
 [[nodiscard]] auto findToken(StringView text, usize start, char expected) -> Option<usize> {
   LexicalState state{};
   usize index = start;
 
   while (index < text.size()) {
-    const char current = text[index];
-
-    if (state.mode == LexicalMode::LineComment) {
-      if (current == '\n') {
-        if (state.escaped)
-          state.escaped = false;
-        else
-          state.mode = LexicalMode::Normal;
-        ;
-      } else {
-        state.escaped = current == '\\';
-      }
-      ++index;
+    if (const Option<usize> next = consumeLexicalUnit(text, index, state)) {
+      index = *next;
       continue;
     }
 
-    if (state.mode == LexicalMode::BlockComment) {
-      if (current == '*' and index + 1 < text.size() and text[index + 1] == '/') {
-        state.mode = LexicalMode::Normal;
-        index += 2;
-      } else {
-        ++index;
-      }
-      continue;
-    }
-
-    if (state.mode == LexicalMode::String or state.mode == LexicalMode::Character) {
-      if (state.escaped) {
-        state.escaped = false;
-      } else if (current == '\\') {
-        state.escaped = true;
-      } else if ((state.mode == LexicalMode::String and current == '"') or
-                 (state.mode == LexicalMode::Character and current == '\'')) {
-        state.mode = LexicalMode::Normal;
-      }
-      ++index;
-      continue;
-    }
-
-    if (state.mode == LexicalMode::RawString) {
-      const String terminator = std::format("){}\"", state.rawDelimiter);
-      if (text.substr(index, terminator.size()) == terminator) {
-        state.mode = LexicalMode::Normal;
-        index += terminator.size();
-      } else {
-        ++index;
-      }
-      continue;
-    }
-
-    if (current == '/' and index + 1 < text.size() and text[index + 1] == '/') {
-      state.mode = LexicalMode::LineComment;
-      index += 2;
-      continue;
-    }
-
-    if (current == '/' and index + 1 < text.size() and text[index + 1] == '*') {
-      state.mode = LexicalMode::BlockComment;
-      index += 2;
-      continue;
-    }
-
-    if (current == 'R' and index + 1 < text.size() and text[index + 1] == '"') {
-      const Option<usize> end = rawStringEnd(text, index, state.rawDelimiter);
-      if (end) {
-        state.mode = LexicalMode::Normal;
-        index = *end;
-        continue;
-      }
-    }
-
-    if (current == '"') {
-      state.mode = LexicalMode::String;
-      state.escaped = false;
-      ++index;
-      continue;
-    }
-
-    if (current == '\'') {
-      state.mode = LexicalMode::Character;
-      state.escaped = false;
-      ++index;
-      continue;
-    }
-
-    if (current == expected)
+    if (text[index] == expected)
       return index;
 
     ++index;
   }
+
   return None;
 }
 
@@ -442,7 +446,6 @@ struct LexicalState final {
 
 inline constexpr usize delimitersCount{32};
 
-// NOLINTNEXTLINE(readability-function-size, readability-function-cognitive-complexity)
 [[nodiscard]] auto scanToBoundary(StringView text,
     usize start,
     bool stopAtOpeningBrace,
@@ -452,89 +455,12 @@ inline constexpr usize delimitersCount{32};
   usize index = start;
 
   while (index < text.size()) {
+    if (const Option<usize> next = consumeLexicalUnit(text, index, state)) {
+      index = *next;
+      continue;
+    }
+
     const char current = text[index];
-
-    if (state.mode == LexicalMode::LineComment) {
-      if (current == '\n') {
-        if (state.escaped)
-          state.escaped = false;
-        else
-          state.mode = LexicalMode::Normal;
-      } else {
-        state.escaped = current == '\\';
-      }
-      ++index;
-      continue;
-    }
-
-    if (state.mode == LexicalMode::BlockComment) {
-      if (current == '*' and index + 1 < text.size() and text[index + 1] == '/') {
-        state.mode = LexicalMode::Normal;
-        index += 2;
-      } else {
-        ++index;
-      }
-      continue;
-    }
-
-    if (state.mode == LexicalMode::String or state.mode == LexicalMode::Character) {
-      if (state.escaped) {
-        state.escaped = false;
-      } else if (current == '\\') {
-        state.escaped = true;
-      } else if ((state.mode == LexicalMode::String and current == '"') or
-                 (state.mode == LexicalMode::Character and current == '\'')) {
-        state.mode = LexicalMode::Normal;
-      }
-      ++index;
-      continue;
-    }
-
-    if (state.mode == LexicalMode::RawString) {
-      const String terminator = std::format("){}\"", state.rawDelimiter);
-      if (text.substr(index, terminator.size()) == terminator) {
-        state.mode = LexicalMode::Normal;
-        index += terminator.size();
-      } else {
-        ++index;
-      }
-      continue;
-    }
-
-    if (current == '/' and index + 1 < text.size() and text[index + 1] == '/') {
-      state.mode = LexicalMode::LineComment;
-      index += 2;
-      continue;
-    }
-
-    if (current == '/' and index + 1 < text.size() and text[index + 1] == '*') {
-      state.mode = LexicalMode::BlockComment;
-      index += 2;
-      continue;
-    }
-
-    if (current == 'R' and index + 1 < text.size() and text[index + 1] == '"') {
-      const Option<usize> end = rawStringEnd(text, index, state.rawDelimiter);
-      if (end) {
-        state.mode = LexicalMode::Normal;
-        index = *end;
-        continue;
-      }
-    }
-
-    if (current == '"') {
-      state.mode = LexicalMode::String;
-      state.escaped = false;
-      ++index;
-      continue;
-    }
-
-    if (current == '\'') {
-      state.mode = LexicalMode::Character;
-      state.escaped = false;
-      ++index;
-      continue;
-    }
 
     if (stopAtOpeningBrace and current == '{' and delimiters.empty()) {
       if (foundBoundary != nullptr)
@@ -566,7 +492,6 @@ inline constexpr usize delimitersCount{32};
   return text.size();
 }
 
-// NOLINTNEXTLINE(readability-function-size, readability-function-cognitive-complexity)
 [[nodiscard]] auto scanInvocationEnd(StringView text, usize start) -> usize {
   const Option<usize> opening = findToken(text, start, '(');
   if (not opening)
@@ -578,89 +503,12 @@ inline constexpr usize delimitersCount{32};
   usize index = *opening + 1;
 
   while (index < text.size()) {
+    if (const Option<usize> next = consumeLexicalUnit(text, index, state)) {
+      index = *next;
+      continue;
+    }
+
     const char current = text[index];
-
-    if (state.mode == LexicalMode::LineComment) {
-      if (current == '\n') {
-        if (state.escaped)
-          state.escaped = false;
-        else
-          state.mode = LexicalMode::Normal;
-      } else {
-        state.escaped = current == '\\';
-      }
-      ++index;
-      continue;
-    }
-
-    if (state.mode == LexicalMode::BlockComment) {
-      if (current == '*' and index + 1 < text.size() and text[index + 1] == '/') {
-        state.mode = LexicalMode::Normal;
-        index += 2;
-      } else {
-        ++index;
-      }
-      continue;
-    }
-
-    if (state.mode == LexicalMode::String or state.mode == LexicalMode::Character) {
-      if (state.escaped) {
-        state.escaped = false;
-      } else if (current == '\\') {
-        state.escaped = true;
-      } else if ((state.mode == LexicalMode::String and current == '"') or
-                 (state.mode == LexicalMode::Character and current == '\'')) {
-        state.mode = LexicalMode::Normal;
-      }
-      ++index;
-      continue;
-    }
-
-    if (state.mode == LexicalMode::RawString) {
-      const String terminator = std::format("){}\"", state.rawDelimiter);
-      if (text.substr(index, terminator.size()) == terminator) {
-        state.mode = LexicalMode::Normal;
-        index += terminator.size();
-      } else {
-        ++index;
-      }
-      continue;
-    }
-
-    if (current == '/' and index + 1 < text.size() and text[index + 1] == '/') {
-      state.mode = LexicalMode::LineComment;
-      index += 2;
-      continue;
-    }
-
-    if (current == '/' and index + 1 < text.size() and text[index + 1] == '*') {
-      state.mode = LexicalMode::BlockComment;
-      index += 2;
-      continue;
-    }
-
-    if (current == 'R' and index + 1 < text.size() and text[index + 1] == '"') {
-      const Option<usize> end = rawStringEnd(text, index, state.rawDelimiter);
-      if (end) {
-        state.mode = LexicalMode::Normal;
-        index = *end;
-        continue;
-      }
-    }
-
-    if (current == '"') {
-      state.mode = LexicalMode::String;
-      state.escaped = false;
-      ++index;
-      continue;
-    }
-
-    if (current == '\'') {
-      state.mode = LexicalMode::Character;
-      state.escaped = false;
-      ++index;
-      continue;
-    }
 
     const char closing = matchingDelimiter(current);
     if (closing != '\0') {

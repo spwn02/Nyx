@@ -20,7 +20,7 @@ enum class[[= debug::derive]] TimeMode : u8 {
 
 namespace detail {
 
-/// Describes a broken asynchronous lifecycle observed by the test scheduduler.
+/// Describes a broken asynchronous lifecycle observed by the test scheduler.
 enum class[[= debug::derive]] TaskLifecycleFailure : u8 {
   Empty,
   Stranded,
@@ -147,9 +147,9 @@ public:
       "RunLoopBinding owns a pointer to a previous thread-local RunLoop.");
   auto operator=(const RunLoopBinding &)
       -> RunLoopBinding & = delete ("RunLoopBinding owns a pointer to a previous thread-local RunLoop.");
-  RunLoopBinding(RunLoop &&) noexcept = delete (
+  RunLoopBinding(RunLoopBinding &&) noexcept = delete (
       "RunLoopBinding owns a pointer to a previous thread-local RunLoop.");
-  auto operator=(RunLoop &&) noexcept
+  auto operator=(RunLoopBinding &&) noexcept
       -> RunLoopBinding & = delete ("RunLoopBinding owns a pointer to a previous thread-local RunLoop.");
 
 private:
@@ -198,7 +198,7 @@ struct YieldAwaiter final {
     return false;
   }
 
-  auto await_suspend(std::coroutine_handle<> handle) const -> bool;
+  [[nodiscard]] auto await_suspend(std::coroutine_handle<> handle) const -> bool;
 
   constexpr auto await_resume() const noexcept -> void {
   }

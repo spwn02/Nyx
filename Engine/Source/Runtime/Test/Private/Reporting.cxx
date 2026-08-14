@@ -170,6 +170,10 @@ constexpr inline usize progressBarWidth{80};
 
 } // namespace
 
+struct Reporter::RenderState final {
+  bool previousFailure{};
+};
+
 auto TestSummary::passed() const noexcept -> bool {
   return failedCaseCount == 0 and (caseCount != 0 or failedCount == 0);
 }
@@ -369,133 +373,156 @@ auto Reporter::renderMeasurement(const TestCaseResult &testCase, std::ostream &o
       durationLabel(measurement.deviation));
 }
 
-// NOLINTNEXTLINE(readability-function-cognitive-complexity, readability-function-size)
-auto Reporter::report(Span<const TestExecution> executions, std::ostream &output) const -> TestSummary {
-  if constexpr (not build::tests)
-    return {};
+auto Reporter::renderMeasuredCase(const TestCaseResult &testCase,
+    const SourceManager &sources,
+    std::ostream &output,
+    RenderState &state) const -> void {
+  renderMeasurement(testCase, output);
 
-  const bool useColor = colorEnabled();
-  const SourceManager sources{roots_};
-  const RunReport reportModel = makeReport(executions);
-  const TestSummary summary = summarize(reportModel);
-  bool previousFailure{};
-
-  // NOLINTNEXTLINE(readability-function-cognitive-complexity)
-  std::ranges::for_each(reportModel.cases, [&](const TestCaseResult &testCase) -> void {
-    if (testCase.measurement and testCase.attempts.size() > 1) {
-      renderMeasurement(testCase, output);
-      const auto representative =
-          std::ranges::find_if(testCase.attempts, [this](const TestAttempt &attempt) -> bool {
-            return not attempt.warmup and shouldRenderTrace(attempt.execution);
-          });
-      if (representative != testCase.attempts.end())
-        renderTrace(representative->execution, output);
-
-      std::ranges::for_each(testCase.attempts, [&](const TestAttempt &attempt) -> void {
-        if (not attempt.execution.failed() or recoveredBy(attempt, testCase.attempts))
-          return;
-
-        output << '\n';
-        if (shouldRenderTrace(attempt.execution))
-          renderTrace(attempt.execution, output);
-        renderProfile(attempt.execution, output);
-        renderFailure(attempt.execution, sources, output);
-        previousFailure = true;
+  const auto representative =
+      std::ranges::find_if(testCase.attempts, [this](const TestAttempt &attempt) -> bool {
+        return not attempt.warmup and shouldRenderTrace(attempt.execution);
       });
+  if (representative != testCase.attempts.end())
+    renderTrace(representative->execution, output);
+
+  std::ranges::for_each(testCase.attempts, [&](const TestAttempt &attempt) -> void {
+    if (not attempt.execution.failed() or recoveredBy(attempt, testCase.attempts))
       return;
-    }
 
-    std::ranges::for_each(testCase.attempts, [&](const TestAttempt &attempt) -> void {
-      const TestExecution &execution = attempt.execution;
-      if (execution.warmup and execution.passed())
-        return;
-
-      if (execution.warmup) {
-        if (previousFailure)
-          output << '\n';
-
-        output << std::format("test {} ({}) ... {} {}\n",
-            execution.descriptor.identifier,
-            attemptLabel(execution),
-            paint("FAILED", red, useColor),
-            durationLabel(execution.duration));
-        if (shouldRenderTrace(execution))
-          renderTrace(execution, output);
-        renderProfile(execution, output);
-        renderFailure(execution, sources, output);
-        previousFailure = true;
-        return;
-      }
-
-      const bool passed = execution.passed();
-      const bool showTrace = shouldRenderTrace(execution);
-      if (passed and not options_.showPassedTests and not showTrace and execution.attempt.retry == 0)
-        return;
-
-      if (previousFailure)
-        output << '\n';
-
-      const String label = attemptLabel(execution);
-      const String status = passed and execution.attempt.retry != 0
-                                ? std::format("passed after {} timeout {}",
-                                      execution.attempt.retry,
-                                      countLabel(execution.attempt.retry, "retry", "retries"))
-                                : String{passed ? "ok" : "FAILED"};
-      output << std::format("test {}{} ... {} {}\n",
-          execution.descriptor.identifier,
-          label.empty() ? String{} : std::format(" ({}) ", label),
-          paint(status, passed ? green : red, useColor),
-          durationLabel(execution.duration));
-
-      if (passed) {
-        if (showTrace)
-          renderTrace(execution, output);
-        renderProfile(execution, output);
-
-        previousFailure = false;
-        return;
-      }
-
-      output << '\n';
-      if (showTrace)
-        renderTrace(execution, output);
-      renderProfile(execution, output);
-
-      renderFailure(execution, sources, output);
-      previousFailure = true;
-    });
+    output << '\n';
+    if (shouldRenderTrace(attempt.execution))
+      renderTrace(attempt.execution, output);
+    renderProfile(attempt.execution, output);
+    renderFailure(attempt.execution, sources, output);
+    state.previousFailure = true;
   });
+}
 
-  if (not options_.showSummary)
-    return summary;
+auto Reporter::renderAttempt(const TestAttempt &attempt,
+    const SourceManager &sources,
+    std::ostream &output,
+    bool useColor,
+    RenderState &state) const -> void {
+  const TestExecution &execution = attempt.execution;
+  if (execution.warmup and execution.passed())
+    return;
 
-  if (summary.testCount != 0) {
-    const usize passedWidth = summary.passedCaseCount * progressBarWidth / summary.caseCount;
-    const usize failedWidth = progressBarWidth - passedWidth;
+  if (execution.warmup) {
+    if (state.previousFailure)
+      output << '\n';
 
-    output << '\n'
-           << paint(String(passedWidth, '='), green, useColor)
-           << paint(String(failedWidth, '='), red, useColor) << '\n';
+    output << std::format("test {} ({}) ... {} {}\n",
+        execution.descriptor.identifier,
+        attemptLabel(execution),
+        paint("FAILED", red, useColor),
+        durationLabel(execution.duration));
+    if (shouldRenderTrace(execution))
+      renderTrace(execution, output);
+    renderProfile(execution, output);
+    renderFailure(execution, sources, output);
+    state.previousFailure = true;
+    return;
   }
 
-  output << std::format("\ntest result: {}. {}; {}; {}; {}; {}; {}; {}; finished in {}; {}; {}; "
-                        "{}; {}; {}; wall {}\n",
-      paint(summary.passed() ? "ok" : "FAILED", summary.passed() ? green : red, useColor),
-      countLabel(summary.testCount, "test", "tests"),
-      countLabel(summary.passedCount, "passed", "passed"),
-      countLabel(summary.failedCount, "failed", "failed"),
-      countLabel(summary.assertionCount, "assertion", "assertions"),
-      countLabel(summary.failedAssertionCount, "failed assertions", "failed assertions"),
-      countLabel(summary.errorCount, "error", "errors"),
-      countLabel(summary.recoveredCount, "recovered case", "recovered cases"),
-      durationLabel(summary.duration),
-      countLabel(summary.caseCount, "case", "cases"),
-      countLabel(summary.attemptCount, "attempt", "attempts"),
-      countLabel(summary.sampleCount, "sample", "samples"),
-      countLabel(summary.warmupCount, "warmup", "warmups"),
-      countLabel(summary.retryCount, "retry", "retries"),
-      durationLabel(summary.wallDuration));
-  return summary;
+  const bool passed = execution.passed();
+  const bool showTrace = shouldRenderTrace(execution);
+  if (passed and not options_.showPassedTests and not showTrace and execution.attempt.retry == 0)
+    return;
+
+  if (state.previousFailure)
+    output << '\n';
+
+  const String label = attemptLabel(execution);
+  const String status = passed and execution.attempt.retry != 0
+                            ? std::format("passed after {} timeout {}",
+                                  execution.attempt.retry,
+                                  countLabel(execution.attempt.retry, "retry", "retries"))
+                            : String{passed ? "ok" : "FAILED"};
+  output << std::format("test {}{} ... {} {}\n",
+      execution.descriptor.identifier,
+      label.empty() ? String{} : std::format(" ({}) ", label),
+      paint(status, passed ? green : red, useColor),
+      durationLabel(execution.duration));
+
+  if (passed) {
+    if (showTrace)
+      renderTrace(execution, output);
+    renderProfile(execution, output);
+
+    state.previousFailure = false;
+    return;
+  }
+
+  output << '\n';
+  if (showTrace)
+    renderTrace(execution, output);
+  renderProfile(execution, output);
+  renderFailure(execution, sources, output);
+  state.previousFailure = true;
+}
+
+auto Reporter::renderCase(const TestCaseResult &testCase,
+    const SourceManager &sources,
+    std::ostream &output,
+    bool useColor,
+    RenderState &state) const -> void {
+  if (testCase.measurement and testCase.attempts.size() > 1) {
+    renderMeasuredCase(testCase, sources, output, state);
+    return;
+  }
+
+  std::ranges::for_each(
+      testCase.attempts, [this, &sources, &output, useColor, &state](const TestAttempt &attempt) -> void {
+        renderAttempt(attempt, sources, output, useColor, state);
+      });
+}
+
+auto Reporter::report(Span<const TestExecution> executions, std::ostream &output) const -> TestSummary {
+  if constexpr (build::tests) {
+    const bool useColor = colorEnabled();
+    const SourceManager sources{roots_};
+    const RunReport reportModel = makeReport(executions);
+    const TestSummary summary = summarize(reportModel);
+    RenderState state{};
+    std::ranges::for_each(reportModel.cases,
+        [this, &sources, &output, useColor, &state](const TestCaseResult &testCase) -> void {
+          renderCase(testCase, sources, output, useColor, state);
+        });
+
+    if (not options_.showSummary)
+      return summary;
+
+    if (summary.testCount != 0) {
+      const usize passedWidth = summary.passedCaseCount * progressBarWidth / summary.caseCount;
+      const usize failedWidth = progressBarWidth - passedWidth;
+
+      output << '\n'
+             << paint(String(passedWidth, '='), green, useColor)
+             << paint(String(failedWidth, '='), red, useColor) << '\n';
+    }
+
+    output << std::format("\ntest result: {}. {}; {}; {}; {}; {}; {}; {}; finished in {}; {}; {}; "
+                          "{}; {}; {}; wall {}\n",
+        paint(summary.passed() ? "ok" : "FAILED", summary.passed() ? green : red, useColor),
+        countLabel(summary.testCount, "test", "tests"),
+        countLabel(summary.passedCount, "passed", "passed"),
+        countLabel(summary.failedCount, "failed", "failed"),
+        countLabel(summary.assertionCount, "assertion", "assertions"),
+        countLabel(summary.failedAssertionCount, "failed assertions", "failed assertions"),
+        countLabel(summary.errorCount, "error", "errors"),
+        countLabel(summary.recoveredCount, "recovered case", "recovered cases"),
+        durationLabel(summary.duration),
+        countLabel(summary.caseCount, "case", "cases"),
+        countLabel(summary.attemptCount, "attempt", "attempts"),
+        countLabel(summary.sampleCount, "sample", "samples"),
+        countLabel(summary.warmupCount, "warmup", "warmups"),
+        countLabel(summary.retryCount, "retry", "retries"),
+        durationLabel(summary.wallDuration));
+    return summary;
+  } else {
+    return {};
+  }
 }
 
 } // namespace Nyx::Test

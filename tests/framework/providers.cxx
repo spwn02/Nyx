@@ -11,56 +11,35 @@ namespace Tests::providers {
 
 namespace ProviderSubjects {
 
-[[
-  = test,
-  = group("framework"),
-  = tag("providers", "subjects"),
-  = arg<"input">(values(None, " ", "    "))
-]] auto
-optionalValues(Option<const char *> input) -> void {
+[[ = test, = group("framework"), = tag("providers", "subjects") ]] auto optionalValues(
+    Option<const char *>[[= values(None, " ", "    ")]] input) -> void {
   if (input)
     require(StringView{*input}.find(' ') == 0_exp);
   else
     require(not input);
 }
 
-[[
-  = test,
-  = group("framework"),
-  = tag("providers", "subjects"),
-  = Case{2},
-  = Case{5},
-  = arg<"base">(fromCase),
-  = arg<"offset">(values(10, 20))
-]] auto caseAndValues(u32 base, u32 offset) -> void {
+[[ = test, = group("framework"), = tag("providers", "subjects"), = Case{2}, = Case{5} ]] auto caseAndValues(
+    u32[[= fromCase]] base,
+    u32[[= values(10, 20)]] offset) -> void {
   require(base > 0_exp);
   require(offset == 10_exp or offset == 20_exp);
 }
 
-[[
-  = test,
-  = group("framework"),
-  = tag("providers", "subjects"),
-  = arg<"ctx">(context),
-  = arg<"value">(values(3, 7))
-]] auto
-receivesProviderContext(const Context &ctx, u32 value) -> void {
+[[ = test, = group("framework"), = tag("providers", "subjects") ]] auto receivesProviderContext(
+    const Context[[= context]] & ctx,
+    u32[[= values(3, 7)]] value) -> void {
   require(ctx.testCase < 2_exp);
   require(value == 3_exp or value == 7_exp);
 }
 
-[[ = test, = group("framework"), = tag("providers", "subjects"), = arg<"path">(files(__FILE__)) ]] auto
-receivesFile(const Path &path) -> void {
+[[ = test, = group("framework"), = tag("providers", "subjects") ]] auto receivesFile(
+    const Path[[= files(__FILE__)]] & path) -> void {
   require(path == Path{__FILE__});
 }
 
-[[
-  = test,
-  = group("framework"),
-  = tag("providers", "subjects"),
-  = arg<"path">(files("__nyx_missing_provider__/**/*.md"))
-]] auto
-receivesNoFiles(const Path &path) -> void {
+[[ = test, = group("framework"), = tag("providers", "subjects") ]] auto receivesNoFiles(
+    const Path[[= files("__nyx_missing_provider__/**/*.md")]] & path) -> void {
   require(path.empty());
 }
 

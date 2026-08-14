@@ -14,13 +14,15 @@ namespace {
 struct ScheduledCase final {
   usize plannedCase{};
   usize runIteration{};
-  u64 seed{};
 };
 
-/// Serializes repeated invocations that share one-case owned execution resource.
+/// Serializes repeated invocations whose factory has an explicit shared fixture capability.
 ///
-/// Different planned cases retain full worker parallelism. Repetitions of one case use one lane because a
-/// planned invocation may own mutable fixture or closure state and is not concurrently invocable.
+/// Different planned cases retain full worker parallelism. Repetitions of one case use one lane when its
+/// factory has shared fixture state and is not concurrently invocable.
+///
+/// FixtureScope remains safe to initialize concurrently, but serializing fixture-backed cases preserves
+/// established ordering for fixture construction and user code that exposes mutable fixture substate.
 struct ExecutionLane final {
   [[nodiscard]] auto mutex() noexcept -> std::mutex & {
     return mutex_;
@@ -34,9 +36,12 @@ private:
 ///
 /// The scheduler resolves the planned-case index once and stores the effective isolation policy here. The
 /// lower-level attempt and worker functions therefore consume one coherent plan instead of independently
-/// combining a case reference, index, schedule entry, options, seed, and resource lane.
+/// combining a case reference, capabilities, index, schedule entry, options, seed, and resource lane.
+/// All references in this value are non-owning. The dispatch context and optional worker journal must outlive
+/// the plan and every operation that consumes it.
 struct InvocationPlan final {
-  Ref<PlannedCase> plannedCase;
+  Ref<const PlannedCase> plannedCase;
+  InvocationCapabilities capabilities{};
   usize plannedCaseIndex{};
   ScheduledCase scheduledCase{};
   Ref<const RunOptions> options;
@@ -177,21 +182,21 @@ auto executeAttempt(const InvocationPlan &plan, AttemptIndex attempt, bool warmu
 
   const InvocationBinding binding{settings};
   TestExecution execution{};
-  PlannedCase &plannedCase = plan.plannedCase.get();
+  const PlannedCase &plannedCase = plan.plannedCase.get();
 
   try {
-    execution = plannedCase.execute(plannedCase.descriptor, options.timeMode);
+    execution = plannedCase.invoke(InvocationRequest(plannedCase.descriptor(), options.timeMode));
   } catch (const TestAbort &) {
     execution = TestExecution{
-        .descriptor = plannedCase.descriptor,
+        .descriptor = TestDescriptor{plannedCase.descriptor()},
     };
     execution.state.aborted = true;
   } catch (const std::exception &exception) {
     const char *message = exception.what();
     execution = boundaryFailure(
-        plannedCase.descriptor, message == nullptr ? String{"standard exception"} : String{message});
+        TestDescriptor{plannedCase.descriptor()}, message == nullptr ? "standard exception" : message);
   } catch (...) {
-    execution = boundaryFailure(plannedCase.descriptor, "non-standard exception");
+    execution = boundaryFailure(TestDescriptor{plannedCase.descriptor()}, "non-standard exception");
   }
   execution.runSeed = plan.runSeed;
   execution.attempt = attempt;
@@ -252,8 +257,9 @@ public:
 
   [[nodiscard]] auto run() -> Vec<TestExecution> {
     std::unique_lock<std::mutex> lock{};
-    if (plan_.get().lane != None)
-      lock = std::unique_lock<std::mutex>{plan_.get().lane->get().mutex()};
+    const InvocationPlan &plan = plan_.get();
+    if (plan.lane)
+      lock = std::unique_lock<std::mutex>{plan.lane->get().mutex()};
 
     runWarmups();
     runSamples();
@@ -262,33 +268,39 @@ public:
 
 private:
   auto appendAttempt(AttemptIndex attempt, bool warmup) -> const TestExecution & {
-    if (plan_.get().journal.has_value())
-      plan_.get().journal->get().attemptStarted(attempt, warmup);
+    const InvocationPlan &plan = plan_.get();
+    if (plan.journal)
+      plan.journal->get().attemptStarted(attempt, warmup);
 
     executions_.push_back(executeAttempt(plan_, attempt, warmup));
-    if (plan_.get().journal.has_value())
-      plan_.get().journal->get().attemptCompleted(executions_.back());
+    if (plan.journal)
+      plan.journal->get().attemptCompleted(executions_.back());
     return executions_.back();
   }
 
   auto runWarmups() -> void {
-    std::ranges::for_each(std::views::indices(plan_.get().plannedCase.get().descriptor.policy.warmup),
-        [this](usize warmupIndex) -> void {
-          static_cast<void>(appendAttempt(
-              AttemptIndex{
-                  .runIteration = plan_.get().scheduledCase.runIteration,
-                  .sample = warmupIndex,
-              },
-              true));
-        });
+    const InvocationPlan &plan = plan_.get();
+    const usize warmups = plan.plannedCase.get().descriptor().policy.warmup;
+    const usize runIteration = plan.scheduledCase.runIteration;
+
+    std::ranges::for_each(std::views::indices(warmups), [this, runIteration](usize warmupIndex) -> void {
+      static_cast<void>(appendAttempt(
+          AttemptIndex{
+              .runIteration = runIteration,
+              .sample = warmupIndex,
+          },
+          true));
+    });
   }
 
   auto runSamples() -> void {
-    const usize samples = std::max(plan_.get().plannedCase.get().descriptor.policy.repeat, 1UZ);
+    const InvocationPlan &plan = plan_.get();
+    const usize samples = std::max(plan.plannedCase.get().descriptor().policy.repeat, 1UZ);
     std::ranges::for_each(std::views::indices(samples), [this](usize sample) -> void { runSample(sample); });
   }
 
   auto runSample(usize sample) -> void {
+    const InvocationPlan &plan = plan_.get();
     usize retryIndex{};
     bool retrying{true};
 
@@ -303,7 +315,7 @@ private:
           },
           false);
       retrying = not execution.passed() and hasTimeout(execution) and
-                 retryIndex < plan_.get().plannedCase.get().descriptor.policy.retry;
+                 retryIndex < plan.plannedCase.get().descriptor().policy.retry;
       if (retrying)
         ++retryIndex;
     }
@@ -317,12 +329,12 @@ auto executeCase(const InvocationPlan &plan) -> Vec<TestExecution> {
   return CaseExecutor{plan}.run();
 }
 
-[[nodiscard]] auto laneFor(Vec<UPtr<ExecutionLane>> &resourceLanes, usize plannedCase) noexcept
+[[nodiscard]] auto laneFor(Vec<UPtr<ExecutionLane>> &executionLanes, usize plannedCase) noexcept
     -> Option<Ref<ExecutionLane>> {
-  if (resourceLanes.empty() or plannedCase >= resourceLanes.size())
+  if (executionLanes.empty() or plannedCase >= executionLanes.size())
     return None;
 
-  UPtr<ExecutionLane> &lane = resourceLanes[plannedCase];
+  UPtr<ExecutionLane> &lane = executionLanes[plannedCase];
   if (lane == nullptr)
     return None;
 
@@ -331,10 +343,10 @@ auto executeCase(const InvocationPlan &plan) -> Vec<TestExecution> {
 
 [[nodiscard]] constexpr auto isolationFor(const PlannedCase &plannedCase, const RunOptions &options) noexcept
     -> CrashIsolation {
-  if (plannedCase.descriptor.policy.parent)
+  if (plannedCase.descriptor().policy.parent)
     return CrashIsolation::InProcess;
 
-  if (plannedCase.descriptor.policy.isolated)
+  if (plannedCase.descriptor().policy.isolated)
     return CrashIsolation::ProcessPerCase;
 
   return options.isolation;
@@ -352,10 +364,11 @@ struct DispatchContext final { // NOLINT(cppcoreguidelines-pro-type-member-init)
 
 [[nodiscard]] auto makeInvocationPlan(DispatchContext &context, const ScheduledCase &scheduledCase)
     -> InvocationPlan {
-  PlannedCase &plannedCase = context.plannedCases.get()[scheduledCase.plannedCase];
-  const CrashIsolation isolation = isolationFor(plannedCase, context.options);
+  const PlannedCase &plannedCase = context.plannedCases.get()[scheduledCase.plannedCase];
+  const CrashIsolation isolation = isolationFor(plannedCase, context.options.get());
   return InvocationPlan{
       .plannedCase = plannedCase,
+      .capabilities = plannedCase.capabilities(),
       .plannedCaseIndex = scheduledCase.plannedCase,
       .scheduledCase = scheduledCase,
       .options = context.options,
@@ -471,7 +484,8 @@ auto appendWorkerFault(Vec<TestExecution> &executions,
   appendWorkerFailure(executions,
       plan,
       journal,
-      workerFailure(plan.plannedCase.get().descriptor, fault, plan.plannedCase.get().descriptor.location));
+      workerFailure(
+          plan.plannedCase.get().descriptor(), fault, plan.plannedCase.get().descriptor().location));
 }
 
 auto appendWorkerProtocolFailure(Vec<TestExecution> &executions,
@@ -481,8 +495,8 @@ auto appendWorkerProtocolFailure(Vec<TestExecution> &executions,
   appendWorkerFailure(executions,
       plan,
       journal,
-      workerFailure(plan.plannedCase.get().descriptor,
-          workerProtocolDiagnostic(message, plan.plannedCase.get().descriptor.location)));
+      workerFailure(plan.plannedCase.get().descriptor(),
+          workerProtocolDiagnostic(message, plan.plannedCase.get().descriptor().location)));
 }
 
 [[nodiscard]] auto unavailableWorker(const InvocationPlan &plan) -> Vec<TestExecution> {
@@ -497,7 +511,7 @@ auto appendWorkerProtocolFailure(Vec<TestExecution> &executions,
   return WorkerRequest{
       .resultPath = paths.first,
       .faultPath = paths.second,
-      .identifier = plan.plannedCase.get().descriptor.identifier,
+      .identifier = plan.plannedCase.get().descriptor().identifier,
       .plannedCase = plan.plannedCaseIndex,
       .runIteration = plan.scheduledCase.runIteration,
       .runSeed = plan.runSeed,
@@ -577,6 +591,9 @@ auto appendWorkerOutcome(Vec<TestExecution> &executions,
   const Option<Pair<Path, Path>> paths = workerPaths();
   if (not paths)
     return unavailableWorker(plan);
+  const auto &[resultPath, faultPath] = *paths;
+
+  const auto cleanupWorkerFiles = std::scope_exit([&] -> void { removeWorkerFiles(resultPath, faultPath); });
 
   const Result<Path> executable = isolation::executablePath();
   if (not executable)
@@ -585,14 +602,11 @@ auto appendWorkerOutcome(Vec<TestExecution> &executions,
   const WorkerRequest request = makeWorkerRequest(plan, *paths);
   const isolation::WorkerOutcome outcome = launchWorkerSafely(request, *executable);
 
-  const auto cleanupWorkerFiles =
-      std::scope_exit([&] -> void { removeWorkerFiles(paths->first, paths->second); });
-
   Result<WorkerJournalResult> journal =
-      readWorkerJournalSafely(paths->first, plan.plannedCase.get().descriptor);
+      readWorkerJournalSafely(resultPath, plan.plannedCase.get().descriptor());
   if (not journal) {
     Vec<TestExecution> executions{};
-    appendWorkerProtocolFailure(executions, plan, *journal, journal.error().display());
+    appendWorkerProtocolFailure(executions, plan, WorkerJournalResult{}, journal.error().display());
     return executions;
   }
 
@@ -610,8 +624,11 @@ auto appendWorkerOutcome(Vec<TestExecution> &executions,
 
   Vec<UPtr<ExecutionLane>> executionLanes{};
   executionLanes.reserve(plannedCases.size());
-  std::ranges::for_each(plannedCases, [&executionLanes](const PlannedCase & /*ignored*/) -> void {
-    executionLanes.push_back(std::make_unique<ExecutionLane>());
+  std::ranges::for_each(plannedCases, [&executionLanes](const PlannedCase &plannedCase) -> void {
+    if (plannedCase.capabilities().fixtures)
+      executionLanes.push_back(std::make_unique<ExecutionLane>());
+    else
+      executionLanes.emplace_back(nullptr);
   });
   return executionLanes;
 }
@@ -661,6 +678,9 @@ public:
 
 private:
   auto executeNext() -> void {
+    DispatchContext &context = context_.get();
+    const Vec<ScheduledCase> &scheduledCases = scheduledCases_.get();
+
     // Every iteration claims one unique schedule slot. The worker exits when the queue is exhausted or the
     // fail-fast flag is published; completed slots remain immutable for the final ordered flattening.
     while (true) {
@@ -668,14 +688,14 @@ private:
         return;
 
       const usize index = nextIndex_.fetch_add(1, std::memory_order_relaxed);
-      if (index >= scheduledCases_.get().size())
+      if (index >= scheduledCases.size())
         return;
 
-      Vec<TestExecution> batch = executeScheduledCase(context_.get(), scheduledCases_.get()[index]);
+      Vec<TestExecution> batch = executeScheduledCase(context, scheduledCases[index]);
       const bool failed = batchFailed(batch);
       executions_[index].emplace(std::move(batch));
 
-      if (context_.get().options.get().failFast and failed)
+      if (context.options.get().failFast and failed)
         stopped_.store(true, std::memory_order_relaxed);
     }
   }
@@ -731,7 +751,7 @@ auto executeWorkerCase(RunSession &session, const WorkerRequest &request, RunOpt
 
   const auto requested =
       std::ranges::find_if(plannedCases, [&request](const PlannedCase &plannedCase) -> bool {
-        return plannedCase.descriptor.identifier == request.identifier;
+        return plannedCase.descriptor().identifier == request.identifier;
       });
   if (requested == plannedCases.end()) {
     TestExecution failure = workerFailure(TestDescriptor{.identifier = request.identifier},
@@ -758,7 +778,8 @@ auto executeWorkerCase(RunSession &session, const WorkerRequest &request, RunOpt
   };
 
   const InvocationPlan plan{
-      .plannedCase = plannedCases[plannedCase],
+      .plannedCase = std::cref(plannedCases[plannedCase]),
+      .capabilities = plannedCases[plannedCase].capabilities(),
       .plannedCaseIndex = request.plannedCase,
       .scheduledCase = scheduledCase,
       .options = options,
@@ -769,7 +790,7 @@ auto executeWorkerCase(RunSession &session, const WorkerRequest &request, RunOpt
   };
 
   if (not isolation::installWorkerFaultHandler(request.faultPath)) {
-    const TestDescriptor descriptor = plannedCases[plannedCase].descriptor;
+    const TestDescriptor descriptor = plannedCases[plannedCase].descriptor();
     const NativeFault fault{
         .kind = NativeFaultKind::IsolationUnavailable,
     };

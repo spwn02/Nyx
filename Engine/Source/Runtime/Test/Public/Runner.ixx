@@ -33,7 +33,7 @@ struct RunOptions final {
   /// Selects the independent scheduler clock supplied to every test execution in this run.
   TimeMode timeMode{TimeMode::Real};
 
-  /// Captures every trace by default; shuffled order is reproducible with seed.
+  /// Captures trace events for every case; the default reporter renders them only for failures.
   TraceMode traceMode{TraceMode::ForcedFailures};
 
   /// Preserves declaration order by default; shuffled order is reproducible with seed.
@@ -45,7 +45,7 @@ struct RunOptions final {
   /// Stops dispatch after the first failed execution. Already-running parallel cases are allowed to finish.
   bool failFast{};
 
-  /// Optional root seed for ordering and per-case Context::seed derivationm.
+  /// Optional root seed for ordering and per-case Context::seed derivation.
   Option<u64> seed;
 
   /// Contains native faults at the logical-case process boundary by default.
@@ -56,10 +56,85 @@ namespace detail {
 
 struct WorkerRequest;
 
-/// One fully expanded reflected Case/provider combination ready for indepndent execution.
-struct PlannedCase final {
-  TestDescriptor descriptor{};
-  std::move_only_function<TestExecution(TestDescriptor, TimeMode)> execute;
+/// Describes the input bindings retained by one immutable invocation factory.
+struct InvocationCapabilities final {
+  bool context{};
+  bool caseValues{};
+  bool providerValues{};
+  bool fixtures{};
+};
+
+/// Carries the per-attempt execution mode into an immutable invocation factory.
+struct InvocationRequest final {
+  Ref<const TestDescriptor> descriptor;
+  TimeMode timeMode{TimeMode::Real};
+
+  explicit InvocationRequest(const TestDescriptor &descriptor, TimeMode timeMode = TimeMode::Real)
+      : descriptor(descriptor)
+      , timeMode(timeMode) {
+  }
+};
+
+/// Type-erased, immutable execution entry point for one expanded test case.
+///
+/// The factory owns no runner state. Concrete factories retain only immutable Case/provider values and a
+/// non-owning reference to the suite fixture scope owned by RunSession.
+class InvocationFactory {
+public:
+  virtual ~InvocationFactory() noexcept = default;
+
+  InvocationFactory(const InvocationFactory &) = delete (
+      "InvocationFactory owns immutable invocation state and cannot be copied.");
+  auto operator=(const InvocationFactory &) -> InvocationFactory & = delete (
+      "InvocationFactory owns immutable invocation state and cannot be copied.");
+  InvocationFactory(InvocationFactory &&) noexcept = delete (
+      "InvocationFactory owns immutable invocation state and cannot be copied.");
+  auto operator=(InvocationFactory &&) noexcept -> InvocationFactory & = delete (
+      "InvocationFactory owns immutable invocation state and cannot be copied.");
+
+  [[nodiscard]] virtual auto invoke(const InvocationRequest &request) const -> TestExecution = 0;
+
+protected:
+  InvocationFactory() noexcept = default;
+};
+
+/// One fully expanded reflected Case/provider combination ready for independent execution.
+///
+/// A planned case is move-only because it owns its immutable factory. Once materialized in a RunSession, its
+/// descriptor, capabilities, and factory are observed through const accessors only.
+class PlannedCase final {
+public:
+  explicit PlannedCase(TestDescriptor descriptor,
+      InvocationCapabilities capabilities,
+      UPtr<const InvocationFactory> factory)
+      : descriptor_(std::move(descriptor))
+      , capabilities_(capabilities)
+      , factory_(std::move(factory)) {
+  }
+
+  PlannedCase(const PlannedCase &) = delete ("PlannedCase owns its immutable invocation factory.");
+  auto operator=(const PlannedCase &)
+      -> PlannedCase & = delete ("PlannedCase owns its immutable invocation factory.");
+  PlannedCase(PlannedCase &&) noexcept = default;
+  auto operator=(PlannedCase &&) noexcept -> PlannedCase & = default;
+  ~PlannedCase() noexcept = default;
+
+  [[nodiscard]] auto descriptor() const noexcept -> const TestDescriptor & {
+    return descriptor_;
+  }
+
+  [[nodiscard]] auto capabilities() const noexcept -> const InvocationCapabilities & {
+    return capabilities_;
+  }
+
+  [[nodiscard]] auto invoke(const InvocationRequest &request) const -> TestExecution {
+    return factory_->invoke(request);
+  }
+
+private:
+  TestDescriptor descriptor_;
+  InvocationCapabilities capabilities_;
+  UPtr<const InvocationFactory> factory_;
 };
 
 /// Owns opaque suite-local state while its PlannedCase values execute.
