@@ -152,7 +152,7 @@ auto parse(int argc, char **argv) -> Result<Args> {
 
 struct Args {
   [[= clap::Short]] String name;
-  [[= clap::Help("Number of times to greet")]][[ = clap::Short, = clap::Long ]] int count{};
+  [[ = clap::Help("Number of times to greet"), = clap::Short, = clap::Long ]] int count{};
 };
 
 using Argv = Vec<const char *>;

@@ -125,9 +125,8 @@ auto reset() -> void {
   = Case{1},
   = Case{2},
   = Case{3},
-  = Case{4},
-  = arg<"expectedCase">(fromCase)
-]] auto resolvesFixtureScopesInParallel(u32 expectedCase,
+  = Case{4}
+]] auto resolvesFixtureScopesInParallel(u32[[= fromCase]] expectedCase,
     const SharedFixture &shared,                         // NOLINT
     const CaseFixture &caseFixtureValue) -> Task<void> { // NOLINT
   co_await sleepFor(oneHour);
@@ -403,8 +402,8 @@ flattensIndependentSuitesAndUsesAutomaticWorkerCount() -> void {
   const Vec<TestDescriptor> all = list<^^SelectionSubjects>();
   const Vec<TestDescriptor> selected = list<^^SelectionSubjects>(fastMath);
   const Vec<TestDescriptor> withoutAdds = list<^^SelectionSubjects>(excluded);
-  const Vec<TestExecution> executions = runAll<^^SelectionSubjects>(fastMath,
-      RunOptions{.isolation = CrashIsolation::InProcess});
+  const Vec<TestExecution> executions =
+      runAll<^^SelectionSubjects>(fastMath, RunOptions{.isolation = CrashIsolation::InProcess});
 
   require(all.size() == expectedDescriptors);
   require(selected.size() == 1_exp);

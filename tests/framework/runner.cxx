@@ -21,14 +21,14 @@ auto reset() -> void {
   observedIterations.clear();
 }
 
-[[ = test, = group("framework"), = tag("runner", "subjects", "repeat"), = arg<"context">(context) ]] auto
-first(const Context &context) -> void {
+[[ = test, = group("framework"), = tag("runner", "subjects", "repeat") ]] auto first(
+    const Context[[= context]] & context) -> void {
   observedSeeds.push_back(context.seed);
   observedIterations.push_back(context.iteration);
 }
 
-[[ = test, = group("framework"), = tag("runner", "subjects", "repeat"), = arg<"context">(context) ]] auto
-second(const Context &context) -> void {
+[[ = test, = group("framework"), = tag("runner", "subjects", "repeat") ]] auto second(
+    const Context[[= context]] & context) -> void {
   observedSeeds.push_back(context.seed);
   observedIterations.push_back(context.iteration);
 }

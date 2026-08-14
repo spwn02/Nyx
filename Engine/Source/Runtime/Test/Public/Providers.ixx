@@ -30,6 +30,7 @@ enum class[[= debug::derive]] ProviderKind : u8 {
 template <std::meta::info Function, std::meta::info Parameter>
 consteval auto validateArgumentBinding() -> void {
   constexpr usize bindingCount = argumentBindingCount<Function, Parameter>();
+  constexpr usize directCount = directPropertyCount<Function, Parameter>();
   constexpr usize contextCount = argumentPropertyCount<Function, Parameter, IsContextParameter>();
   constexpr usize caseCount = argumentPropertyCount<Function, Parameter, IsFromCaseParameter>();
   constexpr usize valuesCount = argumentPropertyCount<Function, Parameter, IsValues>();
@@ -37,6 +38,9 @@ consteval auto validateArgumentBinding() -> void {
 
   static_assert(
       bindingCount <= 1, "Nyx:Test parameters may have at most one [[= arg<\"name\">(...)]] binding.");
+  static_assert(bindingCount == 0 or directCount == 0,
+      "Nyx::Test parameters cannot combine a legacy [[= arg<\"name\">(...)]] binding with direct parameter "
+      "annotations.");
   static_assert(contextCount <= 1, "Nyx:Test parameters may contain [[= context]] only once.");
   static_assert(caseCount <= 1, "Nyx:Test parameters may contain [[= fromCase]] only once.");
   static_assert(valuesCount + filesCount <= 1,

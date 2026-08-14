@@ -17,4 +17,3 @@ export import :Reporting;
 export import :Json;
 export import :Discovery;
 export import :Resources;
-export import :Metadata;

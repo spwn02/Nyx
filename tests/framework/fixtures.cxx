@@ -62,11 +62,11 @@ auto resetFixtureCounters() -> void {
   = tag("fixtures", "subjects"),
   = description("injects a context and both fixture lifetimes"),
   = Case{11},
-  = Case{29},
-  = arg<"ctx">(context),
-  = arg<"input">(fromCase)
-]] auto receivesContext(const Context &ctx, u32 input, Transient transientValue, const Shared &sharedValue)
-    -> void {
+  = Case{29}
+]] auto receivesContext(const Context[[= context]] & ctx,
+    u32[[= fromCase]] input,
+    Transient transientValue,
+    const Shared &sharedValue) -> void {
   const Option<Ref<const Context>> active = currentContext();
   const u32 expectedInput = ctx.testCase == 0 ? 11 : 29;
 
@@ -88,16 +88,12 @@ auto resetFixtureCounters() -> void {
   require(eq(first.instance, second.instance));
 }
 
-[[
-  = test,
+[[ = test,
   = group("framework"),
   = tag("fixtures", "subjects"),
   = Case{11},
-  = Case{29},
-  = arg<"ctx">(context),
-  = arg<"input">(fromCase)
-]] auto receivesAsyncContext(Context ctx,
-    u32 input,
+  = Case{29} ]] auto receivesAsyncContext(const Context[[= context]] & ctx, // NOLINT
+    u32[[= fromCase]] input,
     const Transient &transientValue,           // NOLINT
     const Shared &sharedValue) -> Task<void> { // NOLINT
   co_await yield();
@@ -219,14 +215,11 @@ auto resetDependencyCounters() -> void {
   };
 }
 
-[[
-  = test,
+[[ = test,
   = group("framework"),
   = tag("fixtures", "subjects"),
   = Case{0},
-  = Case{1},
-  = arg<"expectedTestCase">(fromCase)
-]] auto receivesACompleteFixtureGraph(u32 expectedTestCase,
+  = Case{1} ]] auto receivesACompleteFixtureGraph(u32[[= fromCase]] expectedTestCase,
     const Repository &repositoryValue,
     const Connection &connectionValue,
     const SharedGateway &gateway,

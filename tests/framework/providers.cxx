@@ -43,6 +43,20 @@ namespace ProviderSubjects {
   require(path.empty());
 }
 
+[[ = test, = group("framework"), = tag("providers", "subjects") ]] auto receivesDirectFileModifiers(
+    const Path[[ = files(__FILE__), = exclude("__nyx_never_excluded__"), = includeDotFiles ]] & path)
+    -> void {
+  require(path == Path{__FILE__});
+}
+
+[[ = test,
+  = group("framework"),
+  = tag("providers", "legacy"),
+  = Case{7},
+  = arg<"value">(fromCase) ]] auto retainsLegacyArgumentBinding(u32 value) -> void {
+  require(value == 7_exp);
+}
+
 } // namespace ProviderSubject
 
 auto temporaryDirectory() -> Path {
@@ -70,8 +84,8 @@ auto writeFile(const Path &path) -> void {
 }
 
 [[ = test, = group("framework"), = tag("providers") ]] auto expandsValuesAndFileProviders() -> void {
-  constexpr usize expectedDescriptors{11};
-  constexpr usize expectedPassed{10};
+  constexpr usize expectedDescriptors{13};
+  constexpr usize expectedPassed{12};
   constexpr usize expectedFailed{1};
   Vec<TestDescriptor> descriptors = describe<^^ProviderSubjects>();
   Vec<TestExecution> executions =

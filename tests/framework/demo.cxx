@@ -19,16 +19,12 @@ constexpr auto fibonacci(u32 input) noexcept -> u32 {
   }
 }
 
-[[
-  = test,
+[[ = test,
   = group("math"),
   = tag("fibonacci"),
   = Case{0, 0},
   = Case{1, 1},
-  = Case{5, 5},
-  = arg<"input">(fromCase),
-  = arg<"expected">(fromCase)
-]] constexpr auto fibonacciCases(const Context &ctx, u32 input, u32 expected) noexcept -> bool {
+  = Case{5, 5} ]] constexpr auto fibonacciCases(u32 input, u32 expected) noexcept -> bool {
   return fibonacci(input) == expected;
 }
 

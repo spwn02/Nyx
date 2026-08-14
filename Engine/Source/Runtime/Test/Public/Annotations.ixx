@@ -368,8 +368,8 @@ struct Exclude final {
 };
 
 template <usize Size>
-consteval auto exclude() -> Exclude<Size> {
-  return Exclude<Size>{};
+consteval auto exclude(const char (&pattern)[Size]) -> Exclude<Size> {
+  return Exclude<Size>{valueItem(pattern)};
 }
 
 template <class>
