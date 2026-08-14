@@ -583,60 +583,77 @@ auto writeSummary(JsonWriter &writer, const TestSummary &summary) -> void {
   writer.endObject();
 }
 
-auto writeReport(JsonWriter &writer, const RunReport &report, const SourceManager &sources) -> void {
-  const TestSummary summary = Reporter::summarize(report);
+/// Owns the writer and source-resolution context for one complete JSON document.
+class JsonDocumentWriter final {
+public:
+  JsonDocumentWriter(JsonWriter &writer, const SourceManager &sources) noexcept
+      : writer_(writer)
+      , sources_(sources) {
+  }
 
-  writer.beginObject();
-  writer.field("schema_version", [&writer] -> void { writer.number(schemaVersion); });
-  writer.field("framework", [&writer] -> void { writer.text("Nyx.Test"); });
-  writer.field("kind", [&writer] -> void { writer.text("test_run"); });
-  writer.field(
-      "status", [&writer, &summary] -> void { writer.text(summary.passed() ? "passed" : "failed"); });
-  writer.field("run_seed", [&writer, &report] -> void {
-    if (report.cases.empty() or report.cases.front().attempts.empty())
-      writer.nullValue();
-    else
-      writer.number(report.cases.front().attempts.front().execution.runSeed);
-  });
-  writer.field("summary", [&writer, &summary] -> void { writeSummary(writer, summary); });
-  writer.field("cases", [&writer, &report, &sources] -> void {
-    writer.beginArray();
-    std::ranges::for_each(report.cases, [&writer, &sources](const TestCaseResult &testCase) -> void {
-      writer.element([&writer, &testCase, &sources] -> void { writeCase(writer, testCase, sources); });
-    });
-    writer.endArray();
-  });
-  writer.field("tests", [&writer, &report, &sources] -> void {
-    writer.beginArray();
-    const auto flattenedAttempts =
-        report.cases | std::views::transform([](const TestCaseResult &testCase) -> const Vec<TestAttempt> & {
-          return testCase.attempts;
-        }) |
-        std::views::join;
-    std::ranges::for_each(flattenedAttempts, [&writer, &sources](const TestAttempt &attempt) -> void {
-      writer.element(
-          [&writer, &attempt, &sources] -> void { writeExecution(writer, attempt.execution, sources); });
-    });
-    writer.endArray();
-  });
-  writer.endObject();
-}
+  auto write(const RunReport &report) -> void {
+    JsonWriter &writer = writer_.get();
+    const SourceManager &sources = sources_;
+    const TestSummary summary = Reporter::summarize(report);
 
-auto writeList(JsonWriter &writer, Span<const TestDescriptor> descriptors) -> void {
-  writer.beginObject();
-  writer.field("schema_version", [&writer] -> void { writer.number(schemaVersion); });
-  writer.field("framework", [&writer] -> void { writer.text("Nyx.Test"); });
-  writer.field("kind", [&writer] -> void { writer.text("test_list"); });
-  writer.field("count", [&writer, &descriptors] -> void { writer.number(descriptors.size()); });
-  writer.field("tests", [&writer, &descriptors] -> void {
-    writer.beginArray();
-    std::ranges::for_each(descriptors, [&writer](const TestDescriptor &descriptor) -> void {
-      writer.element([&writer, &descriptor] -> void { writeDescriptor(writer, descriptor); });
+    writer.beginObject();
+    writer.field("schema_version", [&writer] -> void { writer.number(schemaVersion); });
+    writer.field("framework", [&writer] -> void { writer.text("Nyx.Test"); });
+    writer.field("kind", [&writer] -> void { writer.text("test_run"); });
+    writer.field(
+        "status", [&writer, &summary] -> void { writer.text(summary.passed() ? "passed" : "failed"); });
+    writer.field("run_seed", [&writer, &report] -> void {
+      if (report.cases.empty() or report.cases.front().attempts.empty())
+        writer.nullValue();
+      else
+        writer.number(report.cases.front().attempts.front().execution.runSeed);
     });
-    writer.endArray();
-  });
-  writer.endObject();
-}
+    writer.field("summary", [&writer, &summary] -> void { writeSummary(writer, summary); });
+    writer.field("cases", [&writer, &report, &sources] -> void {
+      writer.beginArray();
+      std::ranges::for_each(report.cases, [&writer, &sources](const TestCaseResult &testCase) -> void {
+        writer.element([&writer, &testCase, &sources] -> void { writeCase(writer, testCase, sources); });
+      });
+      writer.endArray();
+    });
+    writer.field("tests", [&writer, &report, &sources] -> void {
+      writer.beginArray();
+      const auto flattenedAttempts =
+          report.cases |
+          std::views::transform(
+              [](const TestCaseResult &testCase) -> const Vec<TestAttempt> & { return testCase.attempts; }) |
+          std::views::join;
+      std::ranges::for_each(flattenedAttempts, [&writer, &sources](const TestAttempt &attempt) -> void {
+        writer.element(
+            [&writer, &attempt, &sources] -> void { writeExecution(writer, attempt.execution, sources); });
+      });
+      writer.endArray();
+    });
+    writer.endObject();
+  }
+
+  auto writeList(Span<const TestDescriptor> descriptors) -> void {
+    JsonWriter &writer = writer_;
+
+    writer.beginObject();
+    writer.field("schema_version", [&writer] -> void { writer.number(schemaVersion); });
+    writer.field("framework", [&writer] -> void { writer.text("Nyx.Test"); });
+    writer.field("kind", [&writer] -> void { writer.text("test_list"); });
+    writer.field("count", [&writer, &descriptors] -> void { writer.number(descriptors.size()); });
+    writer.field("tests", [&writer, &descriptors] -> void {
+      writer.beginArray();
+      std::ranges::for_each(descriptors, [&writer](const TestDescriptor &descriptor) -> void {
+        writer.element([&writer, &descriptor] -> void { writeDescriptor(writer, descriptor); });
+      });
+      writer.endArray();
+    });
+    writer.endObject();
+  }
+
+private:
+  Ref<JsonWriter> writer_;
+  Ref<const SourceManager> sources_;
+};
 
 } // namespace
 
@@ -656,7 +673,8 @@ auto JsonReporter::report(Span<const TestExecution> executions, std::ostream &ou
   const RunReport report = Reporter::makeReport(executions);
   const SourceManager sources{roots_};
   JsonWriter writer{output, options_};
-  writeReport(writer, report, sources);
+  JsonDocumentWriter document{writer, sources};
+  document.write(report);
   if (options_.pretty)
     output << '\n';
 }
@@ -675,7 +693,9 @@ auto JsonReporter::reportList(Span<const TestDescriptor> descriptors, std::ostre
     return;
 
   JsonWriter writer{output, options_};
-  writeList(writer, descriptors);
+  const SourceManager sources{roots_};
+  JsonDocumentWriter document{writer, sources};
+  document.writeList(descriptors);
   if (options_.pretty)
     output << '\n';
 }

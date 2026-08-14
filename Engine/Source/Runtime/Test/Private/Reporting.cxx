@@ -168,6 +168,130 @@ constexpr inline usize progressBarWidth{80};
   return std::format("{} μs", microseconds.count());
 }
 
+/// Builds the presentation-independent report tree from physical test executions.
+class RunReportBuilder final {
+public:
+  explicit RunReportBuilder(usize expectedCases) {
+    report_.cases.reserve(expectedCases);
+  }
+
+  auto operator()(const TestExecution &execution) -> void {
+    const auto existing = std::ranges::find_if(
+        report_.cases, [&execution](const TestCaseResult &testCase) constexpr noexcept -> bool {
+          return testCase.descriptor.identifier == execution.descriptor.identifier;
+        });
+
+    const TestAttempt attempt{
+        .execution = execution,
+        .index = execution.attempt,
+        .warmup = execution.warmup,
+    };
+
+    if (existing == report_.cases.end()) {
+      report_.cases.push_back(TestCaseResult{
+          .descriptor = execution.descriptor,
+          .attempts = Vec<TestAttempt>{attempt},
+      });
+      return;
+    }
+
+    existing->attempts.push_back(attempt);
+  }
+
+  [[nodiscard]] auto finish() && -> RunReport {
+    std::ranges::for_each(report_.cases, &RunReportBuilder::finalizeCase);
+    return std::move(report_);
+  }
+
+private:
+  static auto finalizeCase(TestCaseResult &testCase) -> void {
+    testCase.measurement = makeMeasurement(testCase);
+    testCase.recoveredTimeouts = static_cast<usize>(
+        std::ranges::count_if(testCase.attempts, [&testCase](const TestAttempt &attempt) -> bool {
+          return not attempt.warmup and not attempt.execution.passed() and
+                 recoveredBy(attempt, testCase.attempts);
+        }));
+  }
+
+  RunReport report_;
+};
+
+/// Accumulates summary counters without rebuilding or traversing the report tree through nested lambdas.
+class SummaryAccumulator final {
+public:
+  auto operator()(const TestCaseResult &testCase) noexcept -> void {
+    if (testCase.passed())
+      ++summary_.passedCaseCount;
+    else
+      ++summary_.failedCaseCount;
+
+    if (testCase.recoveredTimeouts != 0)
+      ++summary_.recoveredCount;
+
+    std::ranges::for_each(testCase.attempts, std::ref(*this));
+  }
+
+  auto operator()(const TestAttempt &attempt) noexcept -> void {
+    ++summary_.testCount;
+    ++summary_.attemptCount;
+    summary_.duration += attempt.execution.duration;
+    summary_.wallDuration += attempt.execution.wallDuration;
+    summary_.assertionCount += attempt.execution.state.assertions;
+    summary_.failedAssertionCount += attempt.execution.state.failedAssertions;
+    summary_.errorCount += attempt.execution.state.errors;
+
+    if (attempt.warmup)
+      ++summary_.warmupCount;
+    else
+      ++summary_.sampleCount;
+
+    if (attempt.index.retry != 0)
+      ++summary_.retryCount;
+
+    if (attempt.execution.passed())
+      ++summary_.passedCount;
+    else
+      ++summary_.failedCount;
+  }
+
+  [[nodiscard]] auto finish() && noexcept -> TestSummary {
+    return summary_;
+  }
+
+private:
+  TestSummary summary_{};
+};
+
+/// Renders the fixed-width proress bar and the final human-readable run summary.
+auto renderSummary(const TestSummary &summary, bool useColor, std::ostream &output) -> void {
+  if (summary.testCount != 0) {
+    const usize passedWidth = summary.passedCaseCount * progressBarWidth / summary.caseCount;
+    const usize failedWidth = progressBarWidth - passedWidth;
+
+    output << '\n'
+           << paint(String(passedWidth, '='), green, useColor)
+           << paint(String(failedWidth, '='), red, useColor) << '\n';
+  }
+
+  output << std::format("\ntest result: {}. {}; {}; {}; {}; {}; {}; {}; finished in {}; {}; {}; "
+                        "{}; {}; {}; wall {}\n",
+      paint(summary.passed() ? "ok" : "FAILED", summary.passed() ? green : red, useColor),
+      countLabel(summary.testCount, "test", "tests"),
+      countLabel(summary.passedCount, "passed", "passed"),
+      countLabel(summary.failedCount, "failed", "failed"),
+      countLabel(summary.assertionCount, "assertion", "assertions"),
+      countLabel(summary.failedAssertionCount, "failed assertions", "failed assertions"),
+      countLabel(summary.errorCount, "error", "errors"),
+      countLabel(summary.recoveredCount, "recovered case", "recovered cases"),
+      durationLabel(summary.duration),
+      countLabel(summary.caseCount, "case", "cases"),
+      countLabel(summary.attemptCount, "attempt", "attempts"),
+      countLabel(summary.sampleCount, "sample", "samples"),
+      countLabel(summary.warmupCount, "warmup", "warmups"),
+      countLabel(summary.retryCount, "retry", "retries"),
+      durationLabel(summary.wallDuration));
+}
+
 } // namespace
 
 struct Reporter::RenderState final {
@@ -211,95 +335,33 @@ auto Reporter::addRoot(Path root) -> void {
 }
 
 auto Reporter::makeReport(Span<const TestExecution> executions) -> RunReport {
-  if constexpr (not build::tests)
+  if constexpr (build::tests) {
+    RunReportBuilder builder{executions.size()};
+    std::ranges::for_each(executions, std::ref(builder));
+    return std::move(builder).finish();
+  } else {
     return {};
-
-  RunReport result{};
-  result.cases.reserve(executions.size());
-
-  std::ranges::for_each(executions, [&result](const TestExecution &execution) -> void {
-    const auto existing = std::ranges::find_if(
-        result.cases, [&execution](const TestCaseResult &testCase) constexpr noexcept -> bool {
-          return testCase.descriptor.identifier == execution.descriptor.identifier;
-        });
-
-    const TestAttempt attempt{
-        .execution = execution,
-        .index = execution.attempt,
-        .warmup = execution.warmup,
-    };
-    if (existing == result.cases.end()) {
-      result.cases.push_back(TestCaseResult{
-          .descriptor = execution.descriptor,
-          .attempts = Vec<TestAttempt>{attempt},
-      });
-      return;
-    }
-
-    existing->attempts.push_back(attempt);
-  });
-
-  std::ranges::for_each(result.cases, [](TestCaseResult &testCase) -> void {
-    testCase.measurement = makeMeasurement(testCase);
-    testCase.recoveredTimeouts = static_cast<usize>(
-        std::ranges::count_if(testCase.attempts, [&testCase](const TestAttempt &attempt) -> bool {
-          return not attempt.warmup and not attempt.execution.passed() and
-                 recoveredBy(attempt, testCase.attempts);
-        }));
-  });
-
-  return result;
+  }
 }
 
 auto Reporter::summarize(Span<const TestExecution> executions) noexcept -> TestSummary {
-  if constexpr (not build::tests)
+  if constexpr (build::tests) {
+    return summarize(makeReport(executions));
+  } else {
     return {};
-
-  return summarize(makeReport(executions));
+  }
 }
 
 auto Reporter::summarize(const RunReport &report) noexcept -> TestSummary {
-  if constexpr (not build::tests)
+  if constexpr (build::tests) {
+    SummaryAccumulator accumulator{};
+    std::ranges::for_each(report.cases, std::ref(accumulator));
+    TestSummary result = std::move(accumulator).finish();
+    result.caseCount = report.cases.size();
+    return result;
+  } else {
     return {};
-
-  TestSummary result{
-      .caseCount = report.cases.size(),
-  };
-
-  std::ranges::for_each(report.cases, [&result](const TestCaseResult &testCase) constexpr -> void {
-    if (testCase.passed())
-      ++result.passedCaseCount;
-    else
-      ++result.failedCaseCount;
-
-    if (testCase.recoveredTimeouts != 0)
-      ++result.recoveredCount;
-
-    std::ranges::for_each(testCase.attempts, [&result](const TestAttempt &attempt) constexpr -> void {
-      ++result.testCount;
-      ++result.attemptCount;
-      result.duration += attempt.execution.duration;
-      result.wallDuration += attempt.execution.wallDuration;
-      result.assertionCount += attempt.execution.state.assertions;
-      result.failedAssertionCount += attempt.execution.state.failedAssertions;
-      result.errorCount += attempt.execution.state.errors;
-
-      if (attempt.warmup)
-        ++result.warmupCount;
-      else
-        ++result.sampleCount;
-      if (attempt.index.retry != 0)
-        ++result.retryCount;
-
-      if (attempt.execution.passed())
-        ++result.passedCount;
-      else
-        ++result.failedCount;
-      ;
-    });
-  });
-
-  return result;
+  }
 }
 
 auto Reporter::colorEnabled() const noexcept -> bool {
@@ -493,32 +555,7 @@ auto Reporter::report(Span<const TestExecution> executions, std::ostream &output
     if (not options_.showSummary)
       return summary;
 
-    if (summary.testCount != 0) {
-      const usize passedWidth = summary.passedCaseCount * progressBarWidth / summary.caseCount;
-      const usize failedWidth = progressBarWidth - passedWidth;
-
-      output << '\n'
-             << paint(String(passedWidth, '='), green, useColor)
-             << paint(String(failedWidth, '='), red, useColor) << '\n';
-    }
-
-    output << std::format("\ntest result: {}. {}; {}; {}; {}; {}; {}; {}; finished in {}; {}; {}; "
-                          "{}; {}; {}; wall {}\n",
-        paint(summary.passed() ? "ok" : "FAILED", summary.passed() ? green : red, useColor),
-        countLabel(summary.testCount, "test", "tests"),
-        countLabel(summary.passedCount, "passed", "passed"),
-        countLabel(summary.failedCount, "failed", "failed"),
-        countLabel(summary.assertionCount, "assertion", "assertions"),
-        countLabel(summary.failedAssertionCount, "failed assertions", "failed assertions"),
-        countLabel(summary.errorCount, "error", "errors"),
-        countLabel(summary.recoveredCount, "recovered case", "recovered cases"),
-        durationLabel(summary.duration),
-        countLabel(summary.caseCount, "case", "cases"),
-        countLabel(summary.attemptCount, "attempt", "attempts"),
-        countLabel(summary.sampleCount, "sample", "samples"),
-        countLabel(summary.warmupCount, "warmup", "warmups"),
-        countLabel(summary.retryCount, "retry", "retries"),
-        durationLabel(summary.wallDuration));
+    renderSummary(summary, useColor, output);
     return summary;
   } else {
     return {};
