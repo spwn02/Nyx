@@ -144,7 +144,7 @@ auto traceEvent(StringView message, std::source_location location) -> void {
   if constexpr (build::tests) {
     const Option<Ref<TestEnvironment>> environment = currentEnvironment();
     if (not environment)
-      throw std::logic_error{"Nyx::Test trace events require an active test environment"};
+      return;
 
     environment->get().recordTrace(String{message}, location);
   }

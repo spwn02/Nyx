@@ -625,7 +625,7 @@ auto appendWorkerOutcome(Vec<TestExecution> &executions,
   Vec<UPtr<ExecutionLane>> executionLanes{};
   executionLanes.reserve(plannedCases.size());
   std::ranges::for_each(plannedCases, [&executionLanes](const PlannedCase &plannedCase) -> void {
-    if (plannedCase.capabilities().fixtures)
+    if (plannedCase.capabilities().has(InvocationInput::Fixtures))
       executionLanes.push_back(std::make_unique<ExecutionLane>());
     else
       executionLanes.emplace_back(nullptr);

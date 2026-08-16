@@ -337,13 +337,24 @@ template <class CaseType>
 
 template <std::meta::info Namespace, std::meta::info Function>
 consteval auto invocationCapabilities() -> InvocationCapabilities {
+  InvocationInputs inputs{};
+
+  if constexpr (hasContextParameter<Function>())
+    inputs |= InvocationInput::Context;
+
+  if constexpr (caseParameterCount<Function>() != 0 or
+                (usesLegacyCaseBinding<Namespace, Function>() and
+                    ReflectedFunctionMetadata<Function>::parameters.size() != 0))
+    inputs |= InvocationInput::CaseValues;
+
+  if constexpr (providerParameterCount<Function>() != 0)
+    inputs |= InvocationInput::ProvidersValues;
+
+  if constexpr (hasAutomaticFixtureParameter<Namespace, Function>())
+    inputs |= InvocationInput::Fixtures;
+
   return InvocationCapabilities{
-      .context = hasContextParameter<Function>(),
-      .caseValues = caseParameterCount<Function>() != 0 or
-                    (usesLegacyCaseBinding<Namespace, Function>() and
-                        ReflectedFunctionMetadata<Function>::parameters.size() != 0),
-      .providerValues = providerParameterCount<Function>() != 0,
-      .fixtures = hasAutomaticFixtureParameter<Namespace, Function>(),
+      .inputs = inputs,
   };
 }
 

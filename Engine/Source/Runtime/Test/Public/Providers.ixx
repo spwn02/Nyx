@@ -111,11 +111,14 @@ template <std::meta::info Function, std::meta::info Parameter, template <class> 
 consteval auto argumentProperty() -> auto {
   if constexpr (argumentPropertyCount<Function, Parameter, Predicate>() != 0) {
     if constexpr (directPropertyCountFor<Function, Parameter, Predicate>() != 0) {
-      template for (constexpr std::meta::info annotation : meta::annotations<Parameter>) {
-        using Annotation = meta::TypeObject<annotation>;
+      template for (constexpr ParameterProperty property :
+          ReflectedFunctionMetadata<Function>::parameterProperties) {
+        if constexpr (property.parameter == Parameter and not property.legacy) {
+          using Annotation = meta::TypeObject<property.annotation>;
 
-        if constexpr (Predicate<Annotation>::value)
-          return std::meta::extract<Annotation>(annotation);
+          if constexpr (Predicate<Annotation>::value)
+            return std::meta::extract<Annotation>(property.annotation);
+        }
       }
     } else {
       template for (constexpr std::meta::info annotation : ReflectedFunctionMetadata<Function>::arguments) {

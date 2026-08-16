@@ -8,11 +8,21 @@ import :Task;
 export namespace Nyx::Test::detail {
 
 /// Describes the input bindings retained by one immutable invocation factory.
+enum class[[= bitflags]] InvocationInput : u8 {
+  Context = 1 << 0,
+  CaseValues = 1 << 1,
+  ProvidersValues = 1 << 2,
+  Fixtures = 1 << 3,
+};
+
+using InvocationInputs = InvocationInput;
+
 struct InvocationCapabilities final {
-  bool context{};
-  bool caseValues{};
-  bool providerValues{};
-  bool fixtures{};
+  InvocationInputs inputs{};
+
+  [[nodiscard]] auto has(InvocationInput input) const noexcept -> bool {
+    return ::Nyx::has(inputs, input);
+  }
 };
 
 /// Carries the per-attempt execution mode into an immutable invocation factory.
