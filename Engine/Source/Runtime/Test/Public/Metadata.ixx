@@ -265,10 +265,9 @@ template <std::meta::info Function, std::meta::info Parameter>
 consteval auto directPropertyCount() -> usize {
   usize count{};
 
-  template for (constexpr std::meta::info annotation : meta::annotations<Parameter>) {
-    using Annotation = meta::TypeObject<annotation>;
-
-    if constexpr (is_supported_property_v<Annotation>)
+  template for (constexpr ParameterProperty property :
+      ReflectedFunctionMetadata<Function>::parameterProperties) {
+    if constexpr (property.parameter == Parameter and not property.legacy)
       ++count;
   }
 
@@ -303,11 +302,14 @@ template <std::meta::info Function, std::meta::info Parameter, template <class> 
 consteval auto directPropertyCountFor() -> usize {
   usize count{};
 
-  template for (constexpr std::meta::info annotation : meta::annotations<Parameter>) {
-    using Annotation = meta::TypeObject<annotation>;
+  template for (constexpr ParameterProperty property :
+      ReflectedFunctionMetadata<Function>::parameterProperties) {
+    if constexpr (property.parameter == Parameter and not property.legacy) {
+      using Annotation = meta::TypeObject<property.annotation>;
 
-    if constexpr (Predicate<Annotation>::value)
-      ++count;
+      if constexpr (Predicate<Annotation>::value)
+        ++count;
+    }
   }
 
   return count;

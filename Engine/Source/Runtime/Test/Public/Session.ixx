@@ -11,7 +11,7 @@ export namespace Nyx::Test::detail {
 enum class[[= bitflags]] InvocationInput : u8 {
   Context = 1 << 0,
   CaseValues = 1 << 1,
-  ProvidersValues = 1 << 2,
+  ProviderValues = 1 << 2,
   Fixtures = 1 << 3,
 };
 

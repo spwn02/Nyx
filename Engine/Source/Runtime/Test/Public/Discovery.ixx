@@ -348,7 +348,7 @@ consteval auto invocationCapabilities() -> InvocationCapabilities {
     inputs |= InvocationInput::CaseValues;
 
   if constexpr (providerParameterCount<Function>() != 0)
-    inputs |= InvocationInput::ProvidersValues;
+    inputs |= InvocationInput::ProviderValues;
 
   if constexpr (hasAutomaticFixtureParameter<Namespace, Function>())
     inputs |= InvocationInput::Fixtures;
