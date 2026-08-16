@@ -400,27 +400,43 @@ private:
   Ref<FixtureScope<Namespace>> suiteFixtures_;
 };
 
+template <std::meta::info Namespace, class CaseValues>
+struct ProviderWorkContext final {
+  Ref<detail::RunSession> session;
+  Ref<FixtureScope<Namespace>> suiteFixtures;
+  Ref<const CaseValues> caseValues;
+  StringView caseDescription;
+  Ref<usize> testCaseIndex;
+
+  explicit ProviderWorkContext(detail::RunSession &session,
+      FixtureScope<Namespace> &suiteFixtures,
+      const CaseValues &caseValues,
+      StringView caseDescription,
+      usize &testCaseIndex)
+      : session(session)
+      , suiteFixtures(suiteFixtures)
+      , caseValues(caseValues)
+      , caseDescription(caseDescription)
+      , testCaseIndex(testCaseIndex) {
+  }
+};
+
 template <std::meta::info Namespace, std::meta::info Function, class CaseValues>
-auto appendProviderWorkItems(Vec<detail::PlannedCase> &plannedCases,
-    FixtureScope<Namespace> &suiteFixtures,
-    const CaseValues &caseValues,
-    StringView caseDescription,
-    usize &testCaseIndex) -> void {
-  const usize providerCount = detail::forEachProviderCombination<Function>(
-      [&plannedCases, &suiteFixtures, &caseValues, &caseDescription, &testCaseIndex](
-          const auto &...providerValues) -> void {
+auto appendProviderWorkItems(const ProviderWorkContext<Namespace, CaseValues> &context) -> void {
+  const usize providerCount =
+      detail::forEachProviderCombination<Function>([&context](const auto &...providerValues) -> void {
         const String providerDescription = detail::providerDescription<Function>(providerValues...);
         auto providerTuple = std::make_tuple(providerValues...);
         const TestDescriptor descriptor =
-            makeTestDescriptor<Function>(testCaseIndex, caseDescription, StringView{providerDescription});
+            makeTestDescriptor<Function>(context.testCaseIndex, context.caseDescription, providerDescription);
         using Factory = ReflectedInvocationFactory<Namespace,
             Function,
             CaseValues,
             std::remove_cvref_t<decltype(providerTuple)>>;
-        plannedCases.emplace_back(descriptor,
+        context.session.get().appendPlannedCase(detail::PlannedCase{descriptor,
             invocationCapabilities<Namespace, Function>(),
-            std::make_unique<Factory>(caseValues, std::move(providerTuple), suiteFixtures));
-        ++testCaseIndex;
+            std::make_unique<Factory>(context.caseValues, std::move(providerTuple), context.suiteFixtures)});
+        ++context.testCaseIndex;
       });
 
   if (providerCount != 0)
@@ -428,15 +444,15 @@ auto appendProviderWorkItems(Vec<detail::PlannedCase> &plannedCases,
 
   const String providerDescription = detail::missingProviderDescription<Function>();
   const TestDescriptor descriptor =
-      makeTestDescriptor<Function>(testCaseIndex, caseDescription, StringView{providerDescription});
-  plannedCases.emplace_back(descriptor,
+      makeTestDescriptor<Function>(context.testCaseIndex, context.caseDescription, providerDescription);
+  context.session.get().appendPlannedCase(detail::PlannedCase{descriptor,
       invocationCapabilities<Namespace, Function>(),
-      std::make_unique<MissingProviderInvocationFactory<Function>>());
-  ++testCaseIndex;
+      std::make_unique<MissingProviderInvocationFactory<Function>>()});
+  ++context.testCaseIndex;
 }
 
 template <std::meta::info Namespace, std::meta::info Function, std::meta::info Annotation>
-auto appendCaseWorkItems(Vec<detail::PlannedCase> &plannedCases,
+auto appendCaseWorkItems(detail::RunSession &session,
     FixtureScope<Namespace> &suiteFixtures,
     usize &testCaseIndex) -> void {
   using Ann = meta::TypeObject<Annotation>;
@@ -445,21 +461,24 @@ auto appendCaseWorkItems(Vec<detail::PlannedCase> &plannedCases,
   const auto caseValueTuple = caseValues(testCase);
 
   appendProviderWorkItems<Namespace, Function>(
-      plannedCases, suiteFixtures, caseValueTuple, caseDescription, testCaseIndex);
+      ProviderWorkContext<Namespace, std::remove_cvref_t<decltype(caseValueTuple)>>{
+          session, suiteFixtures, caseValueTuple, caseDescription, testCaseIndex});
 }
 
 template <std::meta::info Namespace, std::meta::info Function>
-auto appendWorkItems(Vec<detail::PlannedCase> &plannedCases, FixtureScope<Namespace> &suiteFixtures) -> void {
+auto appendWorkItems(detail::RunSession &session, FixtureScope<Namespace> &suiteFixtures) -> void {
   usize testCaseIndex{};
 
   if constexpr (caseCount<Function>() == 0) {
     const Tuple<> caseValues{};
-    appendProviderWorkItems<Namespace, Function>(plannedCases, suiteFixtures, caseValues, {}, testCaseIndex);
+    appendProviderWorkItems<Namespace, Function>(
+        ProviderWorkContext<Namespace, std::remove_cvref_t<decltype(caseValues)>>{
+            session, suiteFixtures, caseValues, {}, testCaseIndex});
     return;
   }
 
   template for (constexpr std::meta::info annotation : ReflectedFunctionMetadata<Function>::cases) {
-    appendCaseWorkItems<Namespace, Function, annotation>(plannedCases, suiteFixtures, testCaseIndex);
+    appendCaseWorkItems<Namespace, Function, annotation>(session, suiteFixtures, testCaseIndex);
   }
 }
 
@@ -487,15 +506,15 @@ auto appendScopeDescriptors(Vec<TestDescriptor> &descriptors) -> void {
 }
 
 template <std::meta::info FixtureNamespace, std::meta::info Scope, class Configuration>
-auto appendScopeWorkItems(Vec<detail::PlannedCase> &plannedCases,
-    FixtureScope<FixtureNamespace> &suiteFixtures) -> void {
+auto appendScopeWorkItems(detail::RunSession &session, FixtureScope<FixtureNamespace> &suiteFixtures)
+    -> void {
   template for (constexpr std::meta::info member : meta::members<Scope, meta::AccessContext::unchecked()>) {
     if constexpr (std::meta::is_function(member) and isDiscoveredTest<Scope, member, Configuration>()) {
-      appendWorkItems<FixtureNamespace, member>(plannedCases, suiteFixtures);
+      appendWorkItems<FixtureNamespace, member>(session, suiteFixtures);
     }
 
     if constexpr (Configuration::recursive_ and std::meta::is_namespace(member))
-      appendScopeWorkItems<FixtureNamespace, member, Configuration>(plannedCases, suiteFixtures);
+      appendScopeWorkItems<FixtureNamespace, member, Configuration>(session, suiteFixtures);
   }
 }
 
@@ -563,7 +582,7 @@ auto appendScopePlan(detail::RunSession &session) -> void {
   if constexpr (not scopeHasDynamicProviders<Scope, Configuration>())
     session.reservePlannedCases(cachedScopeDescriptors<Scope, Configuration>().size());
   FixtureScope<Scope> &suiteFixtures = suite.template emplace<FixtureScope<Scope>>();
-  appendScopeWorkItems<Scope, Scope, Configuration>(session.plannedCases(), suiteFixtures);
+  appendScopeWorkItems<Scope, Scope, Configuration>(session, suiteFixtures);
 }
 
 template <std::meta::info Scope, class Configuration>

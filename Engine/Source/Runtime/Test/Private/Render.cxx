@@ -284,10 +284,24 @@ enum class LexicalMode : u8 {
   RawString,
 };
 
-struct LexicalState final {
-  LexicalMode mode{LexicalMode::Normal};
-  bool escaped{};
-  String rawDelimiter;
+class LexicalState final {
+public:
+  [[nodiscard]] auto consume(StringView text, usize index) -> Option<usize>;
+
+private:
+  [[nodiscard]] auto consumeNormal(StringView text, usize index) -> Option<usize>;
+
+  [[nodiscard]] auto consumeLineComment(StringView text, usize index) -> usize;
+
+  [[nodiscard]] auto consumeBlockComment(StringView text, usize index) -> usize;
+
+  [[nodiscard]] auto consumeQuoted(StringView text, usize index, char terminator) -> usize;
+
+  [[nodiscard]] auto consumeRawString(StringView text, usize index) -> usize;
+
+  LexicalMode mode_{LexicalMode::Normal};
+  bool escaped_{};
+  String rawDelimiter_;
 };
 
 [[nodiscard]] constexpr auto matchingDelimiter(char value) noexcept -> char {
@@ -327,88 +341,90 @@ struct LexicalState final {
   return newline == StringView::npos ? 0 : newline + 1;
 }
 
-/// Consumes one lexical unit while the source scanner is inside comments or literals.
-///
-/// A returned offset means the caller must continue scanning at that offset. An empty result leaves the
-/// current character in normal mode so the caller can interpret delimiters, semicolons, or the requested
-/// token.
-[[nodiscard]] auto consumeLexicalUnit(StringView text, // NOLINT(readability-function-cognitive-complexity)
-    usize index,
-    LexicalState &state) -> Option<usize> {
+auto LexicalState::consume(StringView text, usize index) -> Option<usize> {
+  switch (mode_) {
+    case LexicalMode::Normal: return consumeNormal(text, index);
+    case LexicalMode::LineComment: return consumeLineComment(text, index);
+    case LexicalMode::BlockComment: return consumeBlockComment(text, index);
+    case LexicalMode::String: return consumeQuoted(text, index, '"');
+    case LexicalMode::Character: return consumeQuoted(text, index, '\'');
+    case LexicalMode::RawString: return consumeRawString(text, index);
+  }
+
+  std::unreachable();
+}
+
+auto LexicalState::consumeNormal(StringView text, usize index) -> Option<usize> {
   const char current = text[index];
 
-  if (state.mode == LexicalMode::LineComment) {
-    if (current == '\n') {
-      if (state.escaped)
-        state.escaped = false;
-      else
-        state.mode = LexicalMode::Normal;
-    } else {
-      state.escaped = current == '\\';
-    }
-    return index + 1;
-  }
-
-  if (state.mode == LexicalMode::BlockComment) {
-    if (current == '*' and index + 1 < text.size() and text[index + 1] == '/') {
-      state.mode = LexicalMode::Normal;
-      return index + 2;
-    }
-    return index + 1;
-  }
-
-  if (state.mode == LexicalMode::String or state.mode == LexicalMode::Character) {
-    if (state.escaped) {
-      state.escaped = false;
-    } else if (current == '\\') {
-      state.escaped = true;
-    } else if ((state.mode == LexicalMode::String and current == '"') or
-               (state.mode == LexicalMode::Character and current == '\'')) {
-      state.mode = LexicalMode::Normal;
-    }
-    return index + 1;
-  }
-
-  if (state.mode == LexicalMode::RawString) {
-    const String terminator = std::format("){}\"", state.rawDelimiter);
-    if (text.substr(index, terminator.size()) == terminator) {
-      state.mode = LexicalMode::Normal;
-      return index + terminator.size();
-    }
-    return index + 1;
-  }
-
   if (current == '/' and index + 1 < text.size() and text[index + 1] == '/') {
-    state.mode = LexicalMode::LineComment;
+    mode_ = LexicalMode::LineComment;
     return index + 2;
   }
 
   if (current == '/' and index + 1 < text.size() and text[index + 1] == '*') {
-    state.mode = LexicalMode::BlockComment;
+    mode_ = LexicalMode::BlockComment;
     return index + 2;
   }
 
   if (current == 'R' and index + 1 < text.size() and text[index + 1] == '"') {
-    const Option<usize> end = rawStringEnd(text, index, state.rawDelimiter);
-    if (end) {
-      state.mode = LexicalMode::Normal;
+    const Option<usize> end = rawStringEnd(text, index, rawDelimiter_);
+    if (end)
       return *end;
-    }
   }
 
   if (current == '"') {
-    state.mode = LexicalMode::String;
-    state.escaped = false;
+    mode_ = LexicalMode::String;
+    escaped_ = false;
     return index + 1;
   }
 
   if (current == '\'') {
-    state.mode = LexicalMode::Character;
-    state.escaped = false;
+    mode_ = LexicalMode::Character;
+    escaped_ = false;
     return index + 1;
   }
 
   return None;
+}
+
+auto LexicalState::consumeLineComment(StringView text, usize index) -> usize {
+  if (text[index] == '\n') {
+    if (escaped_)
+      escaped_ = false;
+    else
+      mode_ = LexicalMode::Normal;
+  } else {
+    escaped_ = text[index] == '\\';
+  }
+  return index + 1;
+}
+
+auto LexicalState::consumeBlockComment(StringView text, usize index) -> usize {
+  if (text[index] == '*' and index + 1 < text.size() and text[index + 1] == '/') {
+    mode_ = LexicalMode::Normal;
+    return index + 2;
+  }
+  return index + 1;
+}
+
+auto LexicalState::consumeQuoted(StringView text, usize index, char terminator) -> usize {
+  const char current = text[index];
+  if (escaped_) {
+    escaped_ = false;
+  } else if (current == '\\') {
+    escaped_ = true;
+  } else if (current == terminator) {
+    mode_ = LexicalMode::Normal;
+  }
+  return index + 1;
+}
+
+auto LexicalState::consumeRawString(StringView text, usize index) -> usize {
+  const String terminator = std::format("){}\"", rawDelimiter_);
+  if (text.substr(index, terminator.size()) == terminator)
+    mode_ = LexicalMode::Normal;
+  return index + (mode_ == LexicalMode::Normal ? terminator.size() : 1);
 }
 
 [[nodiscard]] auto findToken(StringView text, usize start, char expected) -> Option<usize> {
@@ -416,7 +432,7 @@ struct LexicalState final {
   usize index = start;
 
   while (index < text.size()) {
-    if (const Option<usize> next = consumeLexicalUnit(text, index, state)) {
+    if (const Option<usize> next = state.consume(text, index)) {
       index = *next;
       continue;
     }
@@ -444,18 +460,52 @@ struct LexicalState final {
   return lineStart(text, boundary);
 }
 
-inline constexpr usize delimitersCount{32};
+/// Tracks closing delimiters while a scanner walks one balanced C++ region.
+class DelimiterStack final {
+public:
+  [[nodiscard]] constexpr auto empty() const noexcept -> bool {
+    return values_.empty();
+  }
+
+  [[nodiscard]] auto push(char opening) -> bool {
+    const char closing = matchingDelimiter(opening);
+    if (closing == '\0')
+      return false;
+
+    values_.push_back(closing);
+    return true;
+  }
+
+  [[nodiscard]] auto pop(char closing) noexcept -> bool {
+    if (values_.empty() or values_.back() != closing)
+      return false;
+
+    values_.pop_back();
+    return true;
+  }
+
+private:
+  static constexpr usize delimitersCount_{32};
+  InplaceVec<char, delimitersCount_> values_;
+};
+
+auto markBoundary(Option<Ref<bool>> foundBoundary) noexcept -> void {
+  if (foundBoundary)
+    foundBoundary->get() = true;
+}
 
 [[nodiscard]] auto scanToBoundary(StringView text,
     usize start,
     bool stopAtOpeningBrace,
-    bool *foundBoundary = nullptr) -> usize {
+    Option<Ref<bool>> foundBoundary = None) -> usize {
   LexicalState state{};
-  InplaceVec<char, delimitersCount> delimiters{};
+  DelimiterStack delimiters{};
   usize index = start;
 
+  // The index always points to the first unconsumed byte. LexicalState consumes comments and literals;
+  // DelimiterStack owns only structural nesting visible to the boundary policy.
   while (index < text.size()) {
-    if (const Option<usize> next = consumeLexicalUnit(text, index, state)) {
+    if (const Option<usize> next = state.consume(text, index)) {
       index = *next;
       continue;
     }
@@ -463,28 +513,21 @@ inline constexpr usize delimitersCount{32};
     const char current = text[index];
 
     if (stopAtOpeningBrace and current == '{' and delimiters.empty()) {
-      if (foundBoundary != nullptr)
-        *foundBoundary = true;
+      markBoundary(foundBoundary);
       return index + 1;
     }
 
     if (current == ';' and delimiters.empty()) {
-      if (foundBoundary != nullptr)
-        *foundBoundary = true;
+      markBoundary(foundBoundary);
       return index + 1;
     }
 
-    const char closing = matchingDelimiter(current);
-    if (closing != '\0') {
-      delimiters.push_back(closing);
+    if (delimiters.push(current)) {
       ++index;
       continue;
     }
 
-    if ((current == ')' or current == ']' or current == '}') and not delimiters.empty() and
-        delimiters.back() == current) {
-      delimiters.pop_back();
-    }
+    static_cast<void>(delimiters.pop(current));
 
     ++index;
   }
@@ -498,31 +541,25 @@ inline constexpr usize delimitersCount{32};
     return scanToBoundary(text, start, false);
 
   LexicalState state{};
-  InplaceVec<char, delimitersCount> delimiters{};
-  delimiters.push_back(')');
+  DelimiterStack delimiters{};
+  static_cast<void>(delimiters.push('('));
   usize index = *opening + 1;
 
   while (index < text.size()) {
-    if (const Option<usize> next = consumeLexicalUnit(text, index, state)) {
+    if (const Option<usize> next = state.consume(text, index)) {
       index = *next;
       continue;
     }
 
     const char current = text[index];
 
-    const char closing = matchingDelimiter(current);
-    if (closing != '\0') {
-      delimiters.push_back(closing);
+    if (delimiters.push(current)) {
       ++index;
       continue;
     }
 
-    if ((current == ')' or current == ']' or current == '}') and not delimiters.empty() and
-        delimiters.back() == current) {
-      delimiters.pop_back();
-      if (delimiters.empty())
-        return index + 1;
-    }
+    if (delimiters.pop(current) and delimiters.empty())
+      return index + 1;
 
     ++index;
   }
@@ -637,8 +674,8 @@ struct SourceOffsets final {
                           : lineStart(document.contents, anchor);
   const Pair<usize, usize> fallback{anchor, std::min(anchor + 1, document.contents.size())};
   bool foundBoundary{};
-  const usize end =
-      scanToBoundary(document.contents, begin, span.selection == SpanSelection::Declaration, &foundBoundary);
+  const usize end = scanToBoundary(
+      document.contents, begin, span.selection == SpanSelection::Declaration, std::ref(foundBoundary));
 
   if (not foundBoundary)
     return SourceOffsets{

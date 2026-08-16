@@ -219,13 +219,19 @@ public:
     return *suites_.emplace(scope);
   }
 
-  [[nodiscard]] auto plannedCases() noexcept -> Vec<PlannedCase> & {
-    return plannedCases_;
+  auto appendPlannedCase(PlannedCase plannedCase) -> void {
+    plannedCases_.emplace_back(std::move(plannedCase));
   }
 
   /// Reserves contiguous storage before the reflected executable plan is materialized.
   auto reservePlannedCases(usize count) -> void {
     plannedCases_.reserve(count);
+  }
+
+  /// Drops the planned cases matched by the predicate, keeping the survivors contiguous and ordered.
+  template <class Predicate>
+  auto erasePlannedCasesIf(Predicate predicate) -> void {
+    std::erase_if(plannedCases_, std::move(predicate));
   }
 
   [[nodiscard]] auto takePlannedCases() -> Vec<PlannedCase> {

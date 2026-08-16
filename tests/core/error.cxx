@@ -53,12 +53,14 @@ auto start() -> Result<void> {
 [[ = test, = group("core"), = tag("debug") ]] auto stackTrace() -> void {
   Result<void> res = start();
   require(not res);
-  check(res.error().display() == R"(Error: Failed to start the application
+  const String expected = std::format(R"(Error: Failed to start the application
 
 Caused by:
   0: Failed to initialize graphics
   1: Failed to compile shader: foo
-  2: Failed to open a file: /home/spawn/dev/cpp/Nyx/foo.txt)"_exp);
+  2: Failed to open a file: {})",
+      (std::filesystem::current_path() / "foo.txt").string());
+  check(res.error().display() == expected);
 }
 
 [[ = test, = group("core"), = tag("debug") ]] auto errorLocation() -> void {
