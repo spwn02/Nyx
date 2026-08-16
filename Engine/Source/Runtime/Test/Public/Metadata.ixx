@@ -216,13 +216,16 @@ consteval auto makeParameterProperties() -> auto {
       if constexpr (is_supported_property_v<Annotation>)
         result.emplace_back(parameter, annotation, false);
     }
+  }
 
-    template for (constexpr std::meta::info annotation : meta::annotations<Function>) {
-      using Annotation = meta::TypeObject<annotation>;
+  template for (constexpr std::meta::info annotation : meta::annotations<Function>) {
+    using Annotation = meta::TypeObject<annotation>;
 
-      if constexpr (is_argument_v<Annotation>) {
-        if constexpr (argumentTargetsParameter<parameter, Annotation>())
+    if constexpr (is_argument_v<Annotation>) {
+      template for (constexpr std::meta::info parameter : meta::parameters<Function>) {
+        if constexpr (argumentTargetsParameter<parameter, Annotation>()) {
           result.emplace_back(parameter, annotation, true);
+        }
       }
     }
   }
