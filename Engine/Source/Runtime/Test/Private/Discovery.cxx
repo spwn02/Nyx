@@ -3,6 +3,7 @@ module Nyx.Test;
 import :Discovery;
 import :FaultIsolation;
 import :Worker;
+import :Session;
 
 import std;
 import Nyx.Core;
@@ -128,7 +129,7 @@ auto filterDescriptors(Vec<TestDescriptor> descriptors, const TestSelection &sel
 }
 
 auto filterPlannedCases(detail::RunSession &session, const TestSelection &selection) -> void {
-  session.erasePlannedCasesIf([&selection](const detail::PlannedCase &plannedCase) -> bool {
+  session.erasePlannedCases([&selection](const detail::PlannedCase &plannedCase) -> bool {
     return not selection.matches(plannedCase.descriptor());
   });
 }
