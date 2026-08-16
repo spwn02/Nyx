@@ -283,10 +283,10 @@ auto resetDependencyCounters() -> void {
 [[ = test, = group("framework"), = tag("fixtures") ]] auto reflectedInjectionUsesFixtureScopes() -> void {
   FixtureSubjects::resetFixtureCounters();
 
-  const Vec<TestExecution> firstRun = runAll<^^FixtureSubjects>(RunOptions{
+  const Vec<TestExecution> firstRun = runAllDetailed<^^FixtureSubjects>(RunOptions{
       .isolation = CrashIsolation::InProcess,
   });
-  const Vec<TestExecution> secondRun = runAll<^^FixtureSubjects>(RunOptions{
+  const Vec<TestExecution> secondRun = runAllDetailed<^^FixtureSubjects>(RunOptions{
       .isolation = CrashIsolation::InProcess,
   });
   const auto passed = [](const TestExecution &execution) -> bool { return execution.passed(); };
@@ -324,7 +324,7 @@ auto resetDependencyCounters() -> void {
   const auto passed = [](const TestExecution &execution) -> bool { return execution.passed(); };
 
   DependencySubjects::resetDependencyCounters();
-  const Vec<TestExecution> firstRun = runAll<^^DependencySubjects>(RunOptions{
+  const Vec<TestExecution> firstRun = runAllDetailed<^^DependencySubjects>(RunOptions{
       .isolation = CrashIsolation::InProcess,
   });
 
@@ -337,7 +337,7 @@ auto resetDependencyCounters() -> void {
   require(std::ranges::equal(DependencySubjects::destructions, expectedDestructions));
 
   DependencySubjects::destructions.clear();
-  const Vec<TestExecution> secondRun = runAll<^^DependencySubjects>(RunOptions{
+  const Vec<TestExecution> secondRun = runAllDetailed<^^DependencySubjects>(RunOptions{
       .isolation = CrashIsolation::InProcess,
   });
 

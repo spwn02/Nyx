@@ -2,6 +2,7 @@ module Nyx.Test;
 
 import :Runner;
 import :FaultIsolation;
+import :Reporting;
 import :Worker;
 
 import std;
@@ -50,6 +51,8 @@ struct InvocationPlan final {
   bool captureMemory{};
   Option<Ref<ExecutionLane>> lane;
   Option<Ref<WorkerJournal>> journal;
+  Option<Ref<RunAccumulator>> accumulator;
+  Option<Ref<std::atomic<bool>>> failureObserved;
 
   [[nodiscard]] constexpr auto processIsolated() const noexcept -> bool {
     return isolation == CrashIsolation::ProcessPerCase;
@@ -263,19 +266,35 @@ public:
 
     runWarmups();
     runSamples();
+    if (plan_.get().failureObserved and failed_)
+      plan_.get().failureObserved->get().store(true, std::memory_order_relaxed);
     return std::move(executions_);
   }
 
 private:
-  auto appendAttempt(AttemptIndex attempt, bool warmup) -> const TestExecution & {
+  struct AttemptObservation final {
+    bool passed{};
+    bool timeout{};
+  };
+
+  auto appendAttempt(AttemptIndex attempt, bool warmup) -> AttemptObservation {
     const InvocationPlan &plan = plan_.get();
     if (plan.journal)
       plan.journal->get().attemptStarted(attempt, warmup);
 
-    executions_.push_back(executeAttempt(plan_, attempt, warmup));
+    TestExecution execution = executeAttempt(plan_, attempt, warmup);
     if (plan.journal)
-      plan.journal->get().attemptCompleted(executions_.back());
-    return executions_.back();
+      plan.journal->get().attemptCompleted(execution);
+
+    const AttemptObservation observation{
+        .passed = execution.passed(),
+        .timeout = hasTimeout(execution),
+    };
+    if (plan.accumulator)
+      plan.accumulator->get().append(execution);
+    else
+      executions_.push_back(std::move(execution));
+    return observation;
   }
 
   auto runWarmups() -> void {
@@ -284,12 +303,13 @@ private:
     const usize runIteration = plan.scheduledCase.runIteration;
 
     std::ranges::for_each(std::views::indices(warmups), [this, runIteration](usize warmupIndex) -> void {
-      static_cast<void>(appendAttempt(
+      const AttemptObservation observation = appendAttempt(
           AttemptIndex{
               .runIteration = runIteration,
               .sample = warmupIndex,
           },
-          true));
+          true);
+      failed_ = failed_ or not observation.passed;
     });
   }
 
@@ -307,22 +327,25 @@ private:
     // The loop invariant is that every stored attempt for this sample has already completed. It exits after
     // the first non-timeout result or after the declared retry budget is exhausted.
     while (retrying) {
-      const TestExecution &execution = appendAttempt(
+      const AttemptObservation observation = appendAttempt(
           AttemptIndex{
               .runIteration = plan_.get().scheduledCase.runIteration,
               .sample = sample,
               .retry = retryIndex,
           },
           false);
-      retrying = not execution.passed() and hasTimeout(execution) and
+      retrying = not observation.passed and observation.timeout and
                  retryIndex < plan.plannedCase.get().descriptor().policy.retry;
       if (retrying)
         ++retryIndex;
+      else
+        failed_ = failed_ or not observation.passed;
     }
   }
 
   Ref<const InvocationPlan> plan_;
   Vec<TestExecution> executions_;
+  bool failed_{};
 };
 
 auto executeCase(const InvocationPlan &plan) -> Vec<TestExecution> {
@@ -358,6 +381,8 @@ struct DispatchContext final { // NOLINT(cppcoreguidelines-pro-type-member-init)
   Ref<const RunOptions> options;
   u64 runSeed{};
   bool captureMemory{};
+  Option<Ref<RunAccumulator>> accumulator;
+  std::atomic<bool> failureObserved;
 };
 
 [[nodiscard]] auto executeIsolatedCase(const InvocationPlan &plan) -> Vec<TestExecution>;
@@ -376,6 +401,8 @@ struct DispatchContext final { // NOLINT(cppcoreguidelines-pro-type-member-init)
       .isolation = isolation,
       .captureMemory = context.captureMemory or isolation == CrashIsolation::ProcessPerCase,
       .lane = laneFor(context.executionLanes, scheduledCase.plannedCase),
+      .accumulator = context.accumulator,
+      .failureObserved = std::ref(context.failureObserved),
   };
 }
 
@@ -644,8 +671,16 @@ auto appendWorkerOutcome(Vec<TestExecution> &executions,
           return;
 
         Vec<TestExecution> batch = executeScheduledCase(context, scheduledCase);
-        stopped = context.options.get().failFast and batchFailed(batch);
-        executions.append_range(std::move(batch));
+        stopped = context.options.get().failFast and
+                  (not batch.empty() ? batchFailed(batch)
+                                     : context.failureObserved.load(std::memory_order_relaxed));
+        if (context.accumulator)
+          std::ranges::for_each(
+              batch, [&accumulator = context.accumulator](const TestExecution &execution) -> void {
+                accumulator->get().append(execution);
+              });
+        else
+          executions.append_range(std::move(batch));
       });
   return executions;
 }
@@ -692,8 +727,17 @@ private:
         return;
 
       Vec<TestExecution> batch = executeScheduledCase(context, scheduledCases[index]);
-      const bool failed = batchFailed(batch);
-      executions_[index].emplace(std::move(batch));
+      const bool failed =
+          batch.empty() ? context.failureObserved.load(std::memory_order_relaxed) : batchFailed(batch);
+      if (context.accumulator) {
+        std::ranges::for_each(
+            batch, [&accumulator = context.accumulator](const TestExecution &execution) -> void {
+              accumulator->get().append(execution);
+            });
+
+      } else {
+        executions_[index].emplace(std::move(batch));
+      }
 
       if (context.options.get().failFast and failed)
         stopped_.store(true, std::memory_order_relaxed);
@@ -716,7 +760,9 @@ private:
 
 } // namespace
 
-auto executePlannedCases(RunSession &session, const RunOptions &options) -> Vec<TestExecution> {
+auto executePlannedCases(RunSession &session,
+    const RunOptions &options,
+    Option<Ref<RunAccumulator>> accumulator) -> Vec<TestExecution> {
   if constexpr (build::tests) {
     Vec<PlannedCase> plannedCases = session.takePlannedCases();
     const u64 runSeed = options.seed ? *options.seed : randomSeed();
@@ -732,6 +778,7 @@ auto executePlannedCases(RunSession &session, const RunOptions &options) -> Vec<
         .options = options,
         .runSeed = runSeed,
         .captureMemory = workers == 1,
+        .accumulator = accumulator,
     };
 
     if (workers == 1)

@@ -6,7 +6,31 @@ import Nyx.Test;
 using namespace Nyx;
 using namespace Nyx::Test;
 
+// NOLINTBEGIN(cppcoreguidelines-avoid-magic-numbers, readability-magic-numbers)
 namespace Tests::stress {
+
+[[ = test, = group("framework"), = tag("stress", "retention") ]] auto aggregatesMillionPassesBoundedly()
+    -> void {
+  constexpr usize attempts{1'000'000};
+  RunAccumulator accumulator{RetentionPolicy::Failures, 8};
+  const TestDescriptor descriptor{.identifier = "million-pass-case"};
+  std::ranges::for_each(std::views::indices(attempts), [&accumulator, &descriptor](usize index) -> void {
+    accumulator.append(AttemptOutcome{
+        .descriptor = descriptor,
+        .attempt = AttemptIndex{.sample = index},
+        .duration = std::chrono::nanoseconds{index % 17},
+        .passed = true,
+    });
+  });
+
+  const RunReport report = std::move(accumulator).finish();
+  require(report.cases.size() == 1);
+  check(report.summary.attemptCount == attempts);
+  check(report.summary.passedCount == attempts);
+  check(report.retainedAttemptCount == 0);
+  check(report.cases.front().attempts.empty());
+  check(report.passed());
+}
 
 namespace ParallelSubjects {
 
@@ -126,7 +150,7 @@ auto awaitBeyondTimeout() -> Task<void> {
 
   ParallelSubjects::reset();
 
-  const Vec<TestExecution> executions = runAll<^^ParallelSubjects>(RunOptions{
+  const Vec<TestExecution> executions = runAllDetailed<^^ParallelSubjects>(RunOptions{
       .jobs = subjectCount,
       .timeMode = TimeMode::Virtual,
       .repeat = repeatCount,
@@ -151,7 +175,7 @@ auto awaitBeyondTimeout() -> Task<void> {
 
   CancellationSubjects::reset();
 
-  const Vec<TestExecution> executions = runAll<^^CancellationSubjects>(RunOptions{
+  const Vec<TestExecution> executions = runAllDetailed<^^CancellationSubjects>(RunOptions{
       .jobs = subjectCount,
       .timeMode = TimeMode::Virtual,
       .repeat = repeatCount,
@@ -170,6 +194,7 @@ auto awaitBeyondTimeout() -> Task<void> {
 }
 
 } // namespace Tests::stress
+// NOLINTEND(cppcoreguidelines-avoid-magic-numbers, readability-magic-numbers)
 
 consteval {
   discover<^^Tests::stress>();

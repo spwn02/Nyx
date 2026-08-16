@@ -307,6 +307,8 @@ auto TestSummary::failed() const noexcept -> bool {
 }
 
 auto TestCaseResult::passed() const noexcept -> bool {
+  if (failedCase)
+    return false;
   return std::ranges::all_of(attempts, [this](const TestAttempt &attempt) constexpr noexcept -> bool {
     return attempt.execution.passed() or (not attempt.warmup and recoveredBy(attempt, attempts));
   });
@@ -314,6 +316,168 @@ auto TestCaseResult::passed() const noexcept -> bool {
 
 auto TestCaseResult::failed() const noexcept -> bool {
   return not passed();
+}
+
+CaseAccumulator::CaseAccumulator(TestDescriptor descriptor,
+    RetentionPolicy retention,
+    usize maxRetainedFailures)
+    : result_{.descriptor = std::move(descriptor)}
+    , retention_(retention)
+    , maxRetainedFailures_(maxRetainedFailures) {
+  sampleDurations_.reserve(std::min(maxRetainedFailures, maxRetainedFailuresDefault));
+}
+
+auto CaseAccumulator::append(AttemptOutcome outcome) -> void {
+  if (not outcome.warmup)
+    ++sampleCount_;
+  totalDuration_ += outcome.duration;
+  if (sampleCount_ == 1 and not outcome.warmup) {
+    minimumDuration_ = outcome.duration;
+    maximumDuration_ = outcome.duration;
+  } else if (not outcome.warmup) {
+    minimumDuration_ = std::min(minimumDuration_, outcome.duration);
+    maximumDuration_ = std::max(maximumDuration_, outcome.duration);
+  }
+  if (not outcome.warmup) {
+    const auto sample = static_cast<long double>(outcome.duration.count());
+    const long double delta = sample - meanDuration_;
+    meanDuration_ += delta / static_cast<long double>(sampleCount_);
+    variableAccumulator_ += delta * (sample - meanDuration_);
+    if (sampleDurations_.size() < maxRetainedFailuresDefault)
+      sampleDurations_.push_back(outcome.duration);
+    else
+      sampleDurations_[(sampleCount_ - 1) % maxRetainedFailuresDefault] = outcome.duration;
+  }
+
+  if (outcome.failure and (retention_ == RetentionPolicy::All or retainedFailures_ < maxRetainedFailures_)) {
+    result_.attempts.push_back(TestAttempt{
+        .execution = std::move(*outcome.failure),
+        .index = outcome.attempt,
+        .warmup = outcome.warmup,
+    });
+    ++retainedFailures_;
+  }
+  if (outcome.passed and outcome.attempt.retry != 0) {
+    const usize before = pendingTimeouts_.size();
+    std::erase_if(pendingTimeouts_, [&outcome](const AttemptIndex &attempt) constexpr noexcept -> bool {
+      return attempt.runIteration == outcome.attempt.runIteration and
+             attempt.sample == outcome.attempt.sample and attempt.retry < outcome.attempt.retry;
+    });
+    recoveredTimeouts_ += before - pendingTimeouts_.size();
+  } else if (not outcome.passed) {
+    if (outcome.timeout)
+      pendingTimeouts_.push_back(outcome.attempt);
+    else
+      hardFailure_ = true;
+  }
+}
+
+auto CaseAccumulator::finish() && -> TestCaseResult {
+  if (sampleCount_ != 0 and (result_.descriptor.policy.repeat > 1 or result_.descriptor.policy.warmup != 0)) {
+    std::ranges::sort(sampleDurations_);
+    const usize middle = sampleDurations_.size() / 2;
+    const auto median = sampleDurations_.size() % 2 == 0
+                            ? (sampleDurations_[middle - 1] + sampleDurations_[middle])
+                            : sampleDurations_[middle];
+    result_.measurement = MeasurementSummary{
+        .sampleCount = sampleCount_,
+        .total = totalDuration_,
+        .minimum = minimumDuration_,
+        .maximum = maximumDuration_,
+        .mean = std::chrono::steady_clock::duration{static_cast<std::chrono::steady_clock::duration::rep>(
+            meanDuration_)},
+        .median = median,
+        .deviation =
+            std::chrono::steady_clock::duration{static_cast<std::chrono::steady_clock::duration::rep>(
+                std::sqrt(variableAccumulator_ / static_cast<long double>(sampleCount_)))},
+    };
+  }
+  result_.failedCase = hardFailure_ or not pendingTimeouts_.empty();
+  result_.recoveredTimeouts = recoveredTimeouts_;
+  return std::move(result_);
+}
+
+auto CaseAccumulator::identifier() const noexcept -> StringView {
+  return result_.descriptor.identifier;
+}
+
+RunAccumulator::RunAccumulator(RetentionPolicy retention,
+    usize maxRetainedFailures,
+    SelectionMetadata selection)
+    : retention_(retention)
+    , maxRetainedFailures_(maxRetainedFailures)
+    , selection_(std::move(selection)) {
+}
+
+auto RunAccumulator::append(const TestExecution &execution) -> void {
+  append(makeAttemptOutcome(execution, retention_ == RetentionPolicy::All));
+}
+
+auto RunAccumulator::append(AttemptOutcome outcome) -> void {
+  std::scoped_lock lock{mutex_};
+  ++summary_.testCount;
+  ++summary_.attemptCount;
+  summary_.duration += outcome.duration;
+  summary_.wallDuration += outcome.wallDuration;
+  summary_.assertionCount += outcome.assertions;
+  summary_.failedAssertionCount += outcome.failedAssertions;
+  summary_.errorCount += outcome.errors;
+
+  if (outcome.warmup)
+    ++summary_.warmupCount;
+  else
+    ++summary_.sampleCount;
+
+  if (outcome.attempt.retry != 0)
+    ++summary_.retryCount;
+
+  if (outcome.passed)
+    ++summary_.passedCount;
+  else
+    ++summary_.failedCount;
+
+  if (not runSeed_)
+    runSeed_ = outcome.runSeed;
+
+  auto existing = std::ranges::find_if(
+      cases_, [&outcome](const UPtr<CaseAccumulator> &candidate) constexpr noexcept -> bool {
+        return candidate->identifier() == outcome.descriptor.identifier;
+      });
+  if (existing == cases_.end()) {
+    cases_.push_back(std::make_unique<CaseAccumulator>(outcome.descriptor, retention_, maxRetainedFailures_));
+    existing = std::prev(cases_.end());
+  }
+  if (outcome.failure and retention_ != RetentionPolicy::All and retainedFailures_ >= maxRetainedFailures_)
+    outcome.failure.reset();
+  else if (outcome.failure)
+    ++retainedFailures_;
+  (*existing)->append(std::move(outcome));
+}
+
+auto RunAccumulator::finish() && -> RunReport {
+  RunReport report{
+      .selection = std::move(selection_),
+      .runSeed = runSeed_,
+      .retention = retention_,
+      .retainedAttemptCount = retainedFailures_,
+  };
+  report.cases.reserve(cases_.size());
+  std::ranges::for_each(cases_, [&report](UPtr<CaseAccumulator> &caseAccumulator) -> void {
+    report.cases.push_back(std::move(*caseAccumulator).finish());
+  });
+  std::ranges::stable_sort(report.cases, {}, [](const TestCaseResult &testCase) -> StringView {
+    return testCase.descriptor.identifier;
+  });
+  summary_.caseCount = report.cases.size();
+  summary_.passedCaseCount = static_cast<usize>(std::ranges::count_if(report.cases,
+      [](const TestCaseResult &testCase) constexpr noexcept -> bool { return testCase.passed(); }));
+  summary_.failedCaseCount = summary_.caseCount - summary_.passedCaseCount;
+  summary_.recoveredCount = static_cast<usize>(
+      std::ranges::count_if(report.cases, [](const TestCaseResult &testCase) constexpr noexcept -> bool {
+        return testCase.recoveredTimeouts != 0;
+      }));
+  report.summary = summary_;
+  return report;
 }
 
 auto RunReport::passed() const noexcept -> bool {
@@ -334,11 +498,14 @@ auto Reporter::addRoot(Path root) -> void {
     roots_.push_back(std::move(root));
 }
 
-auto Reporter::makeReport(Span<const TestExecution> executions) -> RunReport {
+auto Reporter::makeReport(Span<const TestExecution> executions,
+    RetentionPolicy retention,
+    usize maxRetainedFailures) -> RunReport {
   if constexpr (build::tests) {
-    RunReportBuilder builder{executions.size()};
-    std::ranges::for_each(executions, std::ref(builder));
-    return std::move(builder).finish();
+    RunAccumulator accumulator{retention, maxRetainedFailures};
+    std::ranges::for_each(executions,
+        [&accumulator](const TestExecution &execution) -> void { accumulator.append(execution); });
+    return std::move(accumulator).finish();
   } else {
     return {};
   }
@@ -354,6 +521,8 @@ auto Reporter::summarize(Span<const TestExecution> executions) noexcept -> TestS
 
 auto Reporter::summarize(const RunReport &report) noexcept -> TestSummary {
   if constexpr (build::tests) {
+    if (report.summary.caseCount != 0 or report.cases.empty())
+      return report.summary;
     SummaryAccumulator accumulator{};
     std::ranges::for_each(report.cases, std::ref(accumulator));
     TestSummary result = std::move(accumulator).finish();
@@ -361,6 +530,23 @@ auto Reporter::summarize(const RunReport &report) noexcept -> TestSummary {
     return result;
   } else {
     return {};
+  }
+}
+
+auto Reporter::report(const RunReport &report, std::ostream &output) const -> TestSummary {
+  if constexpr (build::tests) {
+    const bool useColor = colorEnabled();
+    const SourceManager sources{roots_};
+    const TestSummary summary = summarize(report);
+    RenderState state{};
+    std::ranges::for_each(
+        report.cases, [this, &sources, &output, useColor, &state](const TestCaseResult &testCase) -> void {
+          renderCase(testCase, sources, output, useColor, state);
+        });
+
+    if (options_.showSummary)
+      renderSummary(summary, useColor, output);
+    return summary;
   }
 }
 
@@ -440,6 +626,15 @@ auto Reporter::renderMeasuredCase(const TestCaseResult &testCase,
     std::ostream &output,
     RenderState &state) const -> void {
   renderMeasurement(testCase, output);
+
+  if (options_.showAttempts) {
+    const bool useColor = colorEnabled();
+    std::ranges::for_each(
+        testCase.attempts, [this, &sources, &output, useColor, &state](const TestAttempt &attempt) -> void {
+          renderAttempt(attempt, sources, output, useColor, state);
+        });
+    return;
+  }
 
   const auto representative =
       std::ranges::find_if(testCase.attempts, [this](const TestAttempt &attempt) -> bool {
@@ -529,7 +724,7 @@ auto Reporter::renderCase(const TestCaseResult &testCase,
     std::ostream &output,
     bool useColor,
     RenderState &state) const -> void {
-  if (testCase.measurement and testCase.attempts.size() > 1) {
+  if (testCase.measurement) {
     renderMeasuredCase(testCase, sources, output, state);
     return;
   }
@@ -542,21 +737,7 @@ auto Reporter::renderCase(const TestCaseResult &testCase,
 
 auto Reporter::report(Span<const TestExecution> executions, std::ostream &output) const -> TestSummary {
   if constexpr (build::tests) {
-    const bool useColor = colorEnabled();
-    const SourceManager sources{roots_};
-    const RunReport reportModel = makeReport(executions);
-    const TestSummary summary = summarize(reportModel);
-    RenderState state{};
-    std::ranges::for_each(reportModel.cases,
-        [this, &sources, &output, useColor, &state](const TestCaseResult &testCase) -> void {
-          renderCase(testCase, sources, output, useColor, state);
-        });
-
-    if (not options_.showSummary)
-      return summary;
-
-    renderSummary(summary, useColor, output);
-    return summary;
+    return report(makeReport(executions), output);
   } else {
     return {};
   }

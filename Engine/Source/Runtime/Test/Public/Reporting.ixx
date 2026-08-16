@@ -30,6 +30,14 @@ struct TestSummary final {
   [[nodiscard]] auto failed() const noexcept -> bool;
 };
 
+struct SelectionMetadata final {
+  Vec<String> include;
+  Vec<String> exclude;
+  Vec<String> tagsAll;
+  Vec<String> tagsAny;
+  Option<String> group;
+};
+
 /// Groups every physical attempt that belongs to one logical test case.
 struct TestAttempt final {
   TestExecution execution;
@@ -174,15 +182,77 @@ struct TestCaseResult final {
   Vec<TestAttempt> attempts;
   Option<MeasurementSummary> measurement;
   usize recoveredTimeouts{};
+  bool failedCase{};
 
   [[nodiscard]] auto passed() const noexcept -> bool;
 
   [[nodiscard]] auto failed() const noexcept -> bool;
 };
 
+class CaseAccumulator final {
+public:
+  CaseAccumulator(TestDescriptor descriptor, RetentionPolicy retention, usize maxRetainedFailures);
+  auto append(AttemptOutcome outcome) -> void;
+  [[nodiscard]] auto finish() && -> TestCaseResult;
+  [[nodiscard]] auto identifier() const noexcept -> StringView;
+
+private:
+  TestCaseResult result_;
+  RetentionPolicy retention_;
+  usize maxRetainedFailures_{};
+  usize retainedFailures_{};
+  usize sampleCount_{};
+  std::chrono::steady_clock::duration totalDuration_{};
+  std::chrono::steady_clock::duration minimumDuration_{};
+  std::chrono::steady_clock::duration maximumDuration_{};
+  long double meanDuration_{};
+  long double variableAccumulator_{};
+  Vec<std::chrono::steady_clock::duration> sampleDurations_;
+  Vec<AttemptIndex> pendingTimeouts_;
+  usize recoveredTimeouts_{};
+  bool hardFailure_{};
+};
+
+struct RunReport;
+
+inline constexpr usize maxRetainedFailuresDefault = 1024;
+
+class RunAccumulator final {
+public:
+  explicit RunAccumulator(RetentionPolicy retention = RetentionPolicy::Failures,
+      usize maxRetainedFailures = maxRetainedFailuresDefault,
+      SelectionMetadata selection = {});
+  ~RunAccumulator() = default;
+
+  RunAccumulator(const RunAccumulator &) = delete ("RunAccumulator holds mutex state.");
+  auto operator=(const RunAccumulator &) -> RunAccumulator & = delete ("RunAccumulator holds mutex state.");
+  RunAccumulator(RunAccumulator &&) noexcept = delete ("RunAccumulator holds mutex state.");
+  auto operator=(RunAccumulator &&) noexcept
+      -> RunAccumulator & = delete ("RunAccumulator holds mutex state.");
+
+  auto append(const TestExecution &execution) -> void;
+  auto append(AttemptOutcome outcome) -> void;
+  [[nodiscard]] auto finish() && -> RunReport;
+
+private:
+  std::mutex mutex_;
+  RetentionPolicy retention_;
+  usize maxRetainedFailures_{};
+  usize retainedFailures_{};
+  TestSummary summary_;
+  SelectionMetadata selection_;
+  Option<u64> runSeed_;
+  Vec<UPtr<CaseAccumulator>> cases_;
+};
+
 /// Presentation-independent result tree shared by human and machine reporters.
 struct RunReport final {
   Vec<TestCaseResult> cases;
+  TestSummary summary;
+  SelectionMetadata selection;
+  Option<u64> runSeed;
+  RetentionPolicy retention{RetentionPolicy::Failures};
+  usize retainedAttemptCount{};
 
   [[nodiscard]] auto passed() const noexcept -> bool;
 
@@ -192,6 +262,7 @@ struct RunReport final {
 struct ReporterOptions final {
   RendererOptions renderer{};
   bool showPassedTests{};
+  bool showAttempts{};
   bool showSummary{true};
 };
 
@@ -201,13 +272,16 @@ public:
 
   auto addRoot(Path root) -> void;
 
-  [[nodiscard]] static auto makeReport(Span<const TestExecution> executions) -> RunReport;
+  [[nodiscard]] static auto makeReport(Span<const TestExecution> executions,
+      RetentionPolicy retention = RetentionPolicy::All,
+      usize maxRetainedFailures = maxRetainedFailuresDefault) -> RunReport;
 
   [[nodiscard]] static auto summarize(Span<const TestExecution> executions) noexcept -> TestSummary;
 
   [[nodiscard]] static auto summarize(const RunReport &report) noexcept -> TestSummary;
 
   auto report(Span<const TestExecution> executions, std::ostream &output) const -> TestSummary;
+  auto report(const RunReport &report, std::ostream &output) const -> TestSummary;
 
 private:
   struct RenderState;

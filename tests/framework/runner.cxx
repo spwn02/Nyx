@@ -97,12 +97,12 @@ namespace TraceSubjects {
   };
 
   RepeatSubjects::reset();
-  const Vec<TestExecution> firstRun = runAll<^^RepeatSubjects>(options);
+  const Vec<TestExecution> firstRun = runAllDetailed<^^RepeatSubjects>(options);
   const Vec<u64> firstObservedSeeds = RepeatSubjects::observedSeeds;
   const Vec<usize> firstObservedIterations = RepeatSubjects::observedIterations;
 
   RepeatSubjects::reset();
-  const Vec<TestExecution> secondRun = runAll<^^RepeatSubjects>(options);
+  const Vec<TestExecution> secondRun = runAllDetailed<^^RepeatSubjects>(options);
 
   require(firstRun.size() == expectedExecutions);
   require(secondRun.size() == expectedExecutions);
@@ -135,8 +135,8 @@ namespace TraceSubjects {
       .seed = seed,
       .isolation = CrashIsolation::InProcess,
   };
-  const Vec<TestExecution> firstRun = runAll<^^OrderSubjects>(options);
-  const Vec<TestExecution> secondRun = runAll<^^OrderSubjects>(options);
+  const Vec<TestExecution> firstRun = runAllDetailed<^^OrderSubjects>(options);
+  const Vec<TestExecution> secondRun = runAllDetailed<^^OrderSubjects>(options);
 
   require(firstRun.size() == 5_exp);
   require(std::ranges::equal(
@@ -152,7 +152,7 @@ namespace TraceSubjects {
 
 [[ = test, = group("framework"), = tag("runner") ]] auto stopsSerialDispatchAfterTheFirstFailure() -> void {
   FailFastSubjects::reset();
-  const Vec<TestExecution> executions = runAll<^^FailFastSubjects>(RunOptions{
+  const Vec<TestExecution> executions = runAllDetailed<^^FailFastSubjects>(RunOptions{
       .failFast = true,
       .isolation = CrashIsolation::InProcess,
   });
@@ -167,7 +167,7 @@ namespace TraceSubjects {
 [[ = test, = group("framework"), = tag("runner") ]] auto
 defaultTraceCapturesEveryCaseAndRendersFailuresByDefault() -> void {
   const Vec<TestExecution> executions =
-      runAll<^^TraceSubjects>(RunOptions{.isolation = CrashIsolation::InProcess});
+      runAllDetailed<^^TraceSubjects>(RunOptions{.isolation = CrashIsolation::InProcess});
   Reporter reporter{
       ReporterOptions{
           .renderer =
@@ -193,7 +193,7 @@ defaultTraceCapturesEveryCaseAndRendersFailuresByDefault() -> void {
 }
 
 [[ = test, = group("framework"), = tag("runner") ]] auto forceTraceCanRenderSuccessfulCases() -> void {
-  const Vec<TestExecution> executions = runAll<^^TraceSubjects>(RunOptions{
+  const Vec<TestExecution> executions = runAllDetailed<^^TraceSubjects>(RunOptions{
       .traceMode = TraceMode::ForcedAll,
       .isolation = CrashIsolation::InProcess,
   });

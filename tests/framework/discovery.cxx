@@ -288,7 +288,7 @@ namespace SelectionSubjects {
   constexpr usize expectedCases{4};
   constexpr usize expectedAssertions{4};
   const Vec<TestExecution> executions =
-      runAll<^^PassingTests>(RunOptions{.isolation = CrashIsolation::InProcess});
+      runAllDetailed<^^PassingTests>(RunOptions{.isolation = CrashIsolation::InProcess});
   const TestSummary summary = Reporter::summarize(executions);
 
   check(executions.size() == expectedCases);
@@ -303,7 +303,7 @@ namespace SelectionSubjects {
   constexpr usize expectedPassed{1};
   constexpr usize expectedFailed{1};
   const Vec<TestExecution> executions =
-      runAll<^^FailingTests>(RunOptions{.isolation = CrashIsolation::InProcess});
+      runAllDetailed<^^FailingTests>(RunOptions{.isolation = CrashIsolation::InProcess});
   const TestSummary summary = Reporter::summarize(executions);
 
   require(executions.size() == expectedCases);
@@ -318,7 +318,7 @@ namespace SelectionSubjects {
   constexpr usize workerCount{2};
   constexpr usize expectedCases{4};
   ParallelTests::reset();
-  const Vec<TestExecution> executions = runAll<^^ParallelTests>(RunOptions{
+  const Vec<TestExecution> executions = runAllDetailed<^^ParallelTests>(RunOptions{
       .jobs = workerCount,
       .isolation = CrashIsolation::InProcess,
   });
@@ -338,7 +338,7 @@ preservesFixtureScopesAndVirtualTimeAcrossParallelCases() -> void {
   const auto passed = [](const TestExecution &execution) -> bool { return execution.passed(); };
 
   ParallelFixtureTests::reset();
-  const Vec<TestExecution> executions = runAll<^^ParallelFixtureTests>(RunOptions{
+  const Vec<TestExecution> executions = runAllDetailed<^^ParallelFixtureTests>(RunOptions{
       .jobs = workerCount,
       .timeMode = TimeMode::Virtual,
       .isolation = CrashIsolation::InProcess,
@@ -403,7 +403,7 @@ flattensIndependentSuitesAndUsesAutomaticWorkerCount() -> void {
   const Vec<TestDescriptor> selected = list<^^SelectionSubjects>(fastMath);
   const Vec<TestDescriptor> withoutAdds = list<^^SelectionSubjects>(excluded);
   const Vec<TestExecution> executions =
-      runAll<^^SelectionSubjects>(fastMath, RunOptions{.isolation = CrashIsolation::InProcess});
+      runAllDetailed<^^SelectionSubjects>(fastMath, RunOptions{.isolation = CrashIsolation::InProcess});
 
   require(all.size() == expectedDescriptors);
   require(selected.size() == 1_exp);

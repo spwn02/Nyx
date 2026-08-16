@@ -62,7 +62,7 @@ namespace Tests::json {
   };
 
   const Vec<TestExecution> executions{std::move(passing), std::move(failing)};
-  const RunReport report = Reporter::makeReport(executions);
+  const RunReport report = Reporter::makeReport(executions, RetentionPolicy::All);
   const JsonReporter reporter{JsonReporterOptions{.pretty = true}};
   const String output = reporter.render(executions);
 

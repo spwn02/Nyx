@@ -50,7 +50,7 @@ namespace FilteredSubjects {
 
 [[ = test, = trace, = group("framework"), = tag("faults", "isolation"), = parent ]] auto
 continuesUnrelatedCasesAfterANativeFault() -> void {
-  const Vec<TestExecution> executions = runAll<^^FaultSubjects>(RunOptions{
+  const Vec<TestExecution> executions = runAllDetailed<^^FaultSubjects>(RunOptions{
       .isolation = CrashIsolation::ProcessPerCase,
   });
 
@@ -72,7 +72,7 @@ continuesUnrelatedCasesAfterANativeFault() -> void {
 
 [[ = test, = trace, = group("framework"), = tag("faults", "isolation", "failfast"), = parent ]] auto
 stopsAfterANativeFaultWhenFailFastIsEnabled() -> void {
-  const Vec<TestExecution> executions = runAll<^^FaultSubjects>(RunOptions{
+  const Vec<TestExecution> executions = runAllDetailed<^^FaultSubjects>(RunOptions{
       .failFast = true,
       .isolation = CrashIsolation::ProcessPerCase,
   });
@@ -95,14 +95,14 @@ stopsAfterANativeFaultWhenFailFastIsEnabled() -> void {
 [[ = test, = group("framework"), = tag("faults", "isolation", "filtered"), = parent ]] auto
 preservesFilteredPlanIdentityInAWorker() -> void {
   constexpr u64 seed{0xF17E2ED};
-  const Vec<TestExecution> isolated = runAll<^^FilteredSubjects>(RunOptions{
+  const Vec<TestExecution> isolated = runAllDetailed<^^FilteredSubjects>(RunOptions{
       .seed = seed,
       .isolation = CrashIsolation::ProcessPerCase,
   });
 
   require(not processIsolationUnavailable(isolated));
 
-  const Vec<TestExecution> inProcess = runAll<^^FilteredSubjects>(RunOptions{
+  const Vec<TestExecution> inProcess = runAllDetailed<^^FilteredSubjects>(RunOptions{
       .seed = seed,
       .isolation = CrashIsolation::InProcess,
   });

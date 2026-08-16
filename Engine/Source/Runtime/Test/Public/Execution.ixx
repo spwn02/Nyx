@@ -28,6 +28,12 @@ struct TestDescriptor final {
   TestMetadata metadata{};
 };
 
+/// Controls how much physical execution history a normal run result retains.
+enum class[[= debug::derive]] RetentionPolicy : u8 {
+  Failures[[= debug::rename("failures")]],
+  All[[= debug::rename("all")]],
+};
+
 struct AttemptIndex final {
   usize runIteration{};
   usize sample{};
@@ -90,6 +96,28 @@ struct TestExecution final {
 
   [[nodiscard]] auto failed() const noexcept -> bool;
 };
+
+/// Compact result emitted by one physical attempt before run-level aggregation.
+/// Successful attempts retain counters and timing only; failures may retain the full execution.
+struct AttemptOutcome final {
+  TestDescriptor descriptor{};
+  AttemptIndex attempt{};
+  std::chrono::steady_clock::duration duration{};
+  std::chrono::steady_clock::duration wallDuration{};
+  usize assertions{};
+  usize failedAssertions{};
+  usize errors{};
+  u64 runSeed{};
+  u64 seed{};
+  usize iteration{};
+  bool warmup{};
+  bool passed{};
+  bool timeout{};
+  Option<TestExecution> failure;
+};
+
+[[nodiscard]] auto makeAttemptOutcome(const TestExecution &execution, bool retainExecution = false)
+    -> AttemptOutcome;
 
 namespace detail {
 

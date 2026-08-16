@@ -27,7 +27,11 @@ public:
 
   auto report(Span<const TestExecution> executions, std::ostream &output) const -> void;
 
+  auto report(const RunReport &report, std::ostream &output) const -> void;
+
   [[nodiscard]] auto render(Span<const TestExecution> executions) const -> String;
+
+  [[nodiscard]] auto render(const RunReport &report) const -> String;
 
   /// Emits selected descriptors using the stable Nyx.Test JSON list schema.
   auto reportList(Span<const TestDescriptor> descriptors, std::ostream &output) const -> void;

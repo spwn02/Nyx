@@ -8,7 +8,7 @@ using namespace Nyx::Test;
 inline constexpr bool renderJson{false};
 
 auto main() -> int { // NOLINT
-  const Vec<TestExecution> executions = runAll(
+  const Vec<TestExecution> executions = runAllDetailed(
       TestSelection{
           // .group = "math",
       },

@@ -46,12 +46,12 @@ namespace NoRetrySubjects {
 
 [[ = test, = group("framework"), = tag("measurements", "reporting") ]] auto reportsSamplesAndRecovery()
     -> void {
-  const Vec<TestExecution> executions = runAll<^^Subjects>(RunOptions{
+  const Vec<TestExecution> executions = runAllDetailed<^^Subjects>(RunOptions{
       .timeMode = TimeMode::Virtual,
       .seed = 42,
       .isolation = CrashIsolation::InProcess,
   });
-  const RunReport report = Reporter::makeReport(executions);
+  const RunReport report = Reporter::makeReport(executions, RetentionPolicy::All);
   const TestSummary summary = Reporter::summarize(report);
   const auto samples = std::ranges::find_if(report.cases,
       [](const TestCaseResult &result) -> bool { return result.descriptor.name == "collectsSamples"; });
@@ -122,7 +122,7 @@ namespace NoRetrySubjects {
 }
 
 [[ = test, = group("framework"), = tag("measurements", "retry") ]] auto doesNotRetryAssertions() -> void {
-  const Vec<TestExecution> executions = runAll<^^NoRetrySubjects>(RunOptions{
+  const Vec<TestExecution> executions = runAllDetailed<^^NoRetrySubjects>(RunOptions{
       .timeMode = TimeMode::Virtual,
       .seed = 43,
       .isolation = CrashIsolation::InProcess,

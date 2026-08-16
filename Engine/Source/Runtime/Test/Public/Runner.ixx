@@ -5,6 +5,12 @@ import Nyx.Core;
 import :Execution;
 import :Session;
 
+namespace Nyx::Test {
+
+inline constexpr usize maxRetainedFailuresDefault{1024};
+
+} // namespace Nyx::Test
+
 export namespace Nyx::Test {
 
 /// Selects the safety boundary used for one logical test case.
@@ -31,6 +37,9 @@ enum class ExecutionOrder : u8 {
 struct RunOptions final {
   usize jobs{1};
 
+  RetentionPolicy retention{RetentionPolicy::Failures};
+  usize maxRetainedFailures{maxRetainedFailuresDefault};
+
   /// Selects the independent scheduler clock supplied to every test execution in this run.
   TimeMode timeMode{TimeMode::Real};
 
@@ -53,11 +62,15 @@ struct RunOptions final {
   CrashIsolation isolation{CrashIsolation::ProcessPerCase};
 };
 
+class RunAccumulator;
+
 namespace detail {
 
 struct WorkerRequest;
 
-[[nodiscard]] auto executePlannedCases(RunSession &session, const RunOptions &options) -> Vec<TestExecution>;
+[[nodiscard]] auto executePlannedCases(RunSession &session,
+    const RunOptions &options,
+    Option<Ref<RunAccumulator>> accumulator = None) -> Vec<TestExecution>;
 
 /// Executes one worker request after the child process has rebuilt the reflected plan.
 auto executeWorkerCase(RunSession &session, const WorkerRequest &request, RunOptions options) -> void;

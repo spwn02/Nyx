@@ -101,6 +101,31 @@ auto TestExecution::failed() const noexcept -> bool {
   return state.failed();
 }
 
+auto makeAttemptOutcome(const TestExecution &execution, bool retainExecution) -> AttemptOutcome {
+  AttemptOutcome outcome{
+      .descriptor = execution.descriptor,
+      .attempt = execution.attempt,
+      .duration = execution.duration,
+      .wallDuration = execution.wallDuration,
+      .assertions = execution.state.assertions,
+      .failedAssertions = execution.state.failedAssertions,
+      .errors = execution.state.errors,
+      .runSeed = execution.runSeed,
+      .seed = execution.seed,
+      .iteration = execution.iteration,
+      .warmup = execution.warmup,
+      .passed = execution.passed(),
+  };
+  if (retainExecution or not outcome.passed)
+    outcome.failure = execution;
+  if (outcome.failure)
+    outcome.timeout = std::ranges::any_of(
+        outcome.failure->state.diagnostics, [](const Diagnostic &diagnostic) constexpr noexcept -> bool {
+          return diagnostic.header.code == DiagnosticCode::TimeoutExceeded;
+        });
+  return outcome;
+}
+
 auto detail::returnedErrorDiagnostic(const Error &error, std::source_location location) -> Diagnostic {
   Diagnostic diagnostic = makeDiagnostic(DiagnosticCode::TestReturnedError, location);
   diagnostic.details.spans.front().label = "test return";

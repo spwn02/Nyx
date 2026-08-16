@@ -603,10 +603,51 @@ public:
     writer.field(
         "status", [&writer, &summary] -> void { writer.text(summary.passed() ? "passed" : "failed"); });
     writer.field("run_seed", [&writer, &report] -> void {
-      if (report.cases.empty() or report.cases.front().attempts.empty())
-        writer.nullValue();
+      if (report.runSeed)
+        writer.number(*report.runSeed);
       else
-        writer.number(report.cases.front().attempts.front().execution.runSeed);
+        writer.nullValue();
+    });
+    writer.field("retention", [&writer, &report] -> void { writer.text(debug::enumName(report.retention)); });
+    writer.field(
+        "retained_attempt_count", [&writer, &report] -> void { writer.number(report.retainedAttemptCount); });
+    writer.field("selection", [&writer, &report] -> void {
+      writer.beginObject();
+      writer.field("include", [&writer, &report] -> void {
+        writer.beginArray();
+        std::ranges::for_each(report.selection.include, [&writer](const String &value) -> void {
+          writer.element([&writer, &value] -> void { writer.text(value); });
+        });
+        writer.endArray();
+      });
+      writer.field("exclude", [&writer, &report] -> void {
+        writer.beginArray();
+        std::ranges::for_each(report.selection.exclude, [&writer](const String &value) -> void {
+          writer.element([&writer, &value] -> void { writer.text(value); });
+        });
+        writer.endArray();
+      });
+      writer.field("tags_all", [&writer, &report] -> void {
+        writer.beginArray();
+        std::ranges::for_each(report.selection.tagsAll, [&writer](const String &value) -> void {
+          writer.element([&writer, &value] -> void { writer.text(value); });
+        });
+        writer.endArray();
+      });
+      writer.field("tags_any", [&writer, &report] -> void {
+        writer.beginArray();
+        std::ranges::for_each(report.selection.tagsAny, [&writer](const String &value) -> void {
+          writer.element([&writer, &value] -> void { writer.text(value); });
+        });
+        writer.endArray();
+      });
+      writer.field("group", [&writer, &report] -> void {
+        if (report.selection.group)
+          writer.text(*report.selection.group);
+        else
+          writer.nullValue();
+      });
+      writer.endObject();
     });
     writer.field("summary", [&writer, &summary] -> void { writeSummary(writer, summary); });
     writer.field("cases", [&writer, &report, &sources] -> void {
@@ -667,25 +708,48 @@ auto JsonReporter::addRoot(Path root) -> void {
 }
 
 auto JsonReporter::report(Span<const TestExecution> executions, std::ostream &output) const -> void {
-  if constexpr (not build::tests)
+  if constexpr (build::tests) {
+    const RunReport report = Reporter::makeReport(executions);
+    const SourceManager sources{roots_};
+    JsonWriter writer{output, options_};
+    JsonDocumentWriter document{writer, sources};
+    document.write(report);
+    if (options_.pretty)
+      output << '\n';
+  } else {
     return;
+  }
+}
 
-  const RunReport report = Reporter::makeReport(executions);
-  const SourceManager sources{roots_};
-  JsonWriter writer{output, options_};
-  JsonDocumentWriter document{writer, sources};
-  document.write(report);
-  if (options_.pretty)
-    output << '\n';
+auto JsonReporter::report(const RunReport &report, std::ostream &output) const -> void {
+  if constexpr (build::tests) {
+    const SourceManager sources{roots_};
+    JsonWriter writer{output, options_};
+    JsonDocumentWriter document{writer, sources};
+    document.write(report);
+    if (options_.pretty)
+      output << '\n';
+  }
 }
 
 auto JsonReporter::render(Span<const TestExecution> executions) const -> String {
-  if constexpr (not build::tests)
+  if constexpr (build::tests) {
+    std::ostringstream output{};
+    report(executions, output);
+    return output.str();
+  } else {
     return {};
+  }
+}
 
-  std::ostringstream output{};
-  report(executions, output);
-  return output.str();
+auto JsonReporter::render(const RunReport &report) const -> String {
+  if constexpr (build::tests) {
+    std::ostringstream output{};
+    this->report(report, output);
+    return output.str();
+  } else {
+    return {};
+  }
 }
 
 auto JsonReporter::reportList(Span<const TestDescriptor> descriptors, std::ostream &output) const -> void {

@@ -11,6 +11,7 @@ import :Fixtures;
 import :Metadata;
 import :Policies;
 import :Providers;
+import :Reporting;
 import :Runner;
 import :Task;
 
@@ -605,6 +606,24 @@ template <std::meta::info Scope, class Configuration>
 }
 
 template <std::meta::info Scope, class Configuration>
+[[nodiscard]] auto runScopeReport(const TestSelection &selection, RunOptions options) -> RunReport {
+  detail::RunSession session{};
+  appendScopePlan<Scope, Configuration>(session);
+  filterPlannedCases(session, selection);
+  RunAccumulator accumulator{options.retention,
+      options.maxRetainedFailures,
+      SelectionMetadata{
+          .include = selection.include,
+          .exclude = selection.exclude,
+          .tagsAll = selection.tagsAll,
+          .tagsAny = selection.tagsAll,
+          .group = selection.group,
+      }};
+  static_cast<void>(detail::executePlannedCases(session, options, accumulator));
+  return std::move(accumulator).finish();
+}
+
+template <std::meta::info Scope, class Configuration>
 inline constinit const SuiteEntry suiteEntry{
     .scope = qualifiedNameOf<Scope>(),
     .location = scopeLocationOf<Scope>(),
@@ -715,7 +734,7 @@ template <std::meta::info Scope, detail::DiscoveryOption... Options>
 /// Executes all reflected tests and their declarative Case/provider annotations.
 template <std::meta::info Namespace>
 [[nodiscard]]
-auto runAll(RunOptions options = {}) -> Vec<TestExecution> {
+auto runAllDetailed(RunOptions options = {}) -> Vec<TestExecution> {
   if constexpr (build::tests) {
     static_assert(std::meta::is_namespace(Namespace), "Provided Namespace should be a namespace.");
     detail::materializeWorkerRegistration<Namespace, detail::DiscoveryConfiguration<>>();
@@ -728,7 +747,7 @@ auto runAll(RunOptions options = {}) -> Vec<TestExecution> {
 /// Executes one reflected namespace after selecting expanded cases.
 template <std::meta::info Namespace>
 [[nodiscard]]
-auto runAll(TestSelection selection, RunOptions options = {}) -> Vec<TestExecution> {
+auto runAllDetailed(TestSelection selection, RunOptions options = {}) -> Vec<TestExecution> {
   if constexpr (build::tests) {
     static_assert(std::meta::is_namespace(Namespace), "Provided Namespace should be a namespace.");
     detail::materializeWorkerRegistration<Namespace, detail::DiscoveryConfiguration<>>();
@@ -742,7 +761,7 @@ auto runAll(TestSelection selection, RunOptions options = {}) -> Vec<TestExecuti
 template <std::meta::info Scope, detail::DiscoveryOption... Options>
   requires(sizeof...(Options) != 0)
 [[nodiscard]]
-auto runAll(Options... /*unused*/) -> Vec<TestExecution> {
+auto runAllDetailed(Options... /*unused*/) -> Vec<TestExecution> {
   if constexpr (build::tests) {
     using Configuration = detail::DiscoveryConfiguration<std::remove_cvref_t<Options>...>;
     static_assert(std::meta::is_namespace(Scope) or Configuration::staticMemberFunctions_,
@@ -757,7 +776,7 @@ auto runAll(Options... /*unused*/) -> Vec<TestExecution> {
 template <std::meta::info Scope, detail::DiscoveryOption... Options>
   requires(sizeof...(Options) != 0)
 [[nodiscard]]
-auto runAll(RunOptions options, Options... /*unused*/) -> Vec<TestExecution> {
+auto runAllDetailed(RunOptions options, Options... /*unused*/) -> Vec<TestExecution> {
   if constexpr (build::tests) {
     using Configuration = detail::DiscoveryConfiguration<std::remove_cvref_t<Options>...>;
     static_assert(std::meta::is_namespace(Scope) or Configuration::staticMemberFunctions_,
@@ -771,7 +790,7 @@ auto runAll(RunOptions options, Options... /*unused*/) -> Vec<TestExecution> {
 /// Executes one reflected scope with explicit discovery options and selection.
 template <std::meta::info Scope, detail::DiscoveryOption... Options>
   requires(sizeof...(Options) != 0)
-[[nodiscard]] auto runAll(TestSelection selection, Options... /*unused*/) -> Vec<TestExecution> {
+[[nodiscard]] auto runAllDetailed(TestSelection selection, Options... /*unused*/) -> Vec<TestExecution> {
   if constexpr (build::tests) {
     using Configuration = detail::DiscoveryConfiguration<std::remove_cvref_t<Options>...>;
     static_assert(std::meta::is_namespace(Scope) or Configuration::staticMemberFunctions_,
@@ -784,7 +803,7 @@ template <std::meta::info Scope, detail::DiscoveryOption... Options>
 
 /// Executes one reflected scope with explicit discovery, selection, and runner options.
 template <std::meta::info Scope, detail::DiscoveryOption... Options>
-[[nodiscard]] auto runAll(TestSelection selection, RunOptions options, Options... /*unused*/)
+[[nodiscard]] auto runAllDetailed(TestSelection selection, RunOptions options, Options... /*unused*/)
     -> Vec<TestExecution> {
   if constexpr (build::tests) {
     using Configuration = detail::DiscoveryConfiguration<std::remove_cvref_t<Options>...>;
@@ -803,10 +822,53 @@ template <std::meta::info Scope, detail::DiscoveryOption... Options>
 [[nodiscard]] auto list(TestSelection selection = {}) -> Vec<TestDescriptor>;
 
 /// Executes every suite registered by file-scope discover<^^Scope>() calls.
-[[nodiscard]] auto runAll(RunOptions options = {}) -> Vec<TestExecution>;
+[[nodiscard]] auto runAllDetailed(RunOptions options = {}) -> Vec<TestExecution>;
 
 /// Executes selected cases from every file-scope registered suite..
-[[nodiscard]] auto runAll(TestSelection selection, RunOptions options = {}) -> Vec<TestExecution>;
+[[nodiscard]] auto runAllDetailed(TestSelection selection, RunOptions options = {}) -> Vec<TestExecution>;
+
+/// Executes every registered suite and returns a bounded aggregate report.
+[[nodiscard]] auto runAll(RunOptions options = {}) -> RunReport;
+
+/// Executes selected registered cases and returns a bounded aggregate report.
+[[nodiscard]] auto runAll(TestSelection selection, RunOptions options = {}) -> RunReport;
+
+template <std::meta::info Namespace>
+[[nodiscard]] auto runAll(RunOptions options = {}) -> RunReport {
+  return detail::runScopeReport<Namespace, detail::DiscoveryConfiguration<>>({}, options);
+}
+
+template <std::meta::info Namespace>
+[[nodiscard]] auto runAll(TestSelection selection, RunOptions options = {}) -> RunReport {
+  return detail::runScopeReport<Namespace, detail::DiscoveryConfiguration<>>(selection, options);
+}
+
+template <std::meta::info Scope, detail::DiscoveryOption... Options>
+  requires(sizeof...(Options) != 0)
+[[nodiscard]] auto runAll(Options... /*unused*/) -> RunReport {
+  using Configuration = detail::DiscoveryConfiguration<std::remove_cvref_t<Options>...>;
+  return detail::runScopeReport<Scope, Configuration>({}, {});
+}
+
+template <std::meta::info Scope, detail::DiscoveryOption... Options>
+  requires(sizeof...(Options) != 0)
+[[nodiscard]] auto runAll(RunOptions options, Options... /*unused*/) -> RunReport {
+  using Configuration = detail::DiscoveryConfiguration<std::remove_cvref_t<Options>...>;
+  return detail::runScopeReport<Scope, Configuration>({}, options);
+}
+
+template <std::meta::info Scope, detail::DiscoveryOption... Options>
+  requires(sizeof...(Options) != 0)
+[[nodiscard]] auto runAll(TestSelection selection, Options... /*unused*/) -> RunReport {
+  using Configuration = detail::DiscoveryConfiguration<std::remove_cvref_t<Options>...>;
+  return detail::runScopeReport<Scope, Configuration>(selection, {});
+}
+
+template <std::meta::info Scope, detail::DiscoveryOption... Options>
+[[nodiscard]] auto runAll(TestSelection selection, RunOptions options, Options... /*unused*/) -> RunReport {
+  using Configuration = detail::DiscoveryConfiguration<std::remove_cvref_t<Options>...>;
+  return detail::runScopeReport<Scope, Configuration>(selection, options);
+}
 
 } // namespace Nyx::Test
 // NOLINTEND(bugprone-reserved-identifier)
