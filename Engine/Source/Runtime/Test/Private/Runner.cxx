@@ -17,10 +17,10 @@ struct ScheduledCase final {
   usize runIteration{};
 };
 
-/// Serializes repeated invocations whose factory has an explicit shared fixture capability.
+/// Serializes repeated invocations whose factory has shared fixture or mutable object state.
 ///
 /// Different planned cases retain full worker parallelism. Repetitions of one case use one lane when its
-/// factory has shared fixture state and is not concurrently invocable.
+/// factory has shared state and is not concurrently invocable.
 ///
 /// FixtureScope remains safe to initialize concurrently, but serializing fixture-backed cases preserves
 /// established ordering for fixture construction and user code that exposes mutable fixture substate.
@@ -352,12 +352,12 @@ auto executeCase(const InvocationPlan &plan) -> Vec<TestExecution> {
   return CaseExecutor{plan}.run();
 }
 
-[[nodiscard]] auto laneFor(Vec<UPtr<ExecutionLane>> &executionLanes, usize plannedCase) noexcept
+[[nodiscard]] auto laneFor(Vec<std::shared_ptr<ExecutionLane>> &executionLanes, usize plannedCase) noexcept
     -> Option<Ref<ExecutionLane>> {
   if (executionLanes.empty() or plannedCase >= executionLanes.size())
     return None;
 
-  UPtr<ExecutionLane> &lane = executionLanes[plannedCase];
+  std::shared_ptr<ExecutionLane> &lane = executionLanes[plannedCase];
   if (lane == nullptr)
     return None;
 
@@ -369,7 +369,7 @@ auto executeCase(const InvocationPlan &plan) -> Vec<TestExecution> {
   if (plannedCase.descriptor().policy.parent)
     return CrashIsolation::InProcess;
 
-  if (plannedCase.descriptor().policy.isolated)
+  if (plannedCase.descriptor().policy.isolated or plannedCase.capabilities().requiresIsolation)
     return CrashIsolation::ProcessPerCase;
 
   return options.isolation;
@@ -377,7 +377,7 @@ auto executeCase(const InvocationPlan &plan) -> Vec<TestExecution> {
 
 struct DispatchContext final { // NOLINT(cppcoreguidelines-pro-type-member-init)
   Ref<Vec<PlannedCase>> plannedCases;
-  Ref<Vec<UPtr<ExecutionLane>>> executionLanes;
+  Ref<Vec<std::shared_ptr<ExecutionLane>>> executionLanes;
   Ref<const RunOptions> options;
   u64 runSeed{};
   bool captureMemory{};
@@ -409,8 +409,12 @@ struct DispatchContext final { // NOLINT(cppcoreguidelines-pro-type-member-init)
 [[nodiscard]] auto executeScheduledCase(DispatchContext &context, const ScheduledCase &scheduledCase)
     -> Vec<TestExecution> {
   const InvocationPlan plan = makeInvocationPlan(context, scheduledCase);
-  if (plan.processIsolated())
+  if (plan.processIsolated()) {
+    std::unique_lock<std::mutex> lock{};
+    if (plan.lane)
+      lock = std::unique_lock<std::mutex>{plan.lane->get().mutex()};
     return executeIsolatedCase(plan);
+  }
 
   return executeCase(plan);
 }
@@ -645,18 +649,40 @@ auto appendWorkerOutcome(Vec<TestExecution> &executions,
 }
 
 [[nodiscard]] auto makeExecutionLanes(const Vec<PlannedCase> &plannedCases, usize repeat)
-    -> Vec<UPtr<ExecutionLane>> {
-  if (repeat <= 1)
-    return {};
-
-  Vec<UPtr<ExecutionLane>> executionLanes{};
+    -> Vec<std::shared_ptr<ExecutionLane>> {
+  Vec<std::shared_ptr<ExecutionLane>> executionLanes{};
+  Vec<StringView> resourceNames{};
   executionLanes.reserve(plannedCases.size());
-  std::ranges::for_each(plannedCases, [&executionLanes](const PlannedCase &plannedCase) -> void {
-    if (plannedCase.capabilities().has(InvocationInput::Fixtures))
-      executionLanes.push_back(std::make_unique<ExecutionLane>());
-    else
-      executionLanes.emplace_back(nullptr);
-  });
+  resourceNames.reserve(plannedCases.size());
+
+  std::ranges::for_each(plannedCases | std::views::enumerate,
+      [&executionLanes, &resourceNames, repeat](const Pair<usize, PlannedCase> &item) -> void {
+        const auto &[index, plannedCase] = item;
+        static_cast<void>(index);
+
+        const InvocationCapabilities &capabilities = plannedCase.capabilities();
+        const bool repeatedState = repeat > 1 and not capabilities.attemptParallel;
+
+        if (not repeatedState and capabilities.resourceLane.empty()) {
+          executionLanes.emplace_back(nullptr);
+          resourceNames.emplace_back();
+          return;
+        }
+
+        if (not capabilities.resourceLane.empty()) {
+          const auto found = std::ranges::find(resourceNames, capabilities.resourceLane);
+          if (found != resourceNames.end()) {
+            const usize laneIndex = static_cast<usize>(found - resourceNames.begin());
+            executionLanes.push_back(executionLanes[laneIndex]);
+            resourceNames.push_back(capabilities.resourceLane);
+            return;
+          }
+        }
+
+        executionLanes.push_back(std::make_shared<ExecutionLane>());
+        resourceNames.push_back(capabilities.resourceLane);
+      });
+
   return executionLanes;
 }
 
@@ -691,7 +717,9 @@ public:
       : context_(context)
       , scheduledCases_(scheduledCases)
       , executions_(scheduledCases.size())
-      , workers_(workers) {
+      , workers_(workers)
+      , ready_(workers)
+      , firstBatch_(workers) {
   }
 
   [[nodiscard]] auto run() -> Vec<TestExecution> {
@@ -701,6 +729,8 @@ public:
       std::ranges::for_each(std::views::indices(workers_), [this, &threads](usize) -> void {
         threads.emplace_back(&ParallelCaseExecutor::executeNext, this);
       });
+      ready_.wait();
+      start_.count_down();
     }
 
     return executions_ | std::views::filter([](const Option<Vec<TestExecution>> &execution) -> bool {
@@ -716,6 +746,10 @@ private:
     DispatchContext &context = context_.get();
     const Vec<ScheduledCase> &scheduledCases = scheduledCases_.get();
 
+    ready_.count_down();
+    start_.wait();
+    bool firstBatch{true};
+
     // Every iteration claims one unique schedule slot. The worker exits when the queue is exhausted or the
     // fail-fast flag is published; completed slots remain immutable for the final ordered flattening.
     while (true) {
@@ -725,6 +759,11 @@ private:
       const usize index = nextIndex_.fetch_add(1, std::memory_order_relaxed);
       if (index >= scheduledCases.size())
         return;
+
+      if (firstBatch) {
+        firstBatch = false;
+        firstBatch_.arrive_and_wait();
+      }
 
       Vec<TestExecution> batch = executeScheduledCase(context, scheduledCases[index]);
       const bool failed =
@@ -748,6 +787,9 @@ private:
   Ref<const Vec<ScheduledCase>> scheduledCases_;
   Vec<Option<Vec<TestExecution>>> executions_;
   const usize workers_;
+  std::latch ready_;
+  std::latch start_{1};
+  std::barrier<> firstBatch_;
   std::atomic<usize> nextIndex_;
   std::atomic<bool> stopped_;
 };
@@ -771,7 +813,7 @@ auto executePlannedCases(RunSession &session,
     if (workers == 0)
       return {};
 
-    Vec<UPtr<ExecutionLane>> executionLanes = makeExecutionLanes(plannedCases, options.repeat);
+    Vec<std::shared_ptr<ExecutionLane>> executionLanes = makeExecutionLanes(plannedCases, options.repeat);
     DispatchContext context{
         .plannedCases = plannedCases,
         .executionLanes = executionLanes,

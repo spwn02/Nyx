@@ -13,12 +13,34 @@ enum class[[= bitflags]] InvocationInput : u8 {
   CaseValues = 1 << 1,
   ProviderValues = 1 << 2,
   Fixtures = 1 << 3,
+  Subject = 1 << 4,
 };
 
 using InvocationInputs = InvocationInput;
 
+enum class SubjectOwnership : u8 {
+  None,
+  ExplicitValue,
+  Fixture,
+};
+
+enum class FixtureLifetime : u8 {
+  None,
+  PerAttempt,
+  Once,
+};
+
+/// Declares the lifetime and scheduler contraints of one immutable invocation factory.
 struct InvocationCapabilities final {
   InvocationInputs inputs{};
+  SubjectOwnership subjectOwnership{SubjectOwnership::None};
+  FixtureLifetime fixtureLifetime{FixtureLifetime::None};
+  bool sharesOnceFixture{};
+  bool mutableSubject{};
+  bool requiresIsolation{};
+  bool measurementDependency{};
+  bool attemptParallel{};
+  StringView resourceLane;
 
   [[nodiscard]] auto has(InvocationInput input) const noexcept -> bool {
     return ::Nyx::has(inputs, input);
@@ -67,15 +89,14 @@ class PlannedCase final {
 public:
   explicit PlannedCase(TestDescriptor descriptor,
       InvocationCapabilities capabilities,
-      UPtr<const InvocationFactory> factory)
+      std::shared_ptr<const InvocationFactory> factory)
       : descriptor_(std::move(descriptor))
       , capabilities_(capabilities)
       , factory_(std::move(factory)) {
   }
 
-  PlannedCase(const PlannedCase &) = delete ("PlannedCase owns its immutable invocation factory.");
-  auto operator=(const PlannedCase &)
-      -> PlannedCase & = delete ("PlannedCase owns its immutable invocation factory.");
+  PlannedCase(const PlannedCase &) = default;
+  auto operator=(const PlannedCase &) -> PlannedCase & = default;
   PlannedCase(PlannedCase &&) noexcept = default;
   auto operator=(PlannedCase &&) noexcept -> PlannedCase & = default;
   ~PlannedCase() noexcept = default;
@@ -95,7 +116,7 @@ public:
 private:
   TestDescriptor descriptor_;
   InvocationCapabilities capabilities_;
-  UPtr<const InvocationFactory> factory_;
+  std::shared_ptr<const InvocationFactory> factory_;
 };
 
 /// Owns opaque suite-local state while its PlannedCase values execute.

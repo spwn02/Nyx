@@ -30,7 +30,15 @@ template <std::meta::info Info>
 inline constexpr auto parameters = std::define_static_array(std::meta::parameters_of(Info));
 
 template <std::meta::info Info>
-using Type = typename[:std::meta::type_of(Info):];
+consteval auto typeInfo() -> std::meta::info {
+  if constexpr (std::meta::is_type(Info))
+    return Info;
+  else
+    return std::meta::type_of(Info);
+}
+
+template <std::meta::info Info>
+using Type = typename[:typeInfo<Info>():];
 
 template <std::meta::info Info>
 using TypeObject = std::remove_cvref_t<Type<Info>>;

@@ -23,9 +23,8 @@ struct Recursive final {};
 
 inline constexpr Recursive recursive{};
 
-/// Enables discovery of static member functions when the registered scope is a class. Instance member tests
-/// require object-lifetime model and remain a future goal.
-/// TODO: Extend the functionality to support non-static member functions.
+/// Enables discovery of member functions when the registered scope is a class. Non-static members  must bind
+/// an explicit subject value or a matching fixture provider.
 struct StaticMemberFunctions final {};
 
 inline constexpr StaticMemberFunctions staticMemberFunctions{};
@@ -337,7 +336,38 @@ template <class CaseType>
 }
 
 template <std::meta::info Namespace, std::meta::info Function>
-consteval auto invocationCapabilities() -> InvocationCapabilities {
+consteval auto isNonStaticMember() -> bool {
+  if constexpr (std::meta::is_namespace(Namespace))
+    return false;
+  else
+    return not std::meta::is_static_member(Function);
+}
+
+template <std::meta::info Namespace, std::meta::info Function>
+consteval auto memberSubjectUsesOnceFixture() -> bool {
+  if constexpr (std::meta::is_namespace(Namespace) or not isNonStaticMember<Namespace, Function>() or
+                ReflectedFunctionMetadata<Function>::subjects.size() != 0) {
+    return false;
+  } else {
+    using Subject = meta::TypeObject<std::meta::parent_of(Function)>;
+    return isOnce<fixtureFor<Namespace, Subject>()>();
+  }
+}
+
+template <std::meta::info Namespace, std::meta::info Function>
+consteval auto hasValidMemberSubject() -> bool {
+  if constexpr (not isNonStaticMember<Namespace, Function>() or
+                ReflectedFunctionMetadata<Function>::subjects.size() != 0) {
+    return true;
+  } else {
+    using Subject = meta::TypeObject<std::meta::parent_of(Function)>;
+    return hasFixtureFor<Namespace, Subject>();
+  }
+}
+
+template <std::meta::info Namespace, std::meta::info Function>
+consteval auto invocationCapabilities() // NOLINT(readability-function-cognitive-complexity)
+    -> InvocationCapabilities {
   InvocationInputs inputs{};
 
   if constexpr (hasContextParameter<Function>())
@@ -354,8 +384,81 @@ consteval auto invocationCapabilities() -> InvocationCapabilities {
   if constexpr (hasAutomaticFixtureParameter<Namespace, Function>())
     inputs |= InvocationInput::Fixtures;
 
+  constexpr bool member = isNonStaticMember<Namespace, Function>();
+  constexpr usize subjectCount = ReflectedFunctionMetadata<Function>::subjects.size();
+  constexpr usize resourceCount = ReflectedFunctionMetadata<Function>::resources.size();
+  constexpr bool parallelAttempts = ReflectedFunctionMetadata<Function>::parallelAttempts.size() != 0;
+
+  static_assert(resourceCount <= 1, "Nyx.Test tests accept at most one [[= resource(\"lane\")]] annotation.");
+
+  static_assert(subjectCount <= 1, "Nyx.Test member tests accept at most one [[= subject(...)]] annotation.");
+
+  static_assert(hasValidMemberSubject<Namespace, Function>(),
+      "Nyx.Test non-static member tests require [[= subject(...)]] or a matching [[= fixture]].");
+
+  static_assert(not std::meta::is_namespace(Namespace) or not member,
+      "Nyx.Test non-static member tests must be discovered from their owning class scope.");
+
+  static_assert(not parallelAttempts or (not member and resourceCount == 0 and
+                                            not hasAutomaticFixtureParameter<Namespace, Function>() and
+                                            not hasOnceFixtureParameter<Namespace, Function>()),
+      "Nyx.Test [[= parallelAttempts]] requires an independent case without shared fixtures, subjects, or "
+      "lanes.");
+
+  if constexpr (member and subjectCount != 0) {
+    constexpr std::meta::info annotation = ReflectedFunctionMetadata<Function>::subjects.front();
+    using Annotation = meta::TypeObject<annotation>;
+    constexpr Annotation subjectAnnotation = std::meta::extract<Annotation>(annotation);
+    using SubjectValue = std::remove_cvref_t<decltype(subjectAnnotation.value())>;
+    using SubjectType = meta::TypeObject<std::meta::parent_of(Function)>;
+
+    static_assert(std::same_as<SubjectValue, SubjectType>,
+        "Nyx.Test [[= subject(...)]] must provide the member function's owning object type.");
+  }
+
+  if constexpr (member)
+    inputs |= InvocationInput::Subject;
+
+  StringView resourceLane{};
+  if constexpr (resourceCount != 0) {
+    constexpr std::meta::info annotation = ReflectedFunctionMetadata<Function>::resources.front();
+    using Annotation = meta::TypeObject<annotation>;
+    constexpr Annotation resourceAnnotation = std::meta::extract<Annotation>(annotation);
+    resourceLane = resourceAnnotation.apply();
+  }
+
+  constexpr bool sharesOnceFixture =
+      hasOnceFixtureParameter<Namespace, Function>() or memberSubjectUsesOnceFixture<Namespace, Function>();
+
+  if (resourceLane.empty() and sharesOnceFixture)
+    resourceLane = qualifiedNameOf<Namespace>();
+
+  SubjectOwnership subjectOwnership = SubjectOwnership::None;
+
+  if constexpr (member) {
+    if constexpr (subjectCount != 0)
+      subjectOwnership = SubjectOwnership::ExplicitValue;
+    else
+      subjectOwnership = SubjectOwnership::Fixture;
+  }
+
+  FixtureLifetime fixtureLifetime = FixtureLifetime::None;
+
+  if constexpr (sharesOnceFixture)
+    fixtureLifetime = FixtureLifetime::Once;
+  else if constexpr (hasAutomaticFixtureParameter<Namespace, Function>() or (member and subjectCount == 0))
+    fixtureLifetime = FixtureLifetime::PerAttempt;
+
   return InvocationCapabilities{
       .inputs = inputs,
+      .subjectOwnership = subjectOwnership,
+      .fixtureLifetime = fixtureLifetime,
+      .sharesOnceFixture = sharesOnceFixture,
+      .mutableSubject = member,
+      .requiresIsolation = ReflectedFunctionMetadata<Function>::isolated.size() != 0,
+      .measurementDependency = repeatCount<Function>() != 0 or warmupCount<Function>() != 0,
+      .attemptParallel = parallelAttempts,
+      .resourceLane = resourceLane,
   };
 }
 
@@ -381,7 +484,7 @@ template <std::meta::info Function>
 class MissingProviderInvocationFactory final : public InvocationFactory {
 public:
   [[nodiscard]] auto invoke(const InvocationRequest &request) const -> TestExecution override {
-    return noProviderExecution<Function>(TestDescriptor{request.descriptor.get()}, request.timeMode);
+    return noProviderExecution<Function>(request.descriptor.get(), request.timeMode);
   }
 };
 
@@ -398,9 +501,70 @@ public:
 
   [[nodiscard]] auto invoke(const InvocationRequest &request) const -> TestExecution override {
     return run(
-        TestDescriptor{request.descriptor.get()},
+        request.descriptor.get(),
         [this](const Context &context) -> decltype(auto) {
           return detail::invokeWithFixtures<Namespace, Function>(
+              context, suiteFixtures_, caseValues_, providerValues_);
+        },
+        request.timeMode);
+  }
+
+private:
+  const CaseValues caseValues_;
+  const ProviderValues providerValues_;
+  Ref<FixtureScope<Namespace>> suiteFixtures_;
+};
+
+template <std::meta::info Namespace,
+    std::meta::info Function,
+    class SubjectValue,
+    class CaseValues,
+    class ProviderValues>
+class MemberInvocationFactory final : public InvocationFactory {
+public:
+  MemberInvocationFactory(SubjectValue subjectValue,
+      CaseValues caseValues,
+      ProviderValues providerValues,
+      FixtureScope<Namespace> &suiteFixtures)
+      : subject_(std::move(subjectValue))
+      , caseValues_(std::move(caseValues))
+      , providerValues_(std::move(providerValues))
+      , suiteFixtures_(suiteFixtures) {
+  }
+
+  [[nodiscard]] auto invoke(const InvocationRequest &request) const -> TestExecution override {
+    return run(
+        request.descriptor.get(),
+        [this](const Context &context) -> decltype(auto) {
+          return detail::invokeMemberWithFixtures<Namespace, Function>(
+              context, suiteFixtures_, subject_, caseValues_, providerValues_);
+        },
+        request.timeMode);
+  }
+
+private:
+  mutable SubjectValue subject_;
+  const CaseValues caseValues_;
+  const ProviderValues providerValues_;
+  Ref<FixtureScope<Namespace>> suiteFixtures_;
+};
+
+template <std::meta::info Namespace, std::meta::info Function, class CaseValues, class ProviderValues>
+class FixtureMemberInvocationFactory final : public InvocationFactory {
+public:
+  FixtureMemberInvocationFactory(CaseValues caseValues,
+      ProviderValues providerValues,
+      FixtureScope<Namespace> &suiteFixtures)
+      : caseValues_(std::move(caseValues))
+      , providerValues_(std::move(providerValues))
+      , suiteFixtures_(suiteFixtures) {
+  }
+
+  [[nodiscard]] auto invoke(const InvocationRequest &request) const -> TestExecution override {
+    return run(
+        request.descriptor.get(),
+        [this](const Context &context) -> decltype(auto) {
+          return detail::invokeMemberFromFixture<Namespace, Function>(
               context, suiteFixtures_, caseValues_, providerValues_);
         },
         request.timeMode);
@@ -435,21 +599,45 @@ struct ProviderWorkContext final {
 
 template <std::meta::info Namespace, std::meta::info Function, class CaseValues>
 auto appendProviderWorkItems(const ProviderWorkContext<Namespace, CaseValues> &context) -> void {
-  const usize providerCount =
-      detail::forEachProviderCombination<Function>([&context](const auto &...providerValues) -> void {
-        const String providerDescription = detail::providerDescription<Function>(providerValues...);
-        auto providerTuple = std::make_tuple(providerValues...);
-        const TestDescriptor descriptor =
-            makeTestDescriptor<Function>(context.testCaseIndex, context.caseDescription, providerDescription);
-        using Factory = ReflectedInvocationFactory<Namespace,
-            Function,
-            CaseValues,
-            std::remove_cvref_t<decltype(providerTuple)>>;
+  const usize providerCount = detail::forEachProviderCombination<Function>([&context](
+                                                                               const auto &...providerValues)
+                                                                               -> void {
+    const String providerDescription = detail::providerDescription<Function>(providerValues...);
+    auto providerTuple = std::make_tuple(providerValues...);
+    const TestDescriptor descriptor =
+        makeTestDescriptor<Function>(context.testCaseIndex, context.caseDescription, providerDescription);
+    using ProviderTuple = std::remove_cvref_t<decltype(providerTuple)>;
+
+    if constexpr (isNonStaticMember<Namespace, Function>()) {
+      if constexpr (ReflectedFunctionMetadata<Function>::subjects.size() != 0) {
+        constexpr std::meta::info annotation = ReflectedFunctionMetadata<Function>::subjects.front();
+        using Annotation = meta::TypeObject<annotation>;
+        constexpr Annotation subjectAnnotation = std::meta::extract<Annotation>(annotation);
+        using SubjectValue = std::remove_cvref_t<decltype(subjectAnnotation.value())>;
+        using Factory = MemberInvocationFactory<Namespace, Function, SubjectValue, CaseValues, ProviderTuple>;
+
         context.session.get().appendPlannedCase(detail::PlannedCase{descriptor,
             invocationCapabilities<Namespace, Function>(),
-            std::make_unique<Factory>(context.caseValues, std::move(providerTuple), context.suiteFixtures)});
-        ++context.testCaseIndex;
-      });
+        std::make_shared<Factory>(subjectAnnotation.value(),
+                context.caseValues,
+                std::move(providerTuple),
+                context.suiteFixtures.get())});
+      } else {
+        using Factory = FixtureMemberInvocationFactory<Namespace, Function, CaseValues, ProviderTuple>;
+
+        context.session.get().appendPlannedCase(detail::PlannedCase{descriptor,
+            invocationCapabilities<Namespace, Function>(),
+            std::make_shared<Factory>(context.caseValues, std::move(providerTuple), context.suiteFixtures.get())});
+      }
+    } else {
+      using Factory = ReflectedInvocationFactory<Namespace, Function, CaseValues, ProviderTuple>;
+
+      context.session.get().appendPlannedCase(detail::PlannedCase{descriptor,
+          invocationCapabilities<Namespace, Function>(),
+          std::make_shared<Factory>(context.caseValues, std::move(providerTuple), context.suiteFixtures.get())});
+    }
+    ++context.testCaseIndex;
+  });
 
   if (providerCount != 0)
     return;
@@ -459,7 +647,7 @@ auto appendProviderWorkItems(const ProviderWorkContext<Namespace, CaseValues> &c
       makeTestDescriptor<Function>(context.testCaseIndex, context.caseDescription, providerDescription);
   context.session.get().appendPlannedCase(detail::PlannedCase{descriptor,
       invocationCapabilities<Namespace, Function>(),
-      std::make_unique<MissingProviderInvocationFactory<Function>>()});
+      std::make_shared<MissingProviderInvocationFactory<Function>>()});
   ++context.testCaseIndex;
 }
 
@@ -496,13 +684,7 @@ auto appendWorkItems(detail::RunSession &session, FixtureScope<Namespace> &suite
 
 template <std::meta::info Scope, std::meta::info Function, class Configuration>
 consteval auto isDiscoveredTest() -> bool {
-  if constexpr (not isTest<Function>())
-    return false;
-
-  if constexpr (std::meta::is_namespace(Scope))
-    return true;
-
-  return Configuration::staticMemberFunctions_ and std::meta::is_static_member(Function);
+  return isTest<Function>();
 }
 
 template <std::meta::info Scope, class Configuration>
@@ -687,8 +869,6 @@ template <std::meta::info Scope, detail::DiscoveryOption... Options>
 consteval auto discover(Options... /*unused*/) -> void {
   if constexpr (build::tests) {
     using Configuration = detail::DiscoveryConfiguration<std::remove_cvref_t<Options>...>;
-    static_assert(std::meta::is_namespace(Scope) or Configuration::staticMemberFunctions_,
-        "Nyx::Test class-member discovery requires the staticMemberFunctions options.");
     detail::materializeRegistration<Scope, Configuration>();
   }
 }
@@ -736,7 +916,6 @@ template <std::meta::info Namespace>
 [[nodiscard]]
 auto runAllDetailed(RunOptions options = {}) -> Vec<TestExecution> {
   if constexpr (build::tests) {
-    static_assert(std::meta::is_namespace(Namespace), "Provided Namespace should be a namespace.");
     detail::materializeWorkerRegistration<Namespace, detail::DiscoveryConfiguration<>>();
     return detail::runScope<Namespace, detail::DiscoveryConfiguration<>>({}, options);
   } else {
@@ -749,7 +928,6 @@ template <std::meta::info Namespace>
 [[nodiscard]]
 auto runAllDetailed(TestSelection selection, RunOptions options = {}) -> Vec<TestExecution> {
   if constexpr (build::tests) {
-    static_assert(std::meta::is_namespace(Namespace), "Provided Namespace should be a namespace.");
     detail::materializeWorkerRegistration<Namespace, detail::DiscoveryConfiguration<>>();
     return detail::runScope<Namespace, detail::DiscoveryConfiguration<>>(selection, options);
   } else {

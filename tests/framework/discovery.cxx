@@ -8,6 +8,54 @@ using namespace Nyx::Test;
 // NOLINTBEGIN(cppcoreguidelines-avoid-magic-numbers, readability-magic-numbers)
 namespace Tests::discovery {
 
+struct MemberSubject final {
+  int value{};
+
+  auto normalizes() -> void;
+  ;
+  auto observesConstSubject() const -> void;
+  auto acceptsCase(int expected) -> void;
+};
+
+struct FixtureMemberSubject final {
+  int value{};
+
+  static auto make() -> FixtureMemberSubject;
+  auto usesFixtureSubject() -> void;
+};
+
+[[= fixture]] auto FixtureMemberSubject::make() -> FixtureMemberSubject {
+  return FixtureMemberSubject{7};
+}
+
+[[ = test, = group("framework"), = tag("discovery", "member_subject") ]] auto FixtureMemberSubject::
+    usesFixtureSubject() -> void {
+  check(value == 7);
+  value = 8;
+}
+
+consteval auto makeMemberSubject() -> MemberSubject {
+  return MemberSubject{2};
+}
+
+[[ = test, = group("framework"), = tag("discovery", "member_subject"), = subject(makeMemberSubject()) ]] auto
+MemberSubject::normalizes() -> void {
+  require(value == 2);
+  value *= 2;
+  check(value == 4);
+}
+
+[[ = test, = group("framework"), = tag("discovery", "member_subject"), = subject(makeMemberSubject()) ]] auto
+MemberSubject::observesConstSubject() const -> void {
+  check(value == 2);
+}
+
+[[ = test, = group("framework"), = tag("discovery", "member_subject"), = subject(makeMemberSubject()), = Case{3} ]] auto
+MemberSubject::acceptsCase(int expected) -> void {
+  require(value == 2);
+  check(value + expected == 5);
+}
+
 namespace PassingTests {
 
 constexpr auto fibonacci(u32 input) -> u32 {
@@ -421,4 +469,6 @@ flattensIndependentSuitesAndUsesAutomaticWorkerCount() -> void {
 
 consteval {
   discover<^^Tests::discovery>();
+  discover<^^Tests::discovery::MemberSubject>();
+  discover<^^Tests::discovery::FixtureMemberSubject>();
 }

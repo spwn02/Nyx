@@ -250,6 +250,23 @@ consteval auto caseArgumentIndex() -> usize {
   }
 }
 
+template <std::meta::info Namespace, std::meta::info Function, usize ParameterIndex = 0>
+consteval auto hasOnceFixtureParameter() -> bool {
+  if constexpr (ParameterIndex == ReflectedFunctionMetadata<Function>::parameters.size()) {
+    return false;
+  } else {
+    constexpr std::meta::info parameter = ReflectedFunctionMetadata<Function>::parameters[ParameterIndex];
+    using Value = meta::TypeObject<parameter>;
+
+    if constexpr (hasFixtureFor<Namespace, Value>()) {
+      return isOnce<fixtureFor<Namespace, Value>()>() or
+             hasOnceFixtureParameter<Namespace, Function, ParameterIndex + 1>();
+    } else {
+      return hasOnceFixtureParameter<Namespace, Function, ParameterIndex + 1>();
+    }
+  }
+}
+
 } // namespace detail
 // NOLINTEND(bugprone-reserved-identifier)
 
@@ -275,7 +292,7 @@ private:
         : value_(std::forward<Arguments>(arguments)...) {
     }
 
-    [[nodiscard]] auto value() const noexcept -> const Value & {
+    [[nodiscard]] auto value() noexcept -> Value & {
       return value_;
     }
 
@@ -297,9 +314,9 @@ private:
   };
 
   template <class Value>
-  [[nodiscard]] static auto fixtureValue(const FixtureSlot &fixture) -> const Value & {
+  [[nodiscard]] static auto fixtureValue(FixtureSlot &fixture) -> Value & {
     // The type-index key is derived from Value at both insertion and lookup.
-    return static_cast<const FixtureBox<Value> &>(*fixture.value).value();
+    return static_cast<FixtureBox<Value> &>(*fixture.value).value();
   }
 
 public:
@@ -322,7 +339,7 @@ public:
 
 private:
   template <class Value>
-  [[nodiscard]] auto get(detail::FixtureResolver<Namespace> &resolver) -> const Value &;
+  [[nodiscard]] auto get(detail::FixtureResolver<Namespace> &resolver) -> Value &;
 
   friend class detail::FixtureResolver<Namespace>;
 
@@ -343,7 +360,7 @@ public:
   }
 
   template <class Value>
-  [[nodiscard]] auto resolve() -> const Value & {
+  [[nodiscard]] auto resolve() -> Value & {
     constexpr std::meta::info fixtureFunction = fixtureFor<Namespace, Value>();
 
     if constexpr (isOnce<fixtureFunction>())
@@ -384,7 +401,7 @@ auto fixtureArgument(FixtureResolver<Namespace> &resolver) -> decltype(auto) {
 
 template <std::meta::info Namespace>
 template <class Value>
-auto FixtureScope<Namespace>::get(detail::FixtureResolver<Namespace> &resolver) -> const Value & {
+auto FixtureScope<Namespace>::get(detail::FixtureResolver<Namespace> &resolver) -> Value & {
   constexpr std::meta::info fixtureFunction = detail::fixtureFor<Namespace, Value>();
   const std::type_index key{typeid(Value)};
   FixtureSlot *slot{};
@@ -517,6 +534,32 @@ constexpr auto invokeTest(const Context &context,
             bindArgument<Namespace, Function, Indices>(context, fixtures, caseValues, providerValues)...);
       });
 }
+template <std::meta::info Namespace,
+    std::meta::info Function,
+    class Subject,
+    class CaseValues,
+    class ProviderValues>
+constexpr auto invokeMemberTest(const Context &context,
+    FixtureResolver<Namespace> &fixtures,
+    Subject &subject,
+    const CaseValues &caseValues,
+    const ProviderValues &providerValues) -> decltype(auto) {
+  constexpr usize parameterCount = ReflectedFunctionMetadata<Function>::parameters.size();
+  constexpr bool usesLegacyBinding = usesLegacyCaseBinding<Namespace, Function>();
+  constexpr usize expectedCaseValues = usesLegacyBinding ? parameterCount : caseParameterCount<Function>();
+  constexpr usize expectedProviderValues = providerParameterCount<Function>();
+  static_assert(std::tuple_size_v<std::remove_cvref_t<CaseValues>> == expectedCaseValues,
+      "Nyx.Test [[= Case]] value count does not match the member test's case-bound parameters.");
+  static_assert(std::tuple_size_v<std::remove_cvref_t<ProviderValues>> == expectedProviderValues,
+      "Nyx.Test provider value count does not match the member test's reflected parameters.");
+
+  return withIndices<parameterCount>(
+      [&]<usize... Indices>(std::integral_constant<usize, Indices>...) constexpr -> decltype(auto) {
+        return std::invoke(&[:Function:],
+            subject,
+            bindArgument<Namespace, Function, Indices>(context, fixtures, caseValues, providerValues)...);
+      });
+}
 
 //// Invokes a coroutine test while retaining every injected value through its final suspension point. In
 /// particular, const-reference fixture parameters must remain valid after the test's first co_await.
@@ -533,6 +576,88 @@ auto invokeAsyncTest(const Context &context, // NOLINT(cppcoreguidelines-avoid-r
     co_return;
   } else {
     co_return co_await invokeTest<Namespace, Function>(context, fixtures, caseValues, providerValues);
+  }
+}
+
+template <std::meta::info Namespace,
+    std::meta::info Function,
+    class Subject,
+    class CaseValues,
+    class ProviderValues>
+auto invokeAsyncMemberTest(
+    const Context &context,                 // NOLINT(cppcoreguidelines-avoid-reference-coroutine-parameters)
+    FixtureScope<Namespace> &suiteFixtures, // NOLINT(cppcoreguidelines-avoid-reference-coroutine-parameters)
+    Subject &subject,                       // NOLINT(cppcoreguidelines-avoid-reference-coroutine-parameters)
+    CaseValues caseValues,
+    ProviderValues providerValues) -> Task<TaskValueType<meta::ReturnObject<Function>>> {
+  FixtureScope<Namespace> testFixtures{};
+  FixtureResolver<Namespace> fixtures{testFixtures, suiteFixtures};
+
+  if constexpr (std::same_as<TaskValueType<meta::ReturnObject<Function>>, void>) {
+    co_await invokeMemberTest<Namespace, Function>(context, fixtures, subject, caseValues, providerValues);
+    co_return;
+  } else {
+    co_return co_await invokeMemberTest<Namespace, Function>(
+        context, fixtures, subject, caseValues, providerValues);
+  }
+}
+
+template <std::meta::info Namespace, std::meta::info Function, class CaseValues, class ProviderValues>
+auto invokeAsyncFromFixture(
+    const Context &context,                 // NOLINT(cppcoreguidelines-avoid-reference-coroutine-parameters)
+    FixtureScope<Namespace> &suiteFixtures, // NOLINT(cppcoreguidelines-avoid-reference-coroutine-parameters)
+    CaseValues caseValues,
+    ProviderValues providerValues) -> Task<TaskValueType<meta::ReturnObject<Function>>> {
+  FixtureScope<Namespace> testFixtures{};
+  FixtureResolver<Namespace> fixtures{testFixtures, suiteFixtures};
+
+  if constexpr (std::same_as<TaskValueType<meta::ReturnObject<Function>>, void>) {
+    co_await invokeWithFixtures<Namespace, Function>(context, suiteFixtures, caseValues, providerValues);
+    co_return;
+  } else {
+    co_return co_await invokeWithFixtures<Namespace, Function>(
+        context, suiteFixtures, caseValues, providerValues);
+  }
+}
+
+template <std::meta::info Namespace, std::meta::info Function, class CaseValues, class ProviderValues>
+auto invokeAsyncMemberFromFixture(
+    const Context &context,                 // NOLINT(cppcoreguidelines-avoid-reference-coroutine-parameters)
+    FixtureScope<Namespace> &suiteFixtures, // NOLINT(cppcoreguidelines-avoid-reference-coroutine-parameters)
+    CaseValues caseValues,
+    ProviderValues providerValues) -> Task<TaskValueType<meta::ReturnObject<Function>>> {
+  using Subject = meta::TypeObject<std::meta::parent_of(Function)>;
+  FixtureScope<Namespace> testFixtures{};
+  FixtureResolver<Namespace> fixtures{testFixtures, suiteFixtures};
+  Subject &subject = fixtures.template resolve<Subject>();
+
+  if constexpr (std::same_as<TaskValueType<meta::ReturnObject<Function>>, void>) {
+    co_await invokeMemberTest<Namespace, Function>(context, fixtures, subject, caseValues, providerValues);
+    co_return;
+  } else {
+    co_return co_await invokeMemberTest<Namespace, Function>(
+        context, fixtures, subject, caseValues, providerValues);
+  }
+}
+
+template <std::meta::info Namespace, std::meta::info Function, class CaseValues, class ProviderValues>
+auto invokeMemberFromFixture(const Context &context,
+    FixtureScope<Namespace> &suiteFixtures,
+    const CaseValues &caseValues,
+    const ProviderValues &providerValues) -> decltype(auto) {
+  using Subject = meta::TypeObject<std::meta::parent_of(Function)>;
+  using Return = meta::ReturnObject<Function>;
+
+  if constexpr (is_task_return_v<std::remove_cvref_t<Return>>) {
+    static_assert(not std::is_lvalue_reference_v<Return>,
+        "Nyx.Test asynchronous member tests must return Task<T> by value.");
+    return invokeAsyncMemberFromFixture<Namespace, Function>(
+        context, suiteFixtures, caseValues, providerValues);
+  } else {
+    FixtureScope<Namespace> testFixtures{};
+    FixtureResolver<Namespace> fixtures{testFixtures, suiteFixtures};
+    Subject &subject = fixtures.template resolve<Subject>();
+    return invokeMemberTest<Namespace, Function>(context, fixtures, subject, caseValues, providerValues);
   }
 }
 
@@ -553,6 +678,30 @@ auto invokeWithFixtures(const Context &context,
     FixtureScope<Namespace> testFixtures{};
     FixtureResolver<Namespace> fixtures{testFixtures, suiteFixtures};
     return invokeTest<Namespace, Function>(context, fixtures, caseValues, providerValues);
+  }
+}
+
+template <std::meta::info Namespace,
+    std::meta::info Function,
+    class Subject,
+    class CaseValues,
+    class ProviderValues>
+auto invokeMemberWithFixtures(const Context &context,
+    FixtureScope<Namespace> &suiteFixtures,
+    Subject &subject,
+    const CaseValues &caseValues,
+    const ProviderValues &providerValues) -> decltype(auto) {
+  using Return = meta::ReturnObject<Function>;
+
+  if constexpr (is_task_return_v<std::remove_cvref_t<Return>>) {
+    static_assert(not std::is_lvalue_reference_v<Return>,
+        "Nyx.Test asynchronous member tests must return Task<T> by value.");
+    return invokeAsyncMemberTest<Namespace, Function>(
+        context, suiteFixtures, subject, caseValues, providerValues);
+  } else {
+    FixtureScope<Namespace> testFixtures{};
+    FixtureResolver<Namespace> fixtures{testFixtures, suiteFixtures};
+    return invokeMemberTest<Namespace, Function>(context, fixtures, subject, caseValues, providerValues);
   }
 }
 

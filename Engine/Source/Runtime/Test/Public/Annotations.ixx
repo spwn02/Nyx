@@ -123,9 +123,62 @@ struct Fixture final {};
 
 inline constexpr Fixture fixture{};
 
+/// Binds an explicit subject object to a non-static member test.
+template <class Value>
+struct Subject final {
+  Value value_;
+
+  constexpr explicit Subject(Value value)
+      : value_(std::move(value)) {
+  }
+
+  [[nodiscard]] constexpr auto value() const noexcept -> const Value & {
+    return value_;
+  }
+};
+
+template <class Value>
+consteval auto subject(Value &&value) -> Subject<std::remove_cvref_t<Value>> {
+  return Subject<std::remove_cvref_t<Value>>{std::forward<Value>(value)};
+}
+
+template <class>
+inline constexpr bool is_subject_v{};
+
+template <class Value>
+inline constexpr bool is_subject_v<Subject<Value>>{true};
+
 struct Once final {};
 
 inline constexpr Once once{};
+
+template <usize Size>
+struct Resource final {
+  meta::StaticString<Size> name_;
+
+  constexpr explicit Resource(meta::StaticString<Size> name)
+      : name_(std::move(name)) {
+  }
+
+  [[nodiscard]] constexpr auto apply() const -> StringView {
+    return name_.apply();
+  }
+};
+
+template <usize Size>
+consteval auto resource(const char (&name)[Size]) -> Resource<Size> {
+  return Resource<Size>(valueItem(name));
+}
+
+template <class>
+inline constexpr bool is_resource_v{};
+
+template <usize Size>
+inline constexpr bool is_resource_v<Resource<Size>>{true};
+
+struct ParallelAttempts final {};
+
+inline constexpr ParallelAttempts parallelAttempts{};
 
 struct ContextParameter final {};
 

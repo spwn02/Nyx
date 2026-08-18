@@ -92,6 +92,15 @@ struct IsFixtureMarker final : std::bool_constant<std::same_as<Type, Fixture>> {
 template <class Type>
 struct IsOnceMarker final : std::bool_constant<std::same_as<Type, Once>> {};
 
+template <class Type>
+struct IsSubject final : std::bool_constant<is_subject_v<Type>> {};
+
+template <class Type>
+struct IsResource final : std::bool_constant<is_resource_v<Type>> {};
+
+template <class Type>
+struct IsParallelAttempts final : std::bool_constant<std::same_as<Type, ParallelAttempts>> {};
+
 template <template <class> class Predicate, usize Index, class... Properties>
 struct FirstPropertyIndex;
 
@@ -258,6 +267,9 @@ struct ReflectedFunctionMetadata final {
   static constexpr auto testMarkers = makeTypedAnnotations<Function, IsTestMarker>();
   static constexpr auto fixtureMarkers = makeTypedAnnotations<Function, IsFixtureMarker>();
   static constexpr auto onceMarkers = makeTypedAnnotations<Function, IsOnceMarker>();
+  static constexpr auto subjects = makeTypedAnnotations<Function, IsSubject>();
+  static constexpr auto resources = makeTypedAnnotations<Function, IsResource>();
+  static constexpr auto parallelAttempts = makeTypedAnnotations<Function, IsParallelAttempts>();
   static constexpr auto parameterProperties = makeParameterProperties<Function>();
 };
 

@@ -90,6 +90,75 @@ auto exercise(usize index) -> Task<void> {
 
 } // namespace ParallelSubjects
 
+namespace ResourceSubjects {
+
+// NOLINTNEXTLINE(cppcoreguidelines-avoid-non-const-global-variables)
+inline std::atomic<usize> active{};
+
+// NOLINTNEXTLINE(cppcoreguidelines-avoid-non-const-global-variables)
+inline std::atomic<usize> peak{};
+
+auto reset() -> void {
+  active.store(0);
+  peak.store(0);
+}
+
+auto observe() -> Task<void> {
+  const usize current = active.fetch_add(1, std::memory_order_relaxed) + 1;
+
+  usize previous = peak.load(std::memory_order_relaxed);
+  while (
+      previous < current and not peak.compare_exchange_weak(previous, current, std::memory_order_relaxed)) {
+  }
+
+  const auto release = std::scope_exit([] -> void { active.fetch_sub(1, std::memory_order_relaxed); });
+
+  co_await yield();
+  co_await yield();
+}
+
+[[ = test, = group("framework"), = tag("stress", "resource_lane"), = resource("exclusive") ]] auto alpha()
+    -> Task<void> {
+  co_await observe();
+}
+
+[[ = test, = group("framework"), = tag("stress", "resource_lane"), = resource("exclusive") ]] auto beta()
+    -> Task<void> {
+  co_await observe();
+}
+
+} // namespace ResourceSubjects
+
+namespace ParallelAttemptSubjects {
+
+// NOLINTNEXTLINE(cppcoreguidelines-avoid-non-const-global-variables)
+inline std::atomic<usize> active{};
+
+// NOLINTNEXTLINE(cppcoreguidelines-avoid-non-const-global-variables)
+inline std::atomic<usize> peak{};
+
+auto reset() -> void {
+  active.store(0);
+  peak.store(0);
+}
+
+[[ = test, = group("framework"), = tag("stress", "parallel_attempts"), = parallelAttempts ]] auto
+repeatsConcurrently() -> Task<void> {
+  const usize current = active.fetch_add(1, std::memory_order_relaxed) + 1;
+
+  usize previous = peak.load(std::memory_order_relaxed);
+  while (
+      previous < current and not peak.compare_exchange_weak(previous, current, std::memory_order_relaxed)) {
+  }
+
+  const auto release = std::scope_exit([] -> void { active.fetch_sub(1, std::memory_order_relaxed); });
+
+  co_await yield();
+  co_await yield();
+}
+
+} // namespace ParallelAttemptSubjects
+
 namespace CancellationSubjects {
 
 // NOLINTNEXTLINE(cppcoreguidelines-avoid-non-const-global-variables)
@@ -191,6 +260,40 @@ auto awaitBeyondTimeout() -> Task<void> {
   check(std::ranges::all_of(executions, [](const TestExecution &execution) -> bool {
     return execution.state.errors == 1 and execution.duration == std::chrono::milliseconds{1};
   }));
+}
+
+[[ = test, = group("framework"), = tag("stress", "resource_lane") ]] auto serializesSharedResourceLanes()
+    -> void {
+  ResourceSubjects::reset();
+
+  const Vec<TestExecution> executions = runAllDetailed<^^ResourceSubjects>(RunOptions{
+      .jobs = 2,
+      .timeMode = TimeMode::Virtual,
+      .isolation = CrashIsolation::InProcess,
+  });
+
+  require(executions.size() == 2);
+  require(std::ranges::all_of(
+      executions, [](const TestExecution &execution) -> bool { return execution.passed(); }));
+  check(ResourceSubjects::peak.load() == 1);
+}
+
+[[ = test, = group("framework"), = tag("stress", "parallel_attempts") ]] auto
+permitsExplicitParallelAttempts() -> void {
+  constexpr usize repeatCount{4};
+  ParallelAttemptSubjects::reset();
+
+  const Vec<TestExecution> executions = runAllDetailed<^^ParallelAttemptSubjects>(RunOptions{
+      .jobs = repeatCount,
+      .timeMode = TimeMode::Virtual,
+      .repeat = repeatCount,
+      .isolation = CrashIsolation::InProcess,
+  });
+
+  require(executions.size() == repeatCount);
+  require(std::ranges::all_of(
+      executions, [](const TestExecution &execution) -> bool { return execution.passed(); }));
+  check(ParallelAttemptSubjects::peak.load() > 1);
 }
 
 } // namespace Tests::stress
