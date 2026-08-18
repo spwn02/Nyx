@@ -216,6 +216,79 @@ defaultTraceCapturesEveryCaseAndRendersFailuresByDefault() -> void {
   check(output.str().contains("passing trace"));
 }
 
+[[ = test, = group("framework"), = tag("runner", "threads") ]] auto threadsPreserveDeterministicResults()
+    -> void {
+  constexpr u64 seed{0x71EAD};
+
+  const Vec<TestExecution> serial = runAllDetailed<^^OrderSubjects>(RunOptions{
+      .threads = 1,
+      .seed = seed,
+      .isolation = CrashIsolation::InProcess,
+  });
+
+  const Vec<TestExecution> parallel = runAllDetailed<^^OrderSubjects>(RunOptions{
+      .threads = 2,
+      .seed = seed,
+      .isolation = CrashIsolation::InProcess,
+  });
+
+  const Vec<TestExecution> automatic = runAllDetailed<^^OrderSubjects>(RunOptions{
+      .threads = 0,
+      .seed = seed,
+      .isolation = CrashIsolation::InProcess,
+  });
+
+  require(serial.size() == parallel.size());
+  require(serial.size() == automatic.size());
+
+  check(std::ranges::equal(
+      serial, parallel, [](const TestExecution &left, const TestExecution &right) constexpr noexcept -> bool {
+        return left.descriptor.identifier == right.descriptor.identifier and left.seed == right.seed and
+               left.attempt == right.attempt;
+      }));
+
+  check(std::ranges::equal(serial,
+      automatic,
+      [](const TestExecution &left, const TestExecution &right) constexpr noexcept -> bool {
+        return left.descriptor.identifier == right.descriptor.identifier and left.seed == right.seed and
+               left.attempt == right.attempt;
+      }));
+}
+
+[[ = test, = group("framework"), = tag("runner", "diagnostics", "parallel") ]] auto
+parallelDiagnosticsRenderInLogicalOrder() -> void {
+  const auto render = [](usize threads) -> String {
+    Vec<TestExecution> executions = runAllDetailed<^^TraceSubjects>(RunOptions{
+        .threads = threads,
+        .isolation = CrashIsolation::InProcess,
+    });
+
+    std::ranges::for_each(executions, [](TestExecution &execution) -> void {
+      using std::operator""ns;
+      execution.duration = 10ns;
+    });
+
+    Reporter reporter{
+        ReporterOptions{
+            .renderer =
+                RendererOptions{
+                    .color = ColorMode::Never,
+                    .terminal = false,
+                    .showSource = false,
+                },
+            .showPassedTests = true,
+            .showSummary = false,
+        },
+    };
+
+    std::ostringstream output{};
+    static_cast<void>(reporter.report(executions, output));
+    return output.str();
+  };
+
+  check(eq(render(1), render(2)));
+}
+
 } // namespace Tests::runner
 // NOLINTEND(cppcoreguidelines-avoid-magic-numbers, readability-magic-numbers)
 

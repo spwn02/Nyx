@@ -45,6 +45,15 @@ struct InvocationCapabilities final {
   [[nodiscard]] auto has(InvocationInput input) const noexcept -> bool {
     return ::Nyx::has(inputs, input);
   }
+
+  /// Returns whether repeated physical attempts may share a scheduler worker concurrently.
+  ///
+  /// Discovery normally rejects invalid annotation combinations at compile time. Keeping the complete
+  /// predicate here also prevents runtime scheduling from bypassing one capability rule.
+  [[nodiscard]] constexpr auto allowsParallelAttempts() const noexcept -> bool {
+    return attemptParallel and not sharesOnceFixture and not mutableSubject and not measurementDependency and
+           resourceLane.empty() and not requiresIsolation;
+  }
 };
 
 /// Carries the per-attempt execution mode into an immutable invocation factory.

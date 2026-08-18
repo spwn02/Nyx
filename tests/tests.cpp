@@ -13,7 +13,7 @@ auto main() -> int { // NOLINT
           // .group = "math",
       },
       RunOptions{
-          .jobs = 0,
+          .threads = 0,
           .timeMode = TimeMode::Real,
           .traceMode = TraceMode::Annotations,
           .order = ExecutionOrder::Shuffled,

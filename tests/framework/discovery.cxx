@@ -12,9 +12,9 @@ struct MemberSubject final {
   int value{};
 
   auto normalizes() -> void;
-  ;
+
   auto observesConstSubject() const -> void;
-  auto acceptsCase(int expected) -> void;
+  auto acceptsCase(int expected) const -> void;
 };
 
 struct FixtureMemberSubject final {
@@ -50,8 +50,13 @@ MemberSubject::observesConstSubject() const -> void {
   check(value == 2);
 }
 
-[[ = test, = group("framework"), = tag("discovery", "member_subject"), = subject(makeMemberSubject()), = Case{3} ]] auto
-MemberSubject::acceptsCase(int expected) -> void {
+[[
+  = test,
+  = group("framework"),
+  = tag("discovery", "member_subject"),
+  = subject(makeMemberSubject()),
+  = Case{3}
+]] auto MemberSubject::acceptsCase(int expected) const -> void {
   require(value == 2);
   check(value + expected == 5);
 }
@@ -367,7 +372,7 @@ namespace SelectionSubjects {
   constexpr usize expectedCases{4};
   ParallelTests::reset();
   const Vec<TestExecution> executions = runAllDetailed<^^ParallelTests>(RunOptions{
-      .jobs = workerCount,
+      .threads = workerCount,
       .isolation = CrashIsolation::InProcess,
   });
   const TestSummary summary = Reporter::summarize(executions);
@@ -387,7 +392,7 @@ preservesFixtureScopesAndVirtualTimeAcrossParallelCases() -> void {
 
   ParallelFixtureTests::reset();
   const Vec<TestExecution> executions = runAllDetailed<^^ParallelFixtureTests>(RunOptions{
-      .jobs = workerCount,
+      .threads = workerCount,
       .timeMode = TimeMode::Virtual,
       .isolation = CrashIsolation::InProcess,
   });
@@ -418,8 +423,8 @@ flattensIndependentSuitesAndUsesAutomaticWorkerCount() -> void {
     detail::RunSession session{};
     detail::suiteEntry<^^CrossSuiteLeft, detail::DiscoveryConfiguration<>>.plan(session);
     detail::suiteEntry<^^CrossSuiteRight, detail::DiscoveryConfiguration<>>.plan(session);
-    executions =
-        detail::executePlannedCases(session, RunOptions{.jobs = 0, .isolation = CrashIsolation::InProcess});
+    executions = detail::executePlannedCases(
+        session, RunOptions{.threads = 0, .isolation = CrashIsolation::InProcess});
 
     require(executions.size() == expectedCases);
     require(std::ranges::all_of(executions, passed));

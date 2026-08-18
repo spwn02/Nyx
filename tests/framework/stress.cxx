@@ -212,6 +212,41 @@ auto awaitBeyondTimeout() -> Task<void> {
 
 } // namespace CancellationSubjects
 
+namespace MeasurementSubjects {
+
+// NOLINTNEXTLINE(cppcoreguidelines-avoid-non-const-global-variables)
+inline std::atomic<usize> active{};
+
+// NOLINTNEXTLINE(cppcoreguidelines-avoid-non-const-global-variables)
+inline std::atomic<usize> peak{};
+
+auto reset() -> void {
+  active.store(0);
+  peak.store(0);
+}
+
+[[
+  = test,
+  = group("framework"),
+  = tag("stress", "measurement_serial"),
+  = repeat(4),
+  = parallelAttempts
+]] auto
+samplesRemainSerial() -> Task<void> {
+  const usize current = active.fetch_add(1, std::memory_order_relaxed) + 1;
+
+  usize previous = peak.load(std::memory_order_relaxed);
+  while (
+      previous < current and not peak.compare_exchange_weak(previous, current, std::memory_order_relaxed)) {
+  }
+
+  const auto release = std::scope_exit([] -> void { active.fetch_sub(1, std::memory_order_relaxed); });
+
+  co_await yield();
+}
+
+} // namespace MeasurementSubjects
+
 [[ = test, = group("framework"), = tag("stress") ]] auto preservesRepeatedAsyncLifecycle() -> void {
   constexpr usize subjectCount{ParallelSubjects::caseCount};
   constexpr usize repeatCount{3};
@@ -220,7 +255,7 @@ auto awaitBeyondTimeout() -> Task<void> {
   ParallelSubjects::reset();
 
   const Vec<TestExecution> executions = runAllDetailed<^^ParallelSubjects>(RunOptions{
-      .jobs = subjectCount,
+      .threads = subjectCount,
       .timeMode = TimeMode::Virtual,
       .repeat = repeatCount,
       .seed = 0x51A7,
@@ -245,7 +280,7 @@ auto awaitBeyondTimeout() -> Task<void> {
   CancellationSubjects::reset();
 
   const Vec<TestExecution> executions = runAllDetailed<^^CancellationSubjects>(RunOptions{
-      .jobs = subjectCount,
+      .threads = subjectCount,
       .timeMode = TimeMode::Virtual,
       .repeat = repeatCount,
       .seed = 0xCA11CE,
@@ -267,7 +302,7 @@ auto awaitBeyondTimeout() -> Task<void> {
   ResourceSubjects::reset();
 
   const Vec<TestExecution> executions = runAllDetailed<^^ResourceSubjects>(RunOptions{
-      .jobs = 2,
+      .threads = 2,
       .timeMode = TimeMode::Virtual,
       .isolation = CrashIsolation::InProcess,
   });
@@ -284,7 +319,7 @@ permitsExplicitParallelAttempts() -> void {
   ParallelAttemptSubjects::reset();
 
   const Vec<TestExecution> executions = runAllDetailed<^^ParallelAttemptSubjects>(RunOptions{
-      .jobs = repeatCount,
+      .threads = repeatCount,
       .timeMode = TimeMode::Virtual,
       .repeat = repeatCount,
       .isolation = CrashIsolation::InProcess,
@@ -294,6 +329,38 @@ permitsExplicitParallelAttempts() -> void {
   require(std::ranges::all_of(
       executions, [](const TestExecution &execution) -> bool { return execution.passed(); }));
   check(ParallelAttemptSubjects::peak.load() > 1);
+}
+
+[[ = test, = group("framework"), = tag("stress", "measurement_serial") ]] auto keepsMeasurementSamplesSerial()
+    -> void {
+  MeasurementSubjects::reset();
+
+  const Vec<TestExecution> executions = runAllDetailed<^^MeasurementSubjects>(RunOptions{
+      .threads = 4,
+      .timeMode = TimeMode::Virtual,
+      .isolation = CrashIsolation::InProcess,
+  });
+
+  require(executions.size() == 4);
+  require(std::ranges::all_of(executions,
+      [](const TestExecution &execution) constexpr noexcept -> bool { return execution.passed(); }));
+
+  check(MeasurementSubjects::peak.load() == 1);
+}
+
+[[ = test, = group("framework"), = tag("stress", "parallel_order") ]] auto preservesParallelReportOrder()
+    -> void {
+  const RunReport report = runAll<^^ParallelSubjects>(RunOptions{
+      .threads = ParallelSubjects::caseCount,
+      .timeMode = TimeMode::Virtual,
+      .isolation = CrashIsolation::InProcess,
+  });
+
+  require(report.cases.size() == ParallelSubjects::caseCount);
+  check(std::ranges::is_sorted(
+      report.cases, {}, [](const TestCaseResult &testCase) constexpr noexcept -> StringView {
+        return testCase.descriptor.identifier;
+      }));
 }
 
 } // namespace Tests::stress

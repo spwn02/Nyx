@@ -465,9 +465,21 @@ auto RunAccumulator::finish() && -> RunReport {
   std::ranges::for_each(cases_, [&report](UPtr<CaseAccumulator> &caseAccumulator) -> void {
     report.cases.push_back(std::move(*caseAccumulator).finish());
   });
-  std::ranges::stable_sort(report.cases, {}, [](const TestCaseResult &testCase) -> StringView {
-    return testCase.descriptor.identifier;
+
+  // Completion order is nondeterministic under parallel dispatch. Restore logical-case and physical-attempt
+  // order before reporters or serializers observe the report.
+  std::ranges::stable_sort(report.cases, [](const TestCaseResult &lhs, const TestCaseResult &rhs) -> bool {
+    return std::tie(lhs.descriptor.identifier, lhs.descriptor.testCase) <
+           std::tie(rhs.descriptor.identifier, rhs.descriptor.testCase);
   });
+
+  std::ranges::for_each(report.cases, [](TestCaseResult &testCase) -> void {
+    std::ranges::stable_sort(testCase.attempts, [](const TestAttempt &lhs, const TestAttempt &rhs) -> bool {
+      return std::tie(lhs.index.runIteration, lhs.index.sample, lhs.index.retry, lhs.warmup) <
+             std::tie(rhs.index.runIteration, rhs.index.sample, rhs.index.retry, rhs.warmup);
+    });
+  });
+
   summary_.caseCount = report.cases.size();
   summary_.passedCaseCount = static_cast<usize>(std::ranges::count_if(report.cases,
       [](const TestCaseResult &testCase) constexpr noexcept -> bool { return testCase.passed(); }));

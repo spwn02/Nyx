@@ -94,16 +94,33 @@ private:
   return mixer.next();
 }
 
-[[nodiscard]] constexpr auto deriveSeed(u64 runSeed, usize plannedCase, AttemptIndex attempt, bool warmup)
-    -> u64 {
+[[nodiscard]] constexpr auto stableHash(StringView value) noexcept -> u64 {
+  constexpr u64 offset{1469598103934665603ULL};
+  constexpr u64 prime{1099511628211ULL};
+  u64 hash = offset;
+
+  std::ranges::for_each(value, [&hash](const char character) constexpr noexcept -> void {
+    hash ^= static_cast<u64>(static_cast<unsigned char>(character));
+    hash *= prime;
+  });
+
+  return hash;
+}
+
+[[nodiscard]] constexpr auto deriveSeed(u64 runSeed,
+    StringView descriptorIdentity,
+    usize caseIdentity,
+    AttemptIndex attempt,
+    bool warmup) -> u64 {
   constexpr u64 streamSalt{0xD1B54A32D192ED03ULL};
   SplitMix64 mixer{runSeed ^ streamSalt};
-  const u64 caseSeed = mixer.next() ^ static_cast<u64>(plannedCase);
+  const u64 descriptorSeed = mixer.next() ^ stableHash(descriptorIdentity);
+  const u64 caseSeed = mixer.next() ^ static_cast<u64>(caseIdentity);
   const u64 runSeedPart = mixer.next() ^ static_cast<u64>(attempt.runIteration);
   const u64 sampleSeed = mixer.next() ^ static_cast<u64>(attempt.sample);
   const u64 retrySeed = mixer.next() ^ static_cast<u64>(attempt.retry);
   const u64 warmupSeed = mixer.next() ^ static_cast<u64>(warmup);
-  SplitMix64 result{caseSeed ^ runSeedPart ^ sampleSeed ^ retrySeed ^ warmupSeed};
+  SplitMix64 result{descriptorSeed ^ caseSeed ^ runSeedPart ^ sampleSeed ^ retrySeed ^ warmupSeed};
   return result.next();
 }
 
@@ -174,7 +191,11 @@ private:
 auto executeAttempt(const InvocationPlan &plan, AttemptIndex attempt, bool warmup) -> TestExecution {
   const RunOptions &options = plan.options.get();
   const InvocationSettings settings{
-      .seed = deriveSeed(plan.runSeed, plan.plannedCaseIndex, attempt, warmup),
+      .seed = deriveSeed(plan.runSeed,
+          plan.plannedCase.get().descriptor().identifier,
+          plan.plannedCase.get().descriptor().testCase,
+          attempt,
+          warmup),
       .iteration = plan.scheduledCase.runIteration,
       .sample = attempt.sample,
       .retry = attempt.retry,
@@ -277,7 +298,8 @@ private:
     bool timeout{};
   };
 
-  auto appendAttempt(AttemptIndex attempt, bool warmup) -> AttemptObservation {
+  auto appendAttempt(Vec<TestExecution> &destination, AttemptIndex attempt, bool warmup)
+      -> AttemptObservation {
     const InvocationPlan &plan = plan_.get();
     if (plan.journal)
       plan.journal->get().attemptStarted(attempt, warmup);
@@ -290,10 +312,12 @@ private:
         .passed = execution.passed(),
         .timeout = hasTimeout(execution),
     };
+
     if (plan.accumulator)
       plan.accumulator->get().append(execution);
     else
-      executions_.push_back(std::move(execution));
+      destination.push_back(std::move(execution));
+
     return observation;
   }
 
@@ -303,7 +327,7 @@ private:
     const usize runIteration = plan.scheduledCase.runIteration;
 
     std::ranges::for_each(std::views::indices(warmups), [this, runIteration](usize warmupIndex) -> void {
-      const AttemptObservation observation = appendAttempt(
+      const AttemptObservation observation = appendAttempt(executions_,
           AttemptIndex{
               .runIteration = runIteration,
               .sample = warmupIndex,
@@ -316,18 +340,48 @@ private:
   auto runSamples() -> void {
     const InvocationPlan &plan = plan_.get();
     const usize samples = std::max(plan.plannedCase.get().descriptor().policy.repeat, 1UZ);
-    std::ranges::for_each(std::views::indices(samples), [this](usize sample) -> void { runSample(sample); });
+
+    if (samples < 2 or not plan.capabilities.allowsParallelAttempts()) {
+      std::ranges::for_each(std::views::indices(samples),
+          [this](usize sample) -> void { failed_ = runSample(executions_, sample) or failed_; });
+      return;
+    }
+
+    Vec<Option<Vec<TestExecution>>> sampleExecutions(samples);
+    Vec<u8> sampleFailures(samples);
+
+    {
+      Vec<std::jthread> workers{};
+      workers.reserve(samples);
+
+      std::ranges::for_each(std::views::indices(samples),
+          [this, &workers, &sampleExecutions, &sampleFailures](usize sample) -> void {
+            workers.emplace_back([this, &sampleExecutions, &sampleFailures, sample] -> void {
+              Vec<TestExecution> executions{};
+              sampleFailures[sample] = runSample(executions, sample);
+              sampleExecutions[sample].emplace(std::move(executions));
+            });
+          });
+    }
+
+    std::ranges::for_each(sampleExecutions, [this](Option<Vec<TestExecution>> &sample) -> void {
+      if (sample)
+        executions_.append_range(std::move(*sample));
+    });
+
+    failed_ = std::ranges::any_of(sampleFailures, std::identity{});
   }
 
-  auto runSample(usize sample) -> void {
+  auto runSample(Vec<TestExecution> &destination, usize sample) -> bool {
     const InvocationPlan &plan = plan_.get();
     usize retryIndex{};
     bool retrying{true};
+    bool failed{};
 
     // The loop invariant is that every stored attempt for this sample has already completed. It exits after
     // the first non-timeout result or after the declared retry budget is exhausted.
     while (retrying) {
-      const AttemptObservation observation = appendAttempt(
+      const AttemptObservation observation = appendAttempt(destination,
           AttemptIndex{
               .runIteration = plan_.get().scheduledCase.runIteration,
               .sample = sample,
@@ -336,11 +390,14 @@ private:
           false);
       retrying = not observation.passed and observation.timeout and
                  retryIndex < plan.plannedCase.get().descriptor().policy.retry;
+
       if (retrying)
         ++retryIndex;
       else
-        failed_ = failed_ or not observation.passed;
+        failed_ = not observation.passed;
     }
+
+    return failed;
   }
 
   Ref<const InvocationPlan> plan_;
@@ -488,7 +545,11 @@ auto appendWorkerFailure(Vec<TestExecution> &executions,
       .runIteration = plan.scheduledCase.runIteration,
   });
   execution.warmup = journal.activeWarmup;
-  execution.seed = deriveSeed(plan.runSeed, plan.plannedCaseIndex, execution.attempt, execution.warmup);
+  execution.seed = deriveSeed(plan.runSeed,
+      plan.plannedCase.get().descriptor().identifier,
+      plan.plannedCase.get().descriptor().testCase,
+      execution.attempt,
+      execution.warmup);
   execution.traceMode = plan.options.get().traceMode;
 
   if (not execution.state.diagnostics.empty()) {
@@ -718,8 +779,8 @@ public:
       , scheduledCases_(scheduledCases)
       , executions_(scheduledCases.size())
       , workers_(workers)
-      , ready_(workers)
-      , firstBatch_(workers) {
+      , ready_(static_cast<isize>(workers))
+      , firstBatch_(static_cast<isize>(workers)) {
   }
 
   [[nodiscard]] auto run() -> Vec<TestExecution> {
@@ -809,7 +870,7 @@ auto executePlannedCases(RunSession &session,
     Vec<PlannedCase> plannedCases = session.takePlannedCases();
     const u64 runSeed = options.seed ? *options.seed : randomSeed();
     const Vec<ScheduledCase> scheduledCases = scheduleCases(plannedCases.size(), options, runSeed);
-    const usize workers = workerCount(options.jobs, scheduledCases.size());
+    const usize workers = workerCount(options.threads, scheduledCases.size());
     if (workers == 0)
       return {};
 
@@ -855,7 +916,7 @@ auto executeWorkerCase(RunSession &session, const WorkerRequest &request, RunOpt
   const usize plannedCase = static_cast<usize>(std::ranges::distance(plannedCases.begin(), requested));
 
   options.isolation = CrashIsolation::InProcess;
-  options.jobs = 1;
+  options.threads = 1;
   options.repeat = 1;
   options.seed = request.runSeed;
   options.timeMode = request.timeMode;

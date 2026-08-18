@@ -35,7 +35,9 @@ enum class ExecutionOrder : u8 {
 /// worker when it cannot be determined. Higher values cap dispatch to that many workers. Each case retains
 /// its own deterministic Task<T> run loop.
 struct RunOptions final {
-  usize jobs{1};
+  /// Number of independent scheduler workers. One is deterministic serial execution; zero selects hardware
+  /// concurrency.
+  usize threads{1};
 
   RetentionPolicy retention{RetentionPolicy::Failures};
   usize maxRetainedFailures{maxRetainedFailuresDefault};
