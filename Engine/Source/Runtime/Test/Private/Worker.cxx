@@ -695,9 +695,10 @@ auto consumeWorkerRequest() -> Option<WorkerRequest> {
   const Option<String> timeMode = requiredEnvironmentValue("NYX_TEST_WORKER_TIME");
   const Option<String> traceMode = requiredEnvironmentValue("NYX_TEST_WORKER_TRACE");
   const Option<String> captureMemory = requiredEnvironmentValue("NYX_TEST_WORKER_MEMORY");
+  const Option<String> captureProfile = requiredEnvironmentValue("NYX_TEST_WORKER_PROFILE");
 
   if (not resultPath or not faultPath or not identifier or not plannedCase or not runIteration or
-      not runSeed or not timeMode or not traceMode or not captureMemory)
+      not runSeed or not timeMode or not traceMode or not captureMemory or not captureProfile)
     return WorkerRequest{};
 
   const Option<u64> plannedCaseValue = parseU64(*plannedCase);
@@ -719,6 +720,7 @@ auto consumeWorkerRequest() -> Option<WorkerRequest> {
       .timeMode = static_cast<TimeMode>(*timeModeValue),
       .traceMode = static_cast<TraceMode>(*traceModeValue),
       .captureMemory = *captureMemory == "1",
+      .captureProfile = *captureProfile == "1",
   };
 }
 

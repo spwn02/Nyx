@@ -49,6 +49,7 @@ struct InvocationPlan final {
   u64 runSeed{};
   CrashIsolation isolation{};
   bool captureMemory{};
+  bool captureProfile{true};
   Option<Ref<ExecutionLane>> lane;
   Option<Ref<WorkerJournal>> journal;
   Option<Ref<RunAccumulator>> accumulator;
@@ -188,7 +189,7 @@ private:
   return execution;
 }
 
-auto executeAttempt(const InvocationPlan &plan, AttemptIndex attempt, bool warmup) -> TestExecution {
+auto executeAttemptDetailed(const InvocationPlan &plan, AttemptIndex attempt, bool warmup) -> TestExecution {
   const RunOptions &options = plan.options.get();
   const InvocationSettings settings{
       .seed = deriveSeed(plan.runSeed,
@@ -202,6 +203,7 @@ auto executeAttempt(const InvocationPlan &plan, AttemptIndex attempt, bool warmu
       .warmup = warmup,
       .forceTrace = forceTrace(options.traceMode),
       .captureMemory = plan.captureMemory,
+      .captureProfile = plan.captureProfile,
   };
 
   const InvocationBinding binding{settings};
@@ -228,6 +230,16 @@ auto executeAttempt(const InvocationPlan &plan, AttemptIndex attempt, bool warmu
   execution.warmup = warmup;
   execution.traceMode = options.traceMode;
   return execution;
+}
+
+[[nodiscard]] auto executeAttemptOutcome(const InvocationPlan &plan,
+    AttemptIndex attempt,
+    bool warmup,
+    bool retainExecution) -> AttemptOutcome {
+  // The normal run path crosses this boundary as a compact outcome. A complete TestExecution is only
+  // materialized inside the invocation boundary long enough to preserve diagnostics when retention or failure
+  // policy requires it; successful attempts do not escape into a history vector.
+  return makeAttemptOutcome(executeAttemptDetailed(plan, attempt, warmup), retainExecution);
 }
 
 [[nodiscard]] constexpr auto hasTimeout(const TestExecution &execution) noexcept -> bool {
@@ -304,7 +316,18 @@ private:
     if (plan.journal)
       plan.journal->get().attemptStarted(attempt, warmup);
 
-    TestExecution execution = executeAttempt(plan_, attempt, warmup);
+    if (plan.accumulator) {
+      AttemptOutcome outcome = executeAttemptOutcome(
+          plan_, attempt, warmup, plan.options.get().retention == RetentionPolicy::All);
+      const AttemptObservation observation{
+          .passed = outcome.passed,
+          .timeout = outcome.timeout,
+      };
+      plan.accumulator->get().append(std::move(outcome));
+      return observation;
+    }
+
+    TestExecution execution = executeAttemptDetailed(plan_, attempt, warmup);
     if (plan.journal)
       plan.journal->get().attemptCompleted(execution);
 
@@ -312,11 +335,7 @@ private:
         .passed = execution.passed(),
         .timeout = hasTimeout(execution),
     };
-
-    if (plan.accumulator)
-      plan.accumulator->get().append(execution);
-    else
-      destination.push_back(std::move(execution));
+    destination.push_back(std::move(execution));
 
     return observation;
   }
@@ -456,7 +475,8 @@ struct DispatchContext final { // NOLINT(cppcoreguidelines-pro-type-member-init)
       .options = context.options,
       .runSeed = context.runSeed,
       .isolation = isolation,
-      .captureMemory = context.captureMemory or isolation == CrashIsolation::ProcessPerCase,
+      .captureMemory = context.captureMemory,
+      .captureProfile = context.options.get().captureProfile,
       .lane = laneFor(context.executionLanes, scheduledCase.plannedCase),
       .accumulator = context.accumulator,
       .failureObserved = std::ref(context.failureObserved),
@@ -503,6 +523,7 @@ struct DispatchContext final { // NOLINT(cppcoreguidelines-pro-type-member-init)
       {"NYX_TEST_WORKER_TIME", std::to_string(static_cast<u8>(request.timeMode))},
       {"NYX_TEST_WORKER_TRACE", std::to_string(static_cast<u8>(request.traceMode))},
       {"NYX_TEST_WORKER_MEMORY", request.captureMemory ? "1" : "0"},
+      {"NYX_TEST_WORKER_PROFILE", request.captureProfile ? "1" : "0"},
   };
 }
 
@@ -610,6 +631,7 @@ auto appendWorkerProtocolFailure(Vec<TestExecution> &executions,
       .timeMode = plan.options.get().timeMode,
       .traceMode = plan.options.get().traceMode,
       .captureMemory = plan.captureMemory,
+      .captureProfile = plan.captureProfile,
   };
 }
 
@@ -880,7 +902,7 @@ auto executePlannedCases(RunSession &session,
         .executionLanes = executionLanes,
         .options = options,
         .runSeed = runSeed,
-        .captureMemory = workers == 1,
+        .captureMemory = options.captureMemory,
         .accumulator = accumulator,
     };
 
@@ -936,6 +958,7 @@ auto executeWorkerCase(RunSession &session, const WorkerRequest &request, RunOpt
       .runSeed = request.runSeed,
       .isolation = CrashIsolation::InProcess,
       .captureMemory = request.captureMemory,
+      .captureProfile = request.captureProfile,
       .journal = journal,
   };
 

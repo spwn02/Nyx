@@ -90,7 +90,10 @@ auto writeFile(const Path &path) -> void {
   Vec<TestDescriptor> descriptors = describe<^^ProviderSubjects>();
   Vec<TestExecution> executions =
       runAllDetailed<^^ProviderSubjects>(RunOptions{.isolation = CrashIsolation::InProcess});
-  const TestSummary summary = Reporter::summarize(executions);
+  RunAccumulator accumulator{RetentionPolicy::All};
+  for (const TestExecution &execution : executions)
+    accumulator.append(execution);
+  const TestSummary summary = Reporter::summarize(std::move(accumulator).finish());
 
   const Option<Ref<const TestExecution>> noFiles =
       executionNamed(executions, "receivesNoFiles(path=<no values>)");

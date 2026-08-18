@@ -51,7 +51,10 @@ namespace NoRetrySubjects {
       .seed = 42,
       .isolation = CrashIsolation::InProcess,
   });
-  const RunReport report = Reporter::makeReport(executions, RetentionPolicy::All);
+  RunAccumulator accumulator{RetentionPolicy::All};
+  for (const TestExecution &execution : executions)
+    accumulator.append(execution);
+  const RunReport report = std::move(accumulator).finish();
   const TestSummary summary = Reporter::summarize(report);
   const auto samples = std::ranges::find_if(report.cases,
       [](const TestCaseResult &result) -> bool { return result.descriptor.name == "collectsSamples"; });
@@ -64,6 +67,9 @@ namespace NoRetrySubjects {
   require(samples->measurement->sampleCount == 3_exp);
   require(samples->attempts.size() == 4_exp);
   require(retries->attempts.size() == 2_exp);
+  require(retries->measurement);
+  check(retries->measurement->sampleCount == 1_exp);
+  check(retries->measurement->approximate == false);
   require(retries->recoveredTimeouts == 1_exp);
   require(retries->passed());
   check(summary.passed());
@@ -99,8 +105,9 @@ namespace NoRetrySubjects {
 
 [[ = test, = group("framework"), = tag("measurements", "profiling") ]] auto capturesProfileScopes() -> void {
   const TestExecution execution = run("profile scopes", [] -> void {
-    auto outer = profiling::profileScope("outer");
-    auto inner = profiling::profileScope("inner");
+    TestEnvironment &environment = currentEnvironment()->get();
+    auto outer = profiling::profileScope(environment.profileSink(), "outer");
+    auto inner = profiling::profileScope(environment.profileSink(), "inner");
     check(true);
   });
 
@@ -108,6 +115,21 @@ namespace NoRetrySubjects {
   require(execution.profile.events.size() >= 3_exp);
   require(execution.profile.aggregates.contains("outer"));
   check(execution.profile.aggregates.contains("inner"));
+}
+
+[[ = test, = group("framework"), = tag("measurements", "profiling", "async") ]] auto
+preservesProfileBindingAcrossAsyncResumption() -> void {
+  const TestExecution execution = run("async profile scopes", [] -> Task<void> {
+    TestEnvironment &environment = currentEnvironment()->get();
+    auto outer = profiling::profileScope(environment.profileSink(), "async outer");
+    co_await yield();
+    auto inner = profiling::profileScope(environment.profileSink(), "async inner");
+    co_await yield();
+  });
+
+  require(execution.passed());
+  require(execution.profile.aggregates.contains("async outer"));
+  check(execution.profile.aggregates.contains("async inner"));
 }
 
 [[ = test, = group("framework"), = tag("measurements", "callable") ]] auto measuresCallables() -> Task<void> {
@@ -119,6 +141,17 @@ namespace NoRetrySubjects {
       co_await measure("async work", 2, [] -> Task<void> { co_await yield(); });
   check(asynchronous.sampleCount == 2_exp);
   check(asynchronous.minimum <= asynchronous.maximum);
+}
+
+[[ = test, = group("framework"), = tag("measurements", "median") ]] auto boundsLargeMedianStorage() -> void {
+  Vec<std::chrono::steady_clock::duration> samples{};
+  samples.reserve(1025);
+  for (usize index{}; index != 1025; ++index)
+    samples.push_back(std::chrono::steady_clock::duration{static_cast<isize>(index)});
+
+  const MeasurementSummary summary = detail::summarizeMeasurements(std::move(samples));
+  require(summary.sampleCount == 1025_exp);
+  check(summary.approximate);
 }
 
 [[ = test, = group("framework"), = tag("measurements", "retry") ]] auto doesNotRetryAssertions() -> void {

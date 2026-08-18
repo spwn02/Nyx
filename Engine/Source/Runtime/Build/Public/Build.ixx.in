@@ -19,8 +19,15 @@ enum class Profile : unsigned char {
   Release,
 };
 
+enum class CpuArchitecture : unsigned char {
+  X86_64,
+  AArch64,
+  Unknown,
+};
+
 inline constexpr Platform platform = Platform::@NYX_BUILD_PLATFORM@;
 inline constexpr Profile profile = Profile::@NYX_BUILD_PROFILE_NAME@;
+inline constexpr CpuArchitecture architecture = CpuArchitecture::@NYX_BUILD_ARCHITECTURE@;
 
 inline constexpr bool development = @NYX_BUILD_DEVELOPMENT@;
 inline constexpr bool optimized = @NYX_BUILD_OPTIMIZED@;

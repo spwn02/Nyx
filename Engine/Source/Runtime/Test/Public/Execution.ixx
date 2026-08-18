@@ -116,7 +116,7 @@ struct AttemptOutcome final {
   Option<TestExecution> failure;
 };
 
-[[nodiscard]] auto makeAttemptOutcome(const TestExecution &execution, bool retainExecution = false)
+[[nodiscard]] auto makeAttemptOutcome(TestExecution execution, bool retainExecution = false)
     -> AttemptOutcome;
 
 namespace detail {
@@ -130,6 +130,7 @@ struct NormalizationContext final { // NOLINT(cppcoreguidelines-pro-type-member-
   std::source_location location;
   Ref<RunLoop> runLoop;
   Ref<const Deadline> deadline;
+  bool captureProfile{true};
 };
 
 /// Groups the policy inputs that are produced while an attempt is being completed.
@@ -212,12 +213,13 @@ auto normalizeReturn(Return &&returned, NormalizationContext &context) -> void {
   }
 }
 
-/// Re-established all task-local bindings before a coroutine frame resumes.
-auto resumeWithBindings(TestEnvironment &environment, const Context &context, std::coroutine_handle<> handle)
+/// Re-established all execution bindings before a coroutine frame resumes.
+auto resumeWithBindings(TestEnvironment &environment,
+    const Context &context,
+    std::coroutine_handle<> handle)
     -> void {
   EnvironmentBinding environmentBinding{environment};
   ContextBinding contextBinding{context};
-  profiling::SinkBinding profileBinding{environment.profileSink()};
   handle.resume();
 }
 
@@ -265,7 +267,8 @@ template <class Value>
 auto normalizeTask(Task<Value> &&task, NormalizationContext &context) -> void {
   const TaskDriveResult result = detail::drive(task,
       context.runLoop,
-      ResumeCallback{.environment = context.environment, .context = context.context},
+      ResumeCallback{.environment = context.environment,
+          .context = context.context},
       TimeoutStopCallback{context},
       TimeoutWakeCallback{context});
 
@@ -328,6 +331,7 @@ struct ActiveExecution final {
   RunLoop runLoop;
   Deadline deadline;
   bool canceled{};
+  bool captureProfile{true};
 
   ActiveExecution(TestDescriptor descriptor, const InvocationSettings &invocation, TimeMode timeMode)
       : execution{
@@ -342,7 +346,10 @@ struct ActiveExecution final {
                 },
             .warmup = invocation.warmup,
         },
-  wallStarted(std::chrono::steady_clock::now()), memoryBefore(invocation.captureMemory ? memory::processMemory() : None), runLoop{timeMode, environment.stopToken()}{
+  wallStarted(std::chrono::steady_clock::now()),
+  memoryBefore(invocation.captureMemory ? memory::processMemory() : None),
+  runLoop{timeMode, environment.stopToken()},
+  captureProfile(invocation.captureProfile) {
   }
 
   auto prepare(const InvocationSettings &invocation) -> void {
@@ -385,6 +392,7 @@ auto invokeBody(ActiveExecution &active, const Context &context, Function &&func
       .location = active.execution.descriptor.location,
       .runLoop = active.runLoop,
       .deadline = active.deadline,
+      .captureProfile = active.captureProfile,
   };
 
   if constexpr (std::same_as<Return, void>) {
@@ -431,7 +439,8 @@ auto invokeBodySafely(ActiveExecution &active, const Context &context, Function 
     -> TestExecution {
   active.execution.duration = active.runLoop.elapsed();
   active.execution.wallDuration = std::chrono::steady_clock::now() - active.wallStarted;
-  active.execution.profile = active.environment.profileSnapshot();
+  if (invocation.captureProfile)
+    active.execution.profile = active.environment.profileSnapshot();
   detail::applyPolicy(detail::PolicyApplication{
       .policy = active.execution.descriptor.policy,
       .environment = active.environment,
@@ -472,9 +481,10 @@ auto run(TestDescriptor descriptor, Function &&function, TimeMode timeMode = Tim
     {
       EnvironmentBinding environmentBinding{active.environment};
       ContextBinding contextBinding{context};
-      profiling::SinkBinding profileBinding{active.environment.profileSink()};
       auto testProfile =
-          profiling::profileScope(active.execution.descriptor.name, active.execution.descriptor.location);
+          profiling::profileScope(active.environment.profileSink(),
+              active.execution.descriptor.name,
+              active.execution.descriptor.location);
       detail::invokeBodySafely(active, context, std::forward<Function>(function));
       active.canceled = active.environment.stopRequested();
     }

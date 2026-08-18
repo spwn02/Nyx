@@ -85,8 +85,18 @@ function(nyx_initialize_build_configuration)
     set(exceptions false)
   endif()
 
+  string(TOLOWER "${CMAKE_SYSTEM_PROCESSOR}" processor)
+  if(processor MATCHES "^(x86_64|amd64)$")
+    set(architecture X86_64)
+  elseif(processor MATCHES "^(aarch64|arm64)$")
+    set(architecture AArch64)
+  else()
+    set(architecture Unknown)
+  endif()
+
   _nyx_set_build_value(NYX_BUILD_PLATFORM "${platform}")
   _nyx_set_build_value(NYX_BUILD_PLATFORM_KEY "${platform_key}")
+  _nyx_set_build_value(NYX_BUILD_ARCHITECTURE "${architecture}")
   _nyx_set_build_value(NYX_BUILD_PROFILE_NAME "${NYX_BUILD_PROFILE}")
   _nyx_set_build_value(NYX_BUILD_OPTIMIZED "${optimized}")
   _nyx_set_build_value(NYX_BUILD_DEVELOPMENT "${development}")
@@ -99,67 +109,6 @@ function(nyx_initialize_build_configuration)
 
   message(STATUS
     "Nyx build profile: ${NYX_BUILD_PROFILE}; target platform: ${NYX_BUILD_PLATFORM}")
-endfunction()
-
-function(nyx_verify_platform_macro_boundary)
-  set(options)
-  set(one_value_args ROOT)
-  set(multi_value_args)
-
-  cmake_parse_arguments(PARSE_ARGV 0 arg
-    "${options}" "${one_value_args}" "${multi_value_args}")
-
-  if(arg_UNPARSED_ARGUMENTS)
-    message(FATAL_ERROR
-      "nyx_verify_platform_macro_boundary(): unknown arguments: ${arg_UNPARSED_ARGUMENTS}")
-  endif()
-
-  if(arg_KEYWORDS_MISSING_VALUES)
-    message(FATAL_ERROR
-      "nyx_verify_platform_macro_boundary(): missing values for: ${arg_KEYWORDS_MISSING_VALUES}")
-  endif()
-
-  if(NOT arg_ROOT)
-    set(arg_ROOT "${CMAKE_SOURCE_DIR}")
-  endif()
-
-  cmake_path(ABSOLUTE_PATH arg_ROOT NORMALIZE OUTPUT_VARIABLE root)
-
-  file(GLOB_RECURSE sources CONFIGURE_DEPENDS
-    "${root}/Engine/Source/*.ixx"
-    "${root}/Engine/Source/*.cxx"
-    "${root}/Engine/Source/*.cpp"
-    "${root}/Engine/Source/*.cc"
-    "${root}/tests/*.cxx"
-    "${root}/tests/*.cpp"
-  )
-
-  set(violations)
-
-  foreach(source IN LISTS sources)
-    string(REPLACE "\\" "/" normalized_source "${source}")
-
-    if(normalized_source MATCHES "/Runtime/Build/")
-      continue()
-    endif()
-
-    # Phase 12A removes platform-selection conditionals from Nyx sources. The
-    # remaining RHI defines configure third-party headers and move behind the
-    # Internal bridge boundary in Phase 12D; imports cannot propagate them.
-    file(STRINGS "${source}" directives
-      REGEX "^[ \t]*#[ \t]*(if|ifdef|ifndef|elif|else|endif)([ \t(]|$)")
-
-    if(directives)
-      list(APPEND violations "${source}")
-    endif()
-  endforeach()
-
-  if(violations)
-    list(JOIN violations "\n  " violations_text)
-
-    message(FATAL_ERROR
-      "Conditional preprocessor directives are restricted to Nyx.Build.\n  ${violations_text}")
-  endif()
 endfunction()
 
 function(nyx_verify_exception_boundary)

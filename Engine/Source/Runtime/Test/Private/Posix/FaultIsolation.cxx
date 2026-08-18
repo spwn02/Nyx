@@ -1,9 +1,12 @@
 module;
 
 #include <cerrno>
+#include <csignal>
+#include <dlfcn.h>
 #include <fcntl.h>
 #include <sys/types.h>
 #include <sys/wait.h>
+#include <ucontext.h>
 #include <unistd.h>
 
 module Nyx.Test;
@@ -40,13 +43,21 @@ volatile std::sig_atomic_t faultDescriptor{-1};
   };
 }
 
-auto faultHandler(int signalNumber, siginfo_t *information, void *) noexcept -> void {
+auto faultHandler(int signalNumber, siginfo_t *information, void *context) noexcept -> void {
+  u64 instruction{};
+#if defined(__x86_64__)
+  if (context != nullptr)
+    instruction = static_cast<u64>(reinterpret_cast<ucontext_t *>(context)->uc_mcontext.gregs[REG_RIP]);
+#elif defined(__aarch64__)
+  if (context != nullptr)
+    instruction = static_cast<u64>(reinterpret_cast<ucontext_t *>(context)->uc_mcontext.pc);
+#endif
   const FaultRecord record = makeFaultRecord(NativeFault{
       .kind = NativeFaultKind::Signal,
       .signal = nativeSignal(signalNumber),
       .code = 128 + signalNumber,
       .address = information == nullptr ? 0 : reinterpret_cast<u64>(information->si_addr),
-      .instruction = 0,
+      .instruction = instruction,
       .symbolsAvailable = false,
   });
 
@@ -188,17 +199,24 @@ auto installWorkerFaultHandler(const Path &path) noexcept -> bool {
     if (descriptor < 0)
       return false;
 
-    if (faultDescriptor >= 0)
-      static_cast<void>(::close(faultDescriptor));
+    const int previous = faultDescriptor;
+    faultDescriptor = descriptor;
+    if (previous >= 0)
+      static_cast<void>(::close(previous));
     struct sigaction action{};
     action.sa_sigaction = &faultHandler;
     action.sa_flags = SA_SIGINFO;
     sigemptyset(std::addressof(action.sa_mask));
 
     constexpr Array<int, 6> signals{SIGSEGV, SIGILL, SIGABRT, SIGFPE, SIGBUS, SIGTRAP};
-    return std::ranges::all_of(signals, [&action](int signalNumber) -> bool {
+    const bool installed = std::ranges::all_of(signals, [&action](int signalNumber) -> bool {
       return ::sigaction(signalNumber, std::addressof(action), nullptr) == 0;
     });
+    if (not installed) {
+      static_cast<void>(::close(faultDescriptor));
+      faultDescriptor = -1;
+    }
+    return installed;
   } catch (...) {
     return false;
   }
@@ -227,7 +245,13 @@ auto readFaultRecord(const Path &path) noexcept -> Option<NativeFault> {
     }
   }
 
-  return decodeFaultRecord(record);
+  Option<NativeFault> fault = decodeFaultRecord(record);
+  if (fault and fault->instruction != 0) {
+    Dl_info symbol{};
+    fault->symbolsAvailable =
+        ::dladdr(reinterpret_cast<void *>(fault->instruction), std::addressof(symbol)) != 0;
+  }
+  return fault;
 }
 
 } // namespace Nyx::Test::detail::isolation

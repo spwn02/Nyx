@@ -21,6 +21,7 @@ struct WorkerRequest final {
   TimeMode timeMode{TimeMode::Real};
   TraceMode traceMode{TraceMode::Annotations};
   bool captureMemory{};
+  bool captureProfile{true};
 };
 
 /// Partial journal state read after a worker exits normally or by native fault.

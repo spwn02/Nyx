@@ -219,7 +219,10 @@ auto delayedValue() -> Task<i32> {
       },
   };
   std::ostringstream output{};
-  const TestSummary summary = reporter.report(executions, output);
+  RunAccumulator accumulator{RetentionPolicy::All};
+  for (const TestExecution &execution : executions)
+    accumulator.append(execution);
+  const TestSummary summary = reporter.report(std::move(accumulator).finish(), output);
   const String text = output.str();
 
   require(summary.testCount == expectedTests);

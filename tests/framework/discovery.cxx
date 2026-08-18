@@ -342,7 +342,10 @@ namespace SelectionSubjects {
   constexpr usize expectedAssertions{4};
   const Vec<TestExecution> executions =
       runAllDetailed<^^PassingTests>(RunOptions{.isolation = CrashIsolation::InProcess});
-  const TestSummary summary = Reporter::summarize(executions);
+  RunAccumulator accumulator{RetentionPolicy::All};
+  for (const TestExecution &execution : executions)
+    accumulator.append(execution);
+  const TestSummary summary = Reporter::summarize(std::move(accumulator).finish());
 
   check(executions.size() == expectedCases);
   check(summary.testCount == expectedCases);
@@ -357,7 +360,10 @@ namespace SelectionSubjects {
   constexpr usize expectedFailed{1};
   const Vec<TestExecution> executions =
       runAllDetailed<^^FailingTests>(RunOptions{.isolation = CrashIsolation::InProcess});
-  const TestSummary summary = Reporter::summarize(executions);
+  RunAccumulator accumulator{RetentionPolicy::All};
+  for (const TestExecution &execution : executions)
+    accumulator.append(execution);
+  const TestSummary summary = Reporter::summarize(std::move(accumulator).finish());
 
   require(executions.size() == expectedCases);
   require(summary.passedCount == expectedPassed);
@@ -375,7 +381,10 @@ namespace SelectionSubjects {
       .threads = workerCount,
       .isolation = CrashIsolation::InProcess,
   });
-  const TestSummary summary = Reporter::summarize(executions);
+  RunAccumulator accumulator{RetentionPolicy::All};
+  for (const TestExecution &execution : executions)
+    accumulator.append(execution);
+  const TestSummary summary = Reporter::summarize(std::move(accumulator).finish());
 
   require(executions.size() == expectedCases);
   require(summary.passedCount == expectedCases);
@@ -457,11 +466,15 @@ flattensIndependentSuitesAndUsesAutomaticWorkerCount() -> void {
   const Vec<TestDescriptor> withoutAdds = list<^^SelectionSubjects>(excluded);
   const Vec<TestExecution> executions =
       runAllDetailed<^^SelectionSubjects>(fastMath, RunOptions{.isolation = CrashIsolation::InProcess});
+  const RunReport selectedReport = detail::runScopeReport<^^SelectionSubjects, detail::DiscoveryConfiguration<>>(fastMath,
+      RunOptions{.isolation = CrashIsolation::InProcess});
 
   require(all.size() == expectedDescriptors);
   require(selected.size() == 1_exp);
   require(withoutAdds.size() == 1_exp);
   require(executions.size() == 1_exp);
+  require(selectedReport.selection.tagsAll == fastMath.tagsAll);
+  check(selectedReport.selection.tagsAny.empty());
   check(selected.front().identifier == "Tests::discovery::SelectionSubjects::adds"_exp);
   check(selected.front().metadata.group == String{"math"});
   check(selected.front().metadata.tags == Vec<String>{"unit", "fast"});

@@ -1,6 +1,6 @@
 JOBS ?= 16
 
-.PHONY: config config-tests build build-nproc run tests pack ci clean
+.PHONY: config config-tests build build-nproc build-tests run tests ctest pack ci clean
 
 config:
 	cmake --preset debug
@@ -8,19 +8,24 @@ config:
 config-tests:
 	cmake --preset development-tests
 
-build: config-tests
-	cmake --build --preset development-tests --parallel $(JOBS) --target unit_tests
+build: config
+	cmake --build --preset debug --parallel $(JOBS) --target NyxEngine
 
-build-nproc: config-tests
-	cmake --build --preset development-tests --parallel $$(nproc) --target unit_tests
+build-nproc: config
+	cmake --build --preset debug --parallel $$(nproc) --target NyxEngine
+
+build-tests: config-tests
+	cmake --build --preset development-tests --parallel $(JOBS) --target unit_tests
 
 run: build
 	./build/debug/Engine/Source/Runtime/Launch/NyxEngine
 
 # Tests
-tests: config-tests
-	cmake --build --preset development-tests --parallel $(JOBS) --target unit_tests
+tests: build-tests
 	./build/development-tests/tests/unit_tests
+
+ctest: build-tests
+	ctest --test-dir build/development-tests --output-on-failure
 
 # Packing
 pack: build

@@ -228,29 +228,43 @@ auto runAllDetailed(TestSelection selection, RunOptions selectedOptions) -> Vec<
 }
 
 auto runAll(RunOptions options) -> RunReport {
-  detail::RunSession session{};
-  const Vec<SuiteEntry> suites = registeredSuites();
-  std::ranges::for_each(suites, [&session](const SuiteEntry &suite) -> void { suite.plan(session); });
-  RunAccumulator accumulator{options.retention, options.maxRetainedFailures, {}};
-  static_cast<void>(detail::executePlannedCases(session, options, accumulator));
-  return std::move(accumulator).finish();
+  return runAll({}, options);
 }
 
 auto runAll(TestSelection selection, RunOptions options) -> RunReport {
-  detail::RunSession session{};
-  const Vec<SuiteEntry> suites = registeredSuites();
-  std::ranges::for_each(suites, [&session](const SuiteEntry &suite) -> void { suite.plan(session); });
-  RunAccumulator accumulator{options.retention,
-      options.maxRetainedFailures,
-      SelectionMetadata{
-          .include = std::move(selection.include),
-          .exclude = std::move(selection.exclude),
-          .tagsAll = std::move(selection.tagsAll),
-          .tagsAny = std::move(selection.tagsAny),
-          .group = std::move(selection.group),
-      }};
-  static_cast<void>(detail::executePlannedCases(session, options, accumulator));
-  return std::move(accumulator).finish();
+  if constexpr (build::tests) {
+    const Option<detail::WorkerRequest> worker = detail::consumeWorkerRequest();
+    if (worker)
+      static_cast<void>(detail::isolation::installWorkerFaultHandler(worker->faultPath));
+
+    detail::RunSession session{};
+    Vec<SuiteEntry> suites = registeredSuites();
+    if (worker) {
+      suites.append_range(registeredWorkerSuites() | std::views::as_rvalue);
+      std::ranges::stable_sort(suites, suiteComesBefore);
+    }
+    std::ranges::for_each(suites, [&session](const SuiteEntry &suite) -> void { suite.plan(session); });
+
+    if (worker) {
+      detail::executeWorkerCase(session, *worker, options);
+      std::exit(build::exitSuccess); // NOLINT(concurrency-mt-unsafe)
+    }
+
+    detail::filterPlannedCases(session, selection);
+    RunAccumulator accumulator{options.retention,
+        options.maxRetainedFailures,
+        SelectionMetadata{
+            .include = std::move(selection.include),
+            .exclude = std::move(selection.exclude),
+            .tagsAll = std::move(selection.tagsAll),
+            .tagsAny = std::move(selection.tagsAny),
+            .group = std::move(selection.group),
+        }};
+    static_cast<void>(detail::executePlannedCases(session, options, accumulator));
+    return std::move(accumulator).finish();
+  } else {
+    return {};
+  }
 }
 
 } // namespace Nyx::Test

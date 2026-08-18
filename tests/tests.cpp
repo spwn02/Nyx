@@ -8,12 +8,13 @@ using namespace Nyx::Test;
 inline constexpr bool renderJson{false};
 
 auto main() -> int { // NOLINT
-  const Vec<TestExecution> executions = runAllDetailed(
+  const RunReport report = runAll(
       TestSelection{
           // .group = "math",
       },
       RunOptions{
           .threads = 0,
+          .retention = RetentionPolicy::Failures,
           .timeMode = TimeMode::Real,
           .traceMode = TraceMode::Annotations,
           .order = ExecutionOrder::Shuffled,
@@ -32,7 +33,7 @@ auto main() -> int { // NOLINT
           .showSummary = true,
       },
   };
-  TestSummary summary = reporter.report(executions, std::cout);
+  TestSummary summary = reporter.report(report, std::cout);
 
   if constexpr (renderJson) {
     JsonReporter jsonReporter(JsonReporterOptions{
@@ -45,7 +46,7 @@ auto main() -> int { // NOLINT
       jsonReporter.reportList(list(), outputList);
     std::ofstream outputSummary{root / "summary.json"};
     if (outputSummary)
-      jsonReporter.report(executions, outputSummary);
+      jsonReporter.report(report, outputSummary);
   }
 
   return summary.passed() ? build::exitSuccess : build::exitFailure;

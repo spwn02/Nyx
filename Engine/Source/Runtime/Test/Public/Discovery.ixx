@@ -789,20 +789,24 @@ template <std::meta::info Scope, class Configuration>
 
 template <std::meta::info Scope, class Configuration>
 [[nodiscard]] auto runScopeReport(const TestSelection &selection, RunOptions options) -> RunReport {
-  detail::RunSession session{};
-  appendScopePlan<Scope, Configuration>(session);
-  filterPlannedCases(session, selection);
-  RunAccumulator accumulator{options.retention,
-      options.maxRetainedFailures,
-      SelectionMetadata{
-          .include = selection.include,
-          .exclude = selection.exclude,
-          .tagsAll = selection.tagsAll,
-          .tagsAny = selection.tagsAll,
-          .group = selection.group,
-      }};
-  static_cast<void>(detail::executePlannedCases(session, options, accumulator));
-  return std::move(accumulator).finish();
+  if constexpr (build::tests) {
+    detail::RunSession session{};
+    appendScopePlan<Scope, Configuration>(session);
+    filterPlannedCases(session, selection);
+    RunAccumulator accumulator{options.retention,
+        options.maxRetainedFailures,
+        SelectionMetadata{
+            .include = selection.include,
+            .exclude = selection.exclude,
+            .tagsAll = selection.tagsAll,
+            .tagsAny = selection.tagsAny,
+            .group = selection.group,
+        }};
+    static_cast<void>(detail::executePlannedCases(session, options, accumulator));
+    return std::move(accumulator).finish();
+  } else {
+    return {};
+  }
 }
 
 template <std::meta::info Scope, class Configuration>

@@ -101,7 +101,7 @@ auto TestExecution::failed() const noexcept -> bool {
   return state.failed();
 }
 
-auto makeAttemptOutcome(const TestExecution &execution, bool retainExecution) -> AttemptOutcome {
+auto makeAttemptOutcome(TestExecution execution, bool retainExecution) -> AttemptOutcome {
   AttemptOutcome outcome{
       .descriptor = execution.descriptor,
       .attempt = execution.attempt,
@@ -117,7 +117,7 @@ auto makeAttemptOutcome(const TestExecution &execution, bool retainExecution) ->
       .passed = execution.passed(),
   };
   if (retainExecution or not outcome.passed)
-    outcome.failure = execution;
+    outcome.failure = std::move(execution);
   if (outcome.failure)
     outcome.timeout = std::ranges::any_of(
         outcome.failure->state.diagnostics, [](const Diagnostic &diagnostic) constexpr noexcept -> bool {

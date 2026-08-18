@@ -54,9 +54,16 @@ struct MeasurementSummary final {
   std::chrono::steady_clock::duration mean{};
   std::chrono::steady_clock::duration median{};
   std::chrono::steady_clock::duration deviation{};
+  bool approximate{};
 };
 
 namespace detail {
+
+inline constexpr usize measurementMedianExactThreshold{1024};
+
+[[nodiscard]] auto currentProfileSink() noexcept -> profiling::ProfileSink & {
+  return currentEnvironment()->get().profileSink();
+}
 
 /// Returns scheduler time when a test coroutine is active and host time otherwise.
 [[nodiscard]] auto measurementNow() noexcept -> std::chrono::steady_clock::time_point {
@@ -74,14 +81,30 @@ namespace detail {
   if (values.empty())
     return {};
 
+  const bool approximate = values.size() > measurementMedianExactThreshold;
+  Vec<Duration> medianValues{};
+  if (approximate) {
+    medianValues.reserve(measurementMedianExactThreshold);
+    usize index{};
+    std::ranges::for_each(values, [&medianValues, &index](Duration value) -> void {
+      if (medianValues.size() < measurementMedianExactThreshold)
+        medianValues.push_back(value);
+      else
+        medianValues[index++ % measurementMedianExactThreshold] = value;
+    });
+  } else {
+    medianValues = values;
+  }
   std::ranges::sort(values);
+  std::ranges::sort(medianValues);
 
   Duration total = std::ranges::fold_left(values, Duration{}, std::plus<>{});
   const auto count = static_cast<Duration::rep>(std::ranges::distance(values));
   const auto mean = total / count;
-  const usize halfSize = values.size() / 2;
+  const usize halfSize = medianValues.size() / 2;
   const auto median =
-      values.size() % 2 == 0 ? (values[halfSize - 1] + values[halfSize]) / 2 : values[halfSize];
+      medianValues.size() % 2 == 0 ? (medianValues[halfSize - 1] + medianValues[halfSize]) / 2
+                                   : medianValues[halfSize];
   const auto meanCount = static_cast<long double>(mean.count());
   long double variance{};
   std::ranges::for_each(values, [&variance, meanCount](const Duration value) -> void {
@@ -99,6 +122,7 @@ namespace detail {
       .mean = mean,
       .median = median,
       .deviation = Duration{deviation},
+      .approximate = approximate,
   };
 }
 
@@ -118,7 +142,7 @@ auto measureAsync(StringView name,
 
   const auto started = measurementNow();
   {
-    auto profile = profiling::profileScope(name, location);
+    auto profile = profiling::profileScope(currentProfileSink(), name, location);
     using Return = std::remove_cvref_t<std::invoke_result_t<Function &>>;
     if constexpr (std::same_as<Return, Task<void>>) {
       co_await std::invoke(function);
@@ -149,7 +173,7 @@ template <class Function>
     std::ranges::for_each(std::views::indices(samples), [&values, &function, name, location](usize) -> void {
       const auto started = detail::measurementNow();
       {
-        auto profile = profiling::profileScope(name, location);
+        auto profile = profiling::profileScope(detail::currentProfileSink(), name, location);
         static_cast<void>(std::invoke(function));
       }
       values.push_back(detail::measurementNow() - started);
@@ -182,6 +206,7 @@ struct TestCaseResult final {
   Vec<TestAttempt> attempts;
   Option<MeasurementSummary> measurement;
   usize recoveredTimeouts{};
+  usize suppressedAttemptCount{};
   bool failedCase{};
 
   [[nodiscard]] auto passed() const noexcept -> bool;
@@ -201,6 +226,7 @@ private:
   RetentionPolicy retention_;
   usize maxRetainedFailures_{};
   usize retainedFailures_{};
+  usize suppressedFailures_{};
   usize sampleCount_{};
   std::chrono::steady_clock::duration totalDuration_{};
   std::chrono::steady_clock::duration minimumDuration_{};
@@ -208,6 +234,7 @@ private:
   long double meanDuration_{};
   long double variableAccumulator_{};
   Vec<std::chrono::steady_clock::duration> sampleDurations_;
+  bool approximateMedian_{};
   Vec<AttemptIndex> pendingTimeouts_;
   usize recoveredTimeouts_{};
   bool hardFailure_{};
@@ -238,7 +265,6 @@ private:
   std::mutex mutex_;
   RetentionPolicy retention_;
   usize maxRetainedFailures_{};
-  usize retainedFailures_{};
   TestSummary summary_;
   SelectionMetadata selection_;
   Option<u64> runSeed_;
@@ -253,6 +279,7 @@ struct RunReport final {
   Option<u64> runSeed;
   RetentionPolicy retention{RetentionPolicy::Failures};
   usize retainedAttemptCount{};
+  usize suppressedAttemptCount{};
 
   [[nodiscard]] auto passed() const noexcept -> bool;
 
@@ -272,15 +299,8 @@ public:
 
   auto addRoot(Path root) -> void;
 
-  [[nodiscard]] static auto makeReport(Span<const TestExecution> executions,
-      RetentionPolicy retention = RetentionPolicy::All,
-      usize maxRetainedFailures = maxRetainedFailuresDefault) -> RunReport;
-
-  [[nodiscard]] static auto summarize(Span<const TestExecution> executions) noexcept -> TestSummary;
-
   [[nodiscard]] static auto summarize(const RunReport &report) noexcept -> TestSummary;
 
-  auto report(Span<const TestExecution> executions, std::ostream &output) const -> TestSummary;
   auto report(const RunReport &report, std::ostream &output) const -> TestSummary;
 
 private:

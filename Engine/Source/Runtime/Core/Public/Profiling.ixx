@@ -68,30 +68,12 @@ private:
   FlatMap<String, ProfileAggregate> aggregates_;
 };
 
-/// Binds a sink to the current execution thread for generic engine code.
-class SinkBinding final {
-public:
-  explicit SinkBinding(ProfileSink &sink) noexcept;
-  ~SinkBinding() noexcept;
-
-  SinkBinding(const SinkBinding &) = delete ("SinkBinding owns a previous thread-local sink pointer.");
-  auto operator=(const SinkBinding &)
-      -> SinkBinding & = delete ("SinkBinding owns a previous thread-local sink pointer.");
-  SinkBinding(SinkBinding &&) noexcept = delete ("SinkBinding owns a previous thread-local sink pointer.");
-  auto operator=(SinkBinding &&) noexcept
-      -> SinkBinding & = delete ("SinkBinding owns a previous thread-local sink pointer.");
-
-private:
-  ProfileSink *previous_{};
-};
-
-/// Returns the sink bound to the current thread, or nullptr outside a profiled scope.
-[[nodiscard]] auto currentSink() noexcept -> ProfileSink *;
-
 /// Owns one named profile interval and records it when leaving scope, including early exists.
 class Scope final {
 public:
-  explicit Scope(StringView name, std::source_location location = std::source_location::current());
+  explicit Scope(ProfileSink &sink,
+      StringView name,
+      std::source_location location = std::source_location::current());
   ~Scope() noexcept;
 
   Scope(const Scope &) = delete ("Scope owns one profile interval.");
@@ -108,7 +90,8 @@ private:
 };
 
 /// Creates a generic named profile scope for Nyx.Core and Nyx.Test clients.
-[[nodiscard]] auto profileScope(StringView name,
+[[nodiscard]] auto profileScope(ProfileSink &sink,
+    StringView name,
     std::source_location location = std::source_location::current()) -> Scope;
 
 } // namespace Nyx::profiling

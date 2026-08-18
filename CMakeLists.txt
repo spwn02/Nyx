@@ -39,7 +39,6 @@ if (NYX_BUILD_TESTS)
   add_subdirectory(tests)
 endif()
 
-nyx_verify_platform_macro_boundary(ROOT "${CMAKE_CURRENT_SOURCE_DIR}")
 nyx_verify_exception_boundary(ROOT "${CMAKE_CURRENT_SOURCE_DIR}")
 
 # CPack

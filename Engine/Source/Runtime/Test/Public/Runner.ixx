@@ -48,6 +48,12 @@ struct RunOptions final {
   /// Captures trace events for every case; the default reporter renders them only for failures.
   TraceMode traceMode{TraceMode::ForcedFailures};
 
+  /// Captures advisory process-memory snapshots for each attempt.
+  bool captureMemory{};
+
+  /// Captures profiling scopes for each attempt.
+  bool captureProfile{true};
+
   /// Preserves declaration order by default; shuffled order is reproducible with seed.
   ExecutionOrder order{ExecutionOrder::Declaration};
 

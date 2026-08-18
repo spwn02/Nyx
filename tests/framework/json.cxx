@@ -62,9 +62,12 @@ namespace Tests::json {
   };
 
   const Vec<TestExecution> executions{std::move(passing), std::move(failing)};
-  const RunReport report = Reporter::makeReport(executions, RetentionPolicy::All);
+  RunAccumulator accumulator{RetentionPolicy::All};
+  for (const TestExecution &execution : executions)
+    accumulator.append(execution);
+  const RunReport report = std::move(accumulator).finish();
   const JsonReporter reporter{JsonReporterOptions{.pretty = true}};
-  const String output = reporter.render(executions);
+  const String output = reporter.render(report);
 
   require(executions.size() == 2_exp);
   check(report.cases.size() == 2_exp);
@@ -101,7 +104,7 @@ namespace Tests::json {
   check(output.contains(R"("kind": "signal")"));
   check(output.contains(R"("symbols_available": false)"));
 
-  const String compact = JsonReporter{}.render(executions);
+  const String compact = JsonReporter{}.render(report);
   check(compact.find('\n') == String::npos);
 
   const Vec<TestDescriptor> descriptors = list<^^Tests::json>(TestSelection{

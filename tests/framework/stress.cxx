@@ -137,6 +137,8 @@ inline std::atomic<usize> active{};
 // NOLINTNEXTLINE(cppcoreguidelines-avoid-non-const-global-variables)
 inline std::atomic<usize> peak{};
 
+inline constexpr usize expectedParallelAttempts{4};
+
 auto reset() -> void {
   active.store(0);
   peak.store(0);
@@ -153,7 +155,8 @@ repeatsConcurrently() -> Task<void> {
 
   const auto release = std::scope_exit([] -> void { active.fetch_sub(1, std::memory_order_relaxed); });
 
-  co_await yield();
+  while (active.load(std::memory_order_relaxed) < expectedParallelAttempts)
+    co_await yield();
   co_await yield();
 }
 

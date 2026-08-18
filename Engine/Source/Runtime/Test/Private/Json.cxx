@@ -502,6 +502,7 @@ auto writeMeasurement(JsonWriter &writer, const Option<MeasurementSummary> &meas
       [&writer, &measurement] -> void { writer.number(durationNanoseconds(measurement->median)); });
   writer.field("deviation_ns",
       [&writer, &measurement] -> void { writer.number(durationNanoseconds(measurement->deviation)); });
+  writer.field("approximate", [&writer, &measurement] -> void { writer.boolean(measurement->approximate); });
   writer.endObject();
 }
 
@@ -554,6 +555,8 @@ auto writeCase(JsonWriter &writer, const TestCaseResult &testCase, const SourceM
       "measurement", [&writer, &testCase] -> void { writeMeasurement(writer, testCase.measurement); });
   writer.field(
       "recovered_timeouts", [&writer, &testCase] -> void { writer.number(testCase.recoveredTimeouts); });
+  writer.field("suppressed_attempts",
+      [&writer, &testCase] -> void { writer.number(testCase.suppressedAttemptCount); });
   writer.endObject();
 }
 
@@ -611,6 +614,8 @@ public:
     writer.field("retention", [&writer, &report] -> void { writer.text(debug::enumName(report.retention)); });
     writer.field(
         "retained_attempt_count", [&writer, &report] -> void { writer.number(report.retainedAttemptCount); });
+    writer.field(
+        "suppressed_attempt_count", [&writer, &report] -> void { writer.number(report.suppressedAttemptCount); });
     writer.field("selection", [&writer, &report] -> void {
       writer.beginObject();
       writer.field("include", [&writer, &report] -> void {
@@ -707,20 +712,6 @@ auto JsonReporter::addRoot(Path root) -> void {
     roots_.push_back(std::move(root));
 }
 
-auto JsonReporter::report(Span<const TestExecution> executions, std::ostream &output) const -> void {
-  if constexpr (build::tests) {
-    const RunReport report = Reporter::makeReport(executions);
-    const SourceManager sources{roots_};
-    JsonWriter writer{output, options_};
-    JsonDocumentWriter document{writer, sources};
-    document.write(report);
-    if (options_.pretty)
-      output << '\n';
-  } else {
-    return;
-  }
-}
-
 auto JsonReporter::report(const RunReport &report, std::ostream &output) const -> void {
   if constexpr (build::tests) {
     const SourceManager sources{roots_};
@@ -729,16 +720,6 @@ auto JsonReporter::report(const RunReport &report, std::ostream &output) const -
     document.write(report);
     if (options_.pretty)
       output << '\n';
-  }
-}
-
-auto JsonReporter::render(Span<const TestExecution> executions) const -> String {
-  if constexpr (build::tests) {
-    std::ostringstream output{};
-    report(executions, output);
-    return output.str();
-  } else {
-    return {};
   }
 }
 

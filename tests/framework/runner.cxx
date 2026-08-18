@@ -182,7 +182,10 @@ defaultTraceCapturesEveryCaseAndRendersFailuresByDefault() -> void {
   };
   std::ostringstream output{};
 
-  static_cast<void>(reporter.report(executions, output));
+  RunAccumulator accumulator{RetentionPolicy::All};
+  for (const TestExecution &execution : executions)
+    accumulator.append(execution);
+  static_cast<void>(reporter.report(std::move(accumulator).finish(), output));
 
   require(executions.size() == 2_exp);
   require(std::ranges::all_of(
@@ -210,7 +213,10 @@ defaultTraceCapturesEveryCaseAndRendersFailuresByDefault() -> void {
   };
   std::ostringstream output{};
 
-  static_cast<void>(reporter.report(executions, output));
+  RunAccumulator accumulator{RetentionPolicy::All};
+  for (const TestExecution &execution : executions)
+    accumulator.append(execution);
+  static_cast<void>(reporter.report(std::move(accumulator).finish(), output));
 
   require(executions.size() == 2_exp);
   check(output.str().contains("passing trace"));
@@ -282,7 +288,10 @@ parallelDiagnosticsRenderInLogicalOrder() -> void {
     };
 
     std::ostringstream output{};
-    static_cast<void>(reporter.report(executions, output));
+    RunAccumulator accumulator{RetentionPolicy::All};
+    for (const TestExecution &execution : executions)
+      accumulator.append(execution);
+    static_cast<void>(reporter.report(std::move(accumulator).finish(), output));
     return output.str();
   };
 

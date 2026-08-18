@@ -70,7 +70,10 @@ auto executionNamed(const Vec<TestExecution> &executions, StringView identifier)
   constexpr usize expectedFailed{2};
   const Vec<TestExecution> executions =
       runAllDetailed<^^PolicySubjects>(RunOptions{.isolation = CrashIsolation::InProcess});
-  const TestSummary summary = Reporter::summarize(executions);
+  RunAccumulator accumulator{RetentionPolicy::All};
+  for (const TestExecution &execution : executions)
+    accumulator.append(execution);
+  const TestSummary summary = Reporter::summarize(std::move(accumulator).finish());
   const Option<Ref<const TestExecution>> traced =
       executionNamed(executions, "Tests::policies::PolicySubjects::traced");
   const Option<Ref<const TestExecution>> slow =
@@ -156,7 +159,9 @@ auto executionNamed(const Vec<TestExecution> &executions, StringView identifier)
   };
   std::ostringstream output{};
 
-  static_cast<void>(reporter.report(Vec<TestExecution>{execution}, output));
+  RunAccumulator accumulator{RetentionPolicy::All};
+  accumulator.append(execution);
+  static_cast<void>(reporter.report(std::move(accumulator).finish(), output));
 
   require(execution.passed());
   check(output.str().contains("test traceOutput ... ok"));

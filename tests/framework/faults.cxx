@@ -12,7 +12,7 @@ namespace Tests::faults {
 namespace FaultSubjects {
 
 [[ = test, = group("framework"), = tag("faults", "subjects"), = isolated ]] auto aborts() -> void {
-  usize *invalidPointer = nullptr;
+  usize *invalidPointer = reinterpret_cast<usize *>(0x1);
   std::println("{}", *invalidPointer);
 
   std::abort();
@@ -65,6 +65,8 @@ continuesUnrelatedCasesAfterANativeFault() -> void {
   require(crashed->get().failed());
   require(crashed->get().fault);
   require(crashed->get().fault->kind != NativeFaultKind::IsolationUnavailable);
+  require(crashed->get().fault->address != 0);
+  check(crashed->get().fault->instruction != 0);
   require(crashed->get().state.errors == 1_exp);
   check(crashed->get().state.diagnostics.front().header.code == DiagnosticCode::NativeFault);
   check(survived->get().passed());
@@ -85,9 +87,14 @@ stopsAfterANativeFaultWhenFailFastIsEnabled() -> void {
   require(executions.front().fault->kind == NativeFaultKind::Signal);
   check(executions.front().fault->signal == NativeSignal::SegmentationFault);
   check(eq(executions.front().fault->code, 139));
+  require(executions.front().fault->address != 0);
+  check(executions.front().fault->instruction != 0);
 
   std::ostringstream output{};
-  static_cast<void>(Reporter{}.report(executions, output));
+  RunAccumulator accumulator{RetentionPolicy::All};
+  for (const TestExecution &execution : executions)
+    accumulator.append(execution);
+  static_cast<void>(Reporter{}.report(std::move(accumulator).finish(), output));
   check(output.str().contains("worker terminated with signal code 139 (segmentation fault)"));
   check(executions.front().state.diagnostics.front().header.code == DiagnosticCode::NativeFault);
 }

@@ -25,11 +25,7 @@ public:
 
   auto addRoot(Path root) -> void;
 
-  auto report(Span<const TestExecution> executions, std::ostream &output) const -> void;
-
   auto report(const RunReport &report, std::ostream &output) const -> void;
-
-  [[nodiscard]] auto render(Span<const TestExecution> executions) const -> String;
 
   [[nodiscard]] auto render(const RunReport &report) const -> String;
 

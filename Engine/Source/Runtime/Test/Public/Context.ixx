@@ -38,7 +38,8 @@ struct InvocationSettings final {
   usize retry{};
   bool warmup{};
   bool forceTrace{};
-  bool captureMemory{true};
+  bool captureMemory{};
+  bool captureProfile{true};
 };
 
 class InvocationBinding final {

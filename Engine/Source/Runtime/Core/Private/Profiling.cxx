@@ -6,13 +6,6 @@ import std;
 
 namespace Nyx::profiling {
 
-namespace {
-
-// NOLINTNEXTLINE(cppcoreguidelines-avoid-non-const-global-variables, readability-identifier-naming)
-thread_local ProfileSink *currentSink_{};
-
-} // namespace
-
 auto ProfileSink::begin() noexcept -> usize {
   return activeScopes_++;
 }
@@ -59,24 +52,11 @@ auto ProfileSink::snapshot() const -> ProfileSnapshot {
   };
 }
 
-SinkBinding::SinkBinding(ProfileSink &sink) noexcept
-    : previous_(currentSink_) {
-  currentSink_ = std::addressof(sink);
-}
-
-SinkBinding::~SinkBinding() noexcept {
-  currentSink_ = previous_;
-}
-
-auto currentSink() noexcept -> ProfileSink * {
-  return currentSink_;
-}
-
-Scope::Scope(StringView name, std::source_location location)
-    : sink_(build::profiling ? currentSink() : nullptr)
-    , name_(name)
+Scope::Scope(ProfileSink &sink, StringView name, std::source_location location)
+    : sink_(build::profiling ? std::addressof(sink) : nullptr)
+    , name_(sink_ == nullptr ? String{} : String{name})
     , location_(location)
-    , started_(std::chrono::steady_clock::now())
+    , started_(sink_ == nullptr ? std::chrono::steady_clock::time_point{} : std::chrono::steady_clock::now())
     , depth_(sink_ == nullptr ? 0 : sink_->begin()) {
 }
 
@@ -91,8 +71,8 @@ Scope::~Scope() noexcept {
   }
 }
 
-auto profileScope(StringView name, std::source_location location) -> Scope {
-  return Scope{name, location};
+auto profileScope(ProfileSink &sink, StringView name, std::source_location location) -> Scope {
+  return Scope{sink, name, location};
 }
 
 } // namespace Nyx::profiling
