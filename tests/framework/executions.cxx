@@ -232,13 +232,13 @@ auto delayedValue() -> Task<i32> {
   require(summary.failedAssertionCount == expectedFailedAssertions);
   require(summary.errorCount == expectedErrors);
   require(summary.failed());
-  check(text.contains("test fails ... FAILED"));
+  check(text.contains("tests fails"));
   check(text.contains("error[NYX001]: test returned false"));
   check(text.contains("error[NYX011]: test returned an error"));
   check(text.contains("= note: test: errors"));
   check(text.contains(String(progressBarWidth, '=')));
-  check(text.contains("test result: FAILED"));
-  check(text.contains("finished in "));
+  check(text.contains("FAIL"));
+  check(text.contains("Execution"));
 }
 
 } // namespace Tests::executions

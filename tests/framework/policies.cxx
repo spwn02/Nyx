@@ -164,7 +164,7 @@ auto executionNamed(const Vec<TestExecution> &executions, StringView identifier)
   static_cast<void>(reporter.report(std::move(accumulator).finish(), output));
 
   require(execution.passed());
-  check(output.str().contains("test traceOutput ... ok"));
+  check(output.str().contains("tests traceOutput ... ok"));
   check(output.str().contains("= trace: connected database"));
 }
 

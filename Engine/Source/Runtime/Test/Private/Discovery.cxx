@@ -259,9 +259,58 @@ auto runAll(TestSelection selection, RunOptions options) -> RunReport {
             .tagsAll = std::move(selection.tagsAll),
             .tagsAny = std::move(selection.tagsAny),
             .group = std::move(selection.group),
-        }};
+        },
+        options.captureTiming != CapturePolicy::None};
     static_cast<void>(detail::executePlannedCases(session, options, accumulator));
     return std::move(accumulator).finish();
+  } else {
+    return {};
+  }
+}
+
+auto runAll(Reporter &reporter, std::ostream &output, RunOptions options) -> RunReport {
+  return runAll(reporter, output, {}, options);
+}
+
+auto runAll(Reporter &reporter,
+    std::ostream &output,
+    TestSelection selection,
+    RunOptions options) -> RunReport {
+  if constexpr (build::tests) {
+    const Option<detail::WorkerRequest> worker = detail::consumeWorkerRequest();
+    if (worker)
+      static_cast<void>(detail::isolation::installWorkerFaultHandler(worker->faultPath));
+
+    detail::RunSession session{};
+    Vec<SuiteEntry> suites = registeredSuites();
+    if (worker) {
+      suites.append_range(registeredWorkerSuites() | std::views::as_rvalue);
+      std::ranges::stable_sort(suites, suiteComesBefore);
+    }
+    std::ranges::for_each(suites, [&session](const SuiteEntry &suite) -> void { suite.plan(session); });
+    if (worker) {
+      detail::executeWorkerCase(session, *worker, options);
+      std::exit(build::exitSuccess); // NOLINT(concurrency-mt-unsafe)
+    }
+    detail::filterPlannedCases(session, selection);
+    RunAccumulator accumulator{options.retention,
+        options.maxRetainedFailures,
+        SelectionMetadata{
+            .include = selection.include,
+            .exclude = selection.exclude,
+            .tagsAll = selection.tagsAll,
+            .tagsAny = selection.tagsAny,
+            .group = selection.group,
+        },
+        options.captureTiming != CapturePolicy::None};
+    reporter.beginLive(output, options.captureTiming != CapturePolicy::None);
+    accumulator.setCompletionObserver([&reporter](const TestCaseResult &testCase) {
+      reporter.consumeLive(testCase);
+    });
+    static_cast<void>(detail::executePlannedCases(session, options, accumulator));
+    RunReport report = std::move(accumulator).finish();
+    reporter.finishLive(report);
+    return report;
   } else {
     return {};
   }

@@ -87,6 +87,98 @@ namespace TraceSubjects {
 
 } // namespace TraceSubjects
 
+namespace ThroughputSubjects {
+
+[[ = test, = group("framework"), = tag("runner", "subjects", "throughput") ]] auto passing() -> void {
+  check(true);
+}
+
+} // namespace ThroughputSubjects
+
+namespace ThroughputFailureSubjects {
+
+inline constexpr usize failingIteration{37};
+
+[[ = test, = group("framework"), = tag("runner", "subjects", "throughput") ]] auto failsAtIndex(
+    const Context[[= context]] &context) -> void {
+  check(context.iteration != failingIteration);
+}
+
+} // namespace ThroughputFailureSubjects
+
+[[ = test, = group("framework"), = tag("runner", "reporting", "live") ]] auto liveReporterRendersCompletedCases() -> void {
+  std::ostringstream output{};
+  Reporter reporter{ReporterOptions{
+      .renderer = RendererOptions{.color = ColorMode::Never},
+      .showPassedTests = true,
+      .showProgress = false,
+  }};
+  const RunReport report = runAll<^^OrderSubjects>(reporter,
+      output,
+      RunOptions{.repeat = 3, .isolation = CrashIsolation::InProcess});
+
+  require(report.cases.size() == 5_exp);
+  const String rendered = output.str();
+  usize rows{};
+  for (usize position{}; (position = rendered.find("tests ", position)) != String::npos; ++position)
+    ++rows;
+  check(rows == 5_exp);
+  for (const TestCaseResult &testCase : report.cases) {
+    check(rendered.find(std::format("tests {}", testCase.descriptor.identifier)) != String::npos);
+  }
+  check(rendered.find("PASS") != String::npos);
+  check(rendered.find("================") == String::npos);
+}
+
+[[ = test, = group("framework"), = tag("runner", "throughput") ]] auto
+throughputAggregatesPassingRepetitions() -> void {
+  constexpr usize repetitions{10'000};
+  const RunReport checked = runAll<^^ThroughputSubjects>(RunOptions{
+      .threads = 1,
+      .captureProfile = false,
+      .repeat = repetitions,
+      .isolation = CrashIsolation::InProcess,
+  });
+  const RunReport throughput = runAll<^^ThroughputSubjects>(RunOptions{
+      .executionMode = ExecutionMode::Benchmark,
+      .threads = 1,
+      .captureProfile = false,
+      .repeat = repetitions,
+      .isolation = CrashIsolation::InProcess,
+  });
+
+  require(checked.summary.passed());
+  require(throughput.summary.passed());
+  check(throughput.summary.passedCount == checked.summary.passedCount);
+  check(throughput.summary.sampleCount == checked.summary.sampleCount);
+  check(throughput.summary.assertionCount == checked.summary.assertionCount);
+  require(throughput.cases.size() == 1_exp);
+  check(throughput.cases.front().attempts.empty());
+  require(throughput.cases.front().measurement.has_value());
+  check(throughput.cases.front().measurement->distributionAvailable);
+  check(throughput.cases.front().measurement->quantilesAvailable);
+  check(throughput.cases.front().measurement->firstQuartile <= throughput.cases.front().measurement->median);
+  check(throughput.cases.front().measurement->median <= throughput.cases.front().measurement->thirdQuartile);
+}
+
+[[ = test, = group("framework"), = tag("runner", "throughput") ]] auto
+throughputStopsAtTheFirstFailure() -> void {
+  const RunReport report = runAll<^^ThroughputFailureSubjects>(RunOptions{
+      .executionMode = ExecutionMode::Benchmark,
+      .threads = 1,
+      .captureProfile = false,
+      .repeat = 1'000,
+      .isolation = CrashIsolation::InProcess,
+  });
+
+  require(report.summary.failed());
+  check(report.summary.attemptCount == ThroughputFailureSubjects::failingIteration + 1);
+  require(report.cases.size() == 1_exp);
+  require(report.cases.front().attempts.size() == 1_exp);
+  check(report.cases.front().attempts.front().index.runIteration ==
+        ThroughputFailureSubjects::failingIteration);
+}
+
 [[ = test, = group("framework"), = tag("runner") ]] auto repeatsCasesWithStableContextSeeds() -> void {
   constexpr u64 seed{0xA11CE};
   constexpr usize expectedExecutions{4};

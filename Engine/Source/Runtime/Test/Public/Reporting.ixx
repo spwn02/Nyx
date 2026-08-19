@@ -52,14 +52,16 @@ struct MeasurementSummary final {
   std::chrono::steady_clock::duration minimum{};
   std::chrono::steady_clock::duration maximum{};
   std::chrono::steady_clock::duration mean{};
+  std::chrono::steady_clock::duration firstQuartile{};
   std::chrono::steady_clock::duration median{};
+  std::chrono::steady_clock::duration thirdQuartile{};
   std::chrono::steady_clock::duration deviation{};
   bool approximate{};
+  bool distributionAvailable{true};
+  bool quantilesAvailable{};
 };
 
 namespace detail {
-
-inline constexpr usize measurementMedianExactThreshold{1024};
 
 [[nodiscard]] auto currentProfileSink() noexcept -> profiling::ProfileSink & {
   return currentEnvironment()->get().profileSink();
@@ -81,30 +83,19 @@ inline constexpr usize measurementMedianExactThreshold{1024};
   if (values.empty())
     return {};
 
-  const bool approximate = values.size() > measurementMedianExactThreshold;
-  Vec<Duration> medianValues{};
-  if (approximate) {
-    medianValues.reserve(measurementMedianExactThreshold);
-    usize index{};
-    std::ranges::for_each(values, [&medianValues, &index](Duration value) -> void {
-      if (medianValues.size() < measurementMedianExactThreshold)
-        medianValues.push_back(value);
-      else
-        medianValues[index++ % measurementMedianExactThreshold] = value;
-    });
-  } else {
-    medianValues = values;
-  }
   std::ranges::sort(values);
-  std::ranges::sort(medianValues);
 
   Duration total = std::ranges::fold_left(values, Duration{}, std::plus<>{});
   const auto count = static_cast<Duration::rep>(std::ranges::distance(values));
   const auto mean = total / count;
-  const usize halfSize = medianValues.size() / 2;
-  const auto median =
-      medianValues.size() % 2 == 0 ? (medianValues[halfSize - 1] + medianValues[halfSize]) / 2
-                                   : medianValues[halfSize];
+  P2QuantileEstimator<Duration> firstQuartile{0.25L};
+  P2QuantileEstimator<Duration> median{0.50L};
+  P2QuantileEstimator<Duration> thirdQuartile{0.75L};
+  std::ranges::for_each(values, [&firstQuartile, &median, &thirdQuartile](Duration value) -> void {
+    firstQuartile.add(value);
+    median.add(value);
+    thirdQuartile.add(value);
+  });
   const auto meanCount = static_cast<long double>(mean.count());
   long double variance{};
   std::ranges::for_each(values, [&variance, meanCount](const Duration value) -> void {
@@ -113,6 +104,9 @@ inline constexpr usize measurementMedianExactThreshold{1024};
   });
   variance /= static_cast<long double>(values.size());
   const auto deviation = static_cast<Duration::rep>(std::sqrt(variance));
+  const Duration estimatedMedian = std::clamp(median.value(), values.front(), values.back());
+  const Duration estimatedFirstQuartile = std::clamp(firstQuartile.value(), values.front(), estimatedMedian);
+  const Duration estimatedThirdQuartile = std::clamp(thirdQuartile.value(), estimatedMedian, values.back());
 
   return MeasurementSummary{
       .sampleCount = values.size(),
@@ -120,9 +114,12 @@ inline constexpr usize measurementMedianExactThreshold{1024};
       .minimum = values.front(),
       .maximum = values.back(),
       .mean = mean,
-      .median = median,
+      .firstQuartile = estimatedFirstQuartile,
+      .median = estimatedMedian,
+      .thirdQuartile = estimatedThirdQuartile,
       .deviation = Duration{deviation},
-      .approximate = approximate,
+      .approximate = median.approximate(),
+      .quantilesAvailable = true,
   };
 }
 
@@ -217,7 +214,9 @@ struct TestCaseResult final {
 class CaseAccumulator final {
 public:
   CaseAccumulator(TestDescriptor descriptor, RetentionPolicy retention, usize maxRetainedFailures);
+  auto setRetainSuccessful(bool retain) noexcept -> void;
   auto append(AttemptOutcome outcome) -> void;
+  auto appendAggregate(const BatchExecutionContext &batch) -> void;
   [[nodiscard]] auto finish() && -> TestCaseResult;
   [[nodiscard]] auto identifier() const noexcept -> StringView;
 
@@ -228,16 +227,31 @@ private:
   usize retainedFailures_{};
   usize suppressedFailures_{};
   usize sampleCount_{};
+  usize attemptCount_{};
   std::chrono::steady_clock::duration totalDuration_{};
   std::chrono::steady_clock::duration minimumDuration_{};
   std::chrono::steady_clock::duration maximumDuration_{};
   long double meanDuration_{};
   long double variableAccumulator_{};
-  Vec<std::chrono::steady_clock::duration> sampleDurations_;
-  bool approximateMedian_{};
+  detail::P2QuantileEstimator<std::chrono::steady_clock::duration> firstQuartile_{0.25L};
+  detail::P2QuantileEstimator<std::chrono::steady_clock::duration> median_{0.50L};
+  detail::P2QuantileEstimator<std::chrono::steady_clock::duration> thirdQuartile_{0.75L};
+  bool aggregateTiming_{};
+  bool aggregateDistributionAvailable_{};
+  std::chrono::steady_clock::duration aggregateMinimum_{};
+  std::chrono::steady_clock::duration aggregateMaximum_{};
+  long double aggregateMean_{};
+  long double aggregateVariable_{};
+  std::chrono::steady_clock::duration aggregateFirstQuartile_{};
+  std::chrono::steady_clock::duration aggregateMedian_{};
+  std::chrono::steady_clock::duration aggregateThirdQuartile_{};
+  bool aggregateQuantilesAvailable_{};
+  bool aggregateQuantilesApproximate_{};
   Vec<AttemptIndex> pendingTimeouts_;
   usize recoveredTimeouts_{};
   bool hardFailure_{};
+  bool retainSuccessful_{};
+  bool retainedFailure_{};
 };
 
 struct RunReport;
@@ -248,7 +262,8 @@ class RunAccumulator final {
 public:
   explicit RunAccumulator(RetentionPolicy retention = RetentionPolicy::Failures,
       usize maxRetainedFailures = maxRetainedFailuresDefault,
-      SelectionMetadata selection = {});
+      SelectionMetadata selection = {},
+      bool measurementsEnabled = true);
   ~RunAccumulator() = default;
 
   RunAccumulator(const RunAccumulator &) = delete ("RunAccumulator holds mutex state.");
@@ -259,27 +274,45 @@ public:
 
   auto append(const TestExecution &execution) -> void;
   auto append(AttemptOutcome outcome) -> void;
+  auto append(const TestDescriptor &descriptor, AttemptOutcome outcome) -> void;
+  auto appendAggregate(const TestDescriptor &descriptor, const BatchExecutionContext &batch, u64 runSeed)
+      -> void;
+  auto expectCaseCompletion(const TestDescriptor &descriptor, usize completions) -> void;
+  auto completeCase(StringView identifier) -> void;
+  auto setCompletionObserver(std::function<void(const TestCaseResult &)> observer) -> void;
+  /// Allows the runner to omit synchronization when dispatch is single-threaded.
+  auto setConcurrent(bool concurrent) noexcept -> void;
   [[nodiscard]] auto finish() && -> RunReport;
 
 private:
   std::mutex mutex_;
+  bool concurrent_{true};
   RetentionPolicy retention_;
   usize maxRetainedFailures_{};
   TestSummary summary_;
   SelectionMetadata selection_;
+  bool measurementsEnabled_{true};
   Option<u64> runSeed_;
   Vec<UPtr<CaseAccumulator>> cases_;
+  Vec<TestCaseResult> completedCases_;
+  Vec<Pair<String, usize>> expectedCompletions_;
+  Vec<Pair<String, usize>> observedCompletions_;
+  std::function<void(const TestCaseResult &)> completionObserver_;
+  bool retainSuccessful_{};
 };
 
 /// Presentation-independent result tree shared by human and machine reporters.
 struct RunReport final {
   Vec<TestCaseResult> cases;
   TestSummary summary;
+  /// False when the run used CapturePolicy::None. Human reporters must omit measurement presentation.
+  bool measurementsEnabled{true};
   SelectionMetadata selection;
   Option<u64> runSeed;
   RetentionPolicy retention{RetentionPolicy::Failures};
   usize retainedAttemptCount{};
   usize suppressedAttemptCount{};
+  usize measuredCaseCount{};
 
   [[nodiscard]] auto passed() const noexcept -> bool;
 
@@ -291,17 +324,23 @@ struct ReporterOptions final {
   bool showPassedTests{};
   bool showAttempts{};
   bool showSummary{true};
+  bool showProgress{true};
 };
 
 class Reporter final {
 public:
   explicit Reporter(ReporterOptions options = {});
+  ~Reporter();
 
   auto addRoot(Path root) -> void;
 
   [[nodiscard]] static auto summarize(const RunReport &report) noexcept -> TestSummary;
 
   auto report(const RunReport &report, std::ostream &output) const -> TestSummary;
+
+  auto beginLive(std::ostream &output, bool measurementsEnabled) -> void;
+  auto consumeLive(const TestCaseResult &testCase) -> void;
+  auto finishLive(const RunReport &report) -> TestSummary;
 
 private:
   struct RenderState;
@@ -334,10 +373,15 @@ private:
 
   auto renderProfile(const TestExecution &execution, std::ostream &output) const -> void;
 
-  auto renderMeasurement(const TestCaseResult &testCase, std::ostream &output) const -> void;
+  auto renderMeasurement(const TestCaseResult &testCase, std::ostream &output, RenderState &state) const
+      -> void;
+
+  auto renderLiveCase(const TestCaseResult &testCase, std::ostream &output) const -> void;
 
   Vec<Path> roots_;
   ReporterOptions options_{};
+  std::ostream *liveOutput_{};
+  UPtr<RenderState> liveState_;
 };
 
 } // namespace Nyx::Test

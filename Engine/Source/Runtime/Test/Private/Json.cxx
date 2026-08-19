@@ -493,16 +493,28 @@ auto writeMeasurement(JsonWriter &writer, const Option<MeasurementSummary> &meas
   writer.field("total_ns",
       [&writer, &measurement] -> void { writer.number(durationNanoseconds(measurement->total)); });
   writer.field("minimum_ns",
-      [&writer, &measurement] -> void { writer.number(durationNanoseconds(measurement->minimum)); });
+      [&writer, &measurement] -> void { measurement->distributionAvailable
+          ? writer.number(durationNanoseconds(measurement->minimum)) : writer.nullValue(); });
   writer.field("maximum_ns",
-      [&writer, &measurement] -> void { writer.number(durationNanoseconds(measurement->maximum)); });
+      [&writer, &measurement] -> void { measurement->distributionAvailable
+          ? writer.number(durationNanoseconds(measurement->maximum)) : writer.nullValue(); });
   writer.field(
       "mean_ns", [&writer, &measurement] -> void { writer.number(durationNanoseconds(measurement->mean)); });
+  writer.field("first_quartile_ns",
+      [&writer, &measurement] -> void { measurement->quantilesAvailable
+          ? writer.number(durationNanoseconds(measurement->firstQuartile)) : writer.nullValue(); });
   writer.field("median_ns",
-      [&writer, &measurement] -> void { writer.number(durationNanoseconds(measurement->median)); });
+      [&writer, &measurement] -> void { measurement->quantilesAvailable
+          ? writer.number(durationNanoseconds(measurement->median)) : writer.nullValue(); });
+  writer.field("third_quartile_ns",
+      [&writer, &measurement] -> void { measurement->quantilesAvailable
+          ? writer.number(durationNanoseconds(measurement->thirdQuartile)) : writer.nullValue(); });
   writer.field("deviation_ns",
-      [&writer, &measurement] -> void { writer.number(durationNanoseconds(measurement->deviation)); });
+      [&writer, &measurement] -> void { measurement->distributionAvailable
+          ? writer.number(durationNanoseconds(measurement->deviation)) : writer.nullValue(); });
   writer.field("approximate", [&writer, &measurement] -> void { writer.boolean(measurement->approximate); });
+  writer.field("quantiles_available",
+      [&writer, &measurement] -> void { writer.boolean(measurement->quantilesAvailable); });
   writer.endObject();
 }
 
@@ -714,12 +726,16 @@ auto JsonReporter::addRoot(Path root) -> void {
 
 auto JsonReporter::report(const RunReport &report, std::ostream &output) const -> void {
   if constexpr (build::tests) {
+    if (options_.showProgress)
+      std::cerr << "JSON started\n";
     const SourceManager sources{roots_};
     JsonWriter writer{output, options_};
     JsonDocumentWriter document{writer, sources};
     document.write(report);
     if (options_.pretty)
       output << '\n';
+    if (options_.showProgress)
+      std::cerr << "JSON finished\n";
   }
 }
 

@@ -50,8 +50,10 @@ struct InvocationPlan final {
   CrashIsolation isolation{};
   bool captureMemory{};
   bool captureProfile{true};
+  CapturePolicy captureTiming{CapturePolicy::PerAttempt};
   Option<Ref<ExecutionLane>> lane;
   Option<Ref<WorkerJournal>> journal;
+  bool compactJournal{};
   Option<Ref<RunAccumulator>> accumulator;
   Option<Ref<std::atomic<bool>>> failureObserved;
 
@@ -204,6 +206,7 @@ auto executeAttemptDetailed(const InvocationPlan &plan, AttemptIndex attempt, bo
       .forceTrace = forceTrace(options.traceMode),
       .captureMemory = plan.captureMemory,
       .captureProfile = plan.captureProfile,
+      .captureTiming = plan.captureTiming,
   };
 
   const InvocationBinding binding{settings};
@@ -239,7 +242,39 @@ auto executeAttemptDetailed(const InvocationPlan &plan, AttemptIndex attempt, bo
   // The normal run path crosses this boundary as a compact outcome. A complete TestExecution is only
   // materialized inside the invocation boundary long enough to preserve diagnostics when retention or failure
   // policy requires it; successful attempts do not escape into a history vector.
-  return makeAttemptOutcome(executeAttemptDetailed(plan, attempt, warmup), retainExecution);
+  if (retainExecution)
+    return makeAttemptOutcome(executeAttemptDetailed(plan, attempt, warmup), true);
+
+  const RunOptions &options = plan.options.get();
+  const InvocationSettings settings{
+      .seed = deriveSeed(plan.runSeed,
+          plan.plannedCase.get().descriptor().identifier,
+          plan.plannedCase.get().descriptor().testCase,
+          attempt,
+          warmup),
+      .iteration = plan.scheduledCase.runIteration,
+      .sample = attempt.sample,
+      .retry = attempt.retry,
+      .warmup = warmup,
+      .forceTrace = forceTrace(options.traceMode),
+      .captureMemory = plan.captureMemory,
+      .captureProfile = plan.captureProfile,
+      .captureTiming = plan.captureTiming,
+  };
+  const InvocationBinding binding{settings};
+  AttemptOutcome outcome = plan.plannedCase.get().invokeCompact(
+      InvocationRequest(plan.plannedCase.get().descriptor(), options.timeMode));
+  outcome.runSeed = plan.runSeed;
+  outcome.attempt = attempt;
+  outcome.iteration = plan.scheduledCase.runIteration;
+  outcome.warmup = warmup;
+  if (outcome.failure) {
+    outcome.failure->runSeed = plan.runSeed;
+    outcome.failure->attempt = attempt;
+    outcome.failure->iteration = plan.scheduledCase.runIteration;
+    outcome.failure->warmup = warmup;
+  }
+  return outcome;
 }
 
 [[nodiscard]] constexpr auto hasTimeout(const TestExecution &execution) noexcept -> bool {
@@ -316,6 +351,26 @@ private:
     if (plan.journal)
       plan.journal->get().attemptStarted(attempt, warmup);
 
+    if (plan.compactJournal) {
+      AttemptOutcome outcome = executeAttemptOutcome(plan_, attempt, warmup, false);
+      if (outcome.failure) {
+        if (plan.journal)
+          plan.journal->get().attemptCompleted(*outcome.failure);
+        const AttemptObservation observation{
+            .passed = false,
+            .timeout = outcome.timeout,
+        };
+        destination.push_back(std::move(*outcome.failure));
+        return observation;
+      }
+      if (plan.journal)
+        plan.journal->get().attemptCompleted(outcome);
+      return AttemptObservation{
+          .passed = outcome.passed,
+          .timeout = outcome.timeout,
+      };
+    }
+
     if (plan.accumulator) {
       AttemptOutcome outcome = executeAttemptOutcome(
           plan_, attempt, warmup, plan.options.get().retention == RetentionPolicy::All);
@@ -323,7 +378,7 @@ private:
           .passed = outcome.passed,
           .timeout = outcome.timeout,
       };
-      plan.accumulator->get().append(std::move(outcome));
+      plan.accumulator->get().append(plan.plannedCase.get().descriptor(), std::move(outcome));
       return observation;
     }
 
@@ -428,6 +483,43 @@ auto executeCase(const InvocationPlan &plan) -> Vec<TestExecution> {
   return CaseExecutor{plan}.run();
 }
 
+[[nodiscard]] constexpr auto usesBenchmark(const InvocationPlan &plan) noexcept -> bool {
+  const RunOptions &options = plan.options.get();
+  const TestPolicy &policy = plan.plannedCase.get().descriptor().policy;
+  return options.executionMode == ExecutionMode::Benchmark and options.retention != RetentionPolicy::All and
+         not options.captureMemory and not options.captureProfile and not policy.trace and policy.warmup == 0 and
+         policy.retry == 0;
+}
+
+auto executeBenchmarkCase(const InvocationPlan &plan, usize count) -> Vec<TestExecution> {
+  BatchExecutionContext batch{};
+  const AttemptIndex attempt{.runIteration = plan.scheduledCase.runIteration};
+  const InvocationSettings settings{
+      .seed = deriveSeed(plan.runSeed, plan.plannedCase.get().descriptor().identifier,
+          plan.plannedCase.get().descriptor().testCase, attempt, false),
+      .iteration = plan.scheduledCase.runIteration,
+      .forceTrace = forceTrace(plan.options.get().traceMode),
+      .captureProfile = false,
+      .captureTiming = plan.captureTiming,
+  };
+  const InvocationBinding binding{settings};
+  plan.plannedCase.get().invokeBatch(
+      InvocationRequest(plan.plannedCase.get().descriptor(), plan.options.get().timeMode), count, batch);
+  if (plan.accumulator) {
+    plan.accumulator->get().appendAggregate(plan.plannedCase.get().descriptor(), batch, plan.runSeed);
+    if (plan.failureObserved and batch.failed())
+      plan.failureObserved->get().store(true, std::memory_order_relaxed);
+    return {};
+  }
+  if (batch.firstFailure)
+    return Vec<TestExecution>{std::move(*batch.firstFailure)};
+  TestExecution aggregate{.descriptor = plan.plannedCase.get().descriptor(),
+      .duration = batch.duration, .wallDuration = batch.wallDuration, .runSeed = plan.runSeed,
+      .attempt = attempt};
+  aggregate.state.assertions = batch.assertions;
+  return Vec<TestExecution>{std::move(aggregate)};
+}
+
 [[nodiscard]] auto laneFor(Vec<std::shared_ptr<ExecutionLane>> &executionLanes, usize plannedCase) noexcept
     -> Option<Ref<ExecutionLane>> {
   if (executionLanes.empty() or plannedCase >= executionLanes.size())
@@ -492,7 +584,9 @@ struct DispatchContext final { // NOLINT(cppcoreguidelines-pro-type-member-init)
       lock = std::unique_lock<std::mutex>{plan.lane->get().mutex()};
     return executeIsolatedCase(plan);
   }
-
+  if (usesBenchmark(plan))
+    return executeBenchmarkCase(plan,
+        context.options.get().repeat * std::max(plan.plannedCase.get().descriptor().policy.repeat, 1UZ));
   return executeCase(plan);
 }
 
@@ -519,11 +613,13 @@ struct DispatchContext final { // NOLINT(cppcoreguidelines-pro-type-member-init)
       {"NYX_TEST_WORKER_IDENTIFIER", request.identifier},
       {"NYX_TEST_WORKER_CASE", std::to_string(request.plannedCase)},
       {"NYX_TEST_WORKER_ITERATION", std::to_string(request.runIteration)},
+      {"NYX_TEST_WORKER_REPEAT", std::to_string(request.repeat)},
       {"NYX_TEST_WORKER_SEED", std::to_string(request.runSeed)},
       {"NYX_TEST_WORKER_TIME", std::to_string(static_cast<u8>(request.timeMode))},
       {"NYX_TEST_WORKER_TRACE", std::to_string(static_cast<u8>(request.traceMode))},
       {"NYX_TEST_WORKER_MEMORY", request.captureMemory ? "1" : "0"},
       {"NYX_TEST_WORKER_PROFILE", request.captureProfile ? "1" : "0"},
+      {"NYX_TEST_WORKER_TIMING", request.captureTiming == CapturePolicy::PerAttempt ? "1" : "0"},
   };
 }
 
@@ -562,7 +658,7 @@ auto appendWorkerFailure(Vec<TestExecution> &executions,
 
   execution.runSeed = plan.runSeed;
   execution.iteration = plan.scheduledCase.runIteration;
-  execution.attempt = journal.activeAttempt.value_or(AttemptIndex{
+    execution.attempt = journal.activeAttempt.value_or(AttemptIndex{
       .runIteration = plan.scheduledCase.runIteration,
   });
   execution.warmup = journal.activeWarmup;
@@ -627,11 +723,15 @@ auto appendWorkerProtocolFailure(Vec<TestExecution> &executions,
       .identifier = plan.plannedCase.get().descriptor().identifier,
       .plannedCase = plan.plannedCaseIndex,
       .runIteration = plan.scheduledCase.runIteration,
+      .repeat = usesBenchmark(plan)
+                    ? plan.options.get().repeat * std::max(plan.plannedCase.get().descriptor().policy.repeat, 1UZ)
+                    : 1,
       .runSeed = plan.runSeed,
       .timeMode = plan.options.get().timeMode,
       .traceMode = plan.options.get().traceMode,
       .captureMemory = plan.captureMemory,
       .captureProfile = plan.captureProfile,
+      .captureTiming = plan.captureTiming,
   };
 }
 
@@ -683,7 +783,7 @@ auto appendWorkerOutcome(Vec<TestExecution> &executions,
     return;
   }
 
-  if (journal.completed and executions.empty()) {
+  if (journal.completed and executions.empty() and journal.compactPassCount == 0) {
     appendWorkerProtocolFailure(
         executions, plan, journal, "worker completed its journal without an execution record");
     return;
@@ -725,6 +825,41 @@ auto appendWorkerOutcome(Vec<TestExecution> &executions,
   }
 
   Vec<TestExecution> executions = std::move(journal->executions);
+
+  if (journal->compactPassCount != 0) {
+    BatchExecutionContext batch{
+        .completed = journal->compactPassCount,
+        .passed = journal->compactPassCount,
+        .assertions = journal->compactAssertionCount,
+        .duration = journal->compactDuration,
+        .wallDuration = journal->compactWallDuration,
+        .minimumDuration = journal->compactMinimumDuration,
+        .maximumDuration = journal->compactMaximumDuration,
+        .meanDuration = journal->compactMeanDuration,
+        .variableAccumulator = journal->compactVariableAccumulator,
+        .timingSamples = journal->compactTimingSamples,
+        .firstQuartile = journal->compactFirstQuartile,
+        .median = journal->compactMedian,
+        .thirdQuartile = journal->compactThirdQuartile,
+        .quantilesAvailable = journal->compactQuantilesAvailable,
+        .quantilesApproximate = journal->compactQuantilesApproximate,
+    };
+    if (plan.accumulator)
+      plan.accumulator->get().appendAggregate(plan.plannedCase.get().descriptor(), batch, plan.runSeed);
+    else {
+      TestExecution aggregate{.descriptor = plan.plannedCase.get().descriptor(),
+          .duration = batch.duration, .wallDuration = batch.wallDuration,
+          .runSeed = plan.runSeed,
+          .seed = deriveSeed(plan.runSeed,
+              plan.plannedCase.get().descriptor().identifier,
+              plan.plannedCase.get().descriptor().testCase,
+              AttemptIndex{.runIteration = plan.scheduledCase.runIteration},
+              false),
+          .attempt = AttemptIndex{.runIteration = plan.scheduledCase.runIteration}};
+      aggregate.state.assertions = batch.assertions;
+      executions.push_back(std::move(aggregate));
+    }
+  }
 
   appendWorkerOutcome(executions, plan, *journal, outcome);
 
@@ -788,6 +923,9 @@ auto appendWorkerOutcome(Vec<TestExecution> &executions,
               batch, [&accumulator = context.accumulator](const TestExecution &execution) -> void {
                 accumulator->get().append(execution);
               });
+        if (context.accumulator)
+          context.accumulator->get().completeCase(
+              context.plannedCases.get()[scheduledCase.plannedCase].descriptor().identifier);
         else
           executions.append_range(std::move(batch));
       });
@@ -854,8 +992,10 @@ private:
       if (context.accumulator) {
         std::ranges::for_each(
             batch, [&accumulator = context.accumulator](const TestExecution &execution) -> void {
-              accumulator->get().append(execution);
+            accumulator->get().append(execution);
             });
+        context.accumulator->get().completeCase(
+            context.plannedCases.get()[scheduledCases[index].plannedCase].descriptor().identifier);
 
       } else {
         executions_[index].emplace(std::move(batch));
@@ -891,12 +1031,37 @@ auto executePlannedCases(RunSession &session,
   if constexpr (build::tests) {
     Vec<PlannedCase> plannedCases = session.takePlannedCases();
     const u64 runSeed = options.seed ? *options.seed : randomSeed();
-    const Vec<ScheduledCase> scheduledCases = scheduleCases(plannedCases.size(), options, runSeed);
-    const usize workers = workerCount(options.threads, scheduledCases.size());
+    const bool batchExecution = options.executionMode == ExecutionMode::Benchmark and options.repeat > 1 and
+                               options.retention != RetentionPolicy::All and not options.captureMemory and
+                               not options.captureProfile and
+                               std::ranges::all_of(plannedCases, [](const PlannedCase &plannedCase) {
+                                 const TestPolicy &policy = plannedCase.descriptor().policy;
+                                 return not policy.trace and policy.warmup == 0 and policy.retry == 0;
+                               });
+    RunOptions schedulingOptions = options;
+    if (batchExecution)
+      schedulingOptions.repeat = 1;
+    const Vec<ScheduledCase> scheduledCases = scheduleCases(plannedCases.size(), schedulingOptions, runSeed);
+    usize workers = workerCount(options.threads, scheduledCases.size());
     if (workers == 0)
       return {};
-
     Vec<std::shared_ptr<ExecutionLane>> executionLanes = makeExecutionLanes(plannedCases, options.repeat);
+
+    // Repetitions of a stateful single case are serialized by its execution lane. A hardware-sized worker
+    // pool only makes those workers contend on the same mutex and on the accumulator.
+    if (plannedCases.size() == 1 and not executionLanes.empty() and executionLanes.front() != nullptr)
+      workers = 1;
+
+    if (accumulator)
+      accumulator->get().setConcurrent(workers > 1);
+
+    if (accumulator) {
+      const usize completions = batchExecution ? 1 : options.repeat;
+      std::ranges::for_each(plannedCases, [accumulator, completions](const PlannedCase &plannedCase) -> void {
+        accumulator->get().expectCaseCompletion(plannedCase.descriptor(), completions);
+      });
+    }
+
     DispatchContext context{
         .plannedCases = plannedCases,
         .executionLanes = executionLanes,
@@ -920,6 +1085,7 @@ auto executeWorkerCase(RunSession &session, const WorkerRequest &request, RunOpt
   WorkerJournal journal{request.resultPath};
   if (not journal.ready())
     return;
+  journal.setBuffered(true);
 
   const auto requested =
       std::ranges::find_if(plannedCases, [&request](const PlannedCase &plannedCase) -> bool {
@@ -944,24 +1110,23 @@ auto executeWorkerCase(RunSession &session, const WorkerRequest &request, RunOpt
   options.timeMode = request.timeMode;
   options.traceMode = request.traceMode;
 
-  const ScheduledCase scheduledCase{
-      .plannedCase = request.plannedCase,
-      .runIteration = request.runIteration,
-  };
-
   const InvocationPlan plan{
       .plannedCase = std::cref(plannedCases[plannedCase]),
       .capabilities = plannedCases[plannedCase].capabilities(),
       .plannedCaseIndex = request.plannedCase,
-      .scheduledCase = scheduledCase,
+      .scheduledCase = ScheduledCase{
+          .plannedCase = request.plannedCase,
+          .runIteration = request.runIteration,
+      },
       .options = options,
       .runSeed = request.runSeed,
       .isolation = CrashIsolation::InProcess,
       .captureMemory = request.captureMemory,
       .captureProfile = request.captureProfile,
+      .captureTiming = request.captureTiming,
       .journal = journal,
+      .compactJournal = true,
   };
-
   if (not isolation::installWorkerFaultHandler(request.faultPath)) {
     const TestDescriptor descriptor = plannedCases[plannedCase].descriptor();
     const NativeFault fault{
@@ -976,7 +1141,23 @@ auto executeWorkerCase(RunSession &session, const WorkerRequest &request, RunOpt
     return;
   }
 
-  static_cast<void>(executeCase(plan));
+  if (request.repeat <= 1) {
+    static_cast<void>(executeCase(plan));
+  } else {
+    BatchExecutionContext batch{};
+    const InvocationSettings settings{
+        .seed = deriveSeed(request.runSeed, plannedCases[plannedCase].descriptor().identifier,
+            plannedCases[plannedCase].descriptor().testCase,
+            AttemptIndex{.runIteration = request.runIteration}, false),
+        .iteration = request.runIteration,
+        .captureProfile = false,
+        .captureTiming = request.captureTiming,
+    };
+    const InvocationBinding binding{settings};
+    plannedCases[plannedCase].invokeBatch(
+        InvocationRequest(plannedCases[plannedCase].descriptor(), options.timeMode), request.repeat, batch);
+    journal.batchCompleted(batch);
+  }
   journal.complete();
 }
 

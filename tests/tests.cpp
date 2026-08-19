@@ -7,19 +7,30 @@ using namespace Nyx::Test;
 
 inline constexpr bool renderJson{false};
 
+inline constexpr RunOptions benchmarkPreset{
+    .executionMode = ExecutionMode::Benchmark,
+    .threads = 0,
+    .retention = RetentionPolicy::Failures,
+    .timeMode = TimeMode::Real,
+    .traceMode = TraceMode::Annotations,
+    .captureProfile = false,
+    .captureTiming = CapturePolicy::PerAttempt,
+    .order = ExecutionOrder::Shuffled,
+    .repeat = 1'000'000,
+    .isolation = CrashIsolation::InProcess,
+};
+inline constexpr RunOptions diagnosticPreset{
+    .executionMode = ExecutionMode::Diagnostic,
+    .threads = 0,
+    .retention = RetentionPolicy::All,
+    .timeMode = TimeMode::Real,
+    .traceMode = TraceMode::Annotations,
+    .captureTiming = CapturePolicy::PerAttempt,
+    .order = ExecutionOrder::Shuffled,
+    .isolation = CrashIsolation::InProcess,
+};
+
 auto main() -> int { // NOLINT
-  const RunReport report = runAll(
-      TestSelection{
-          // .group = "math",
-      },
-      RunOptions{
-          .threads = 0,
-          .retention = RetentionPolicy::Failures,
-          .timeMode = TimeMode::Real,
-          .traceMode = TraceMode::Annotations,
-          .order = ExecutionOrder::Shuffled,
-          .failFast = false,
-      });
   Reporter reporter{
       ReporterOptions{
           .renderer =
@@ -30,10 +41,19 @@ auto main() -> int { // NOLINT
                   .details = DetailMode::Trace,
               },
           .showPassedTests = true,
+          .showAttempts = true,
           .showSummary = true,
       },
   };
-  TestSummary summary = reporter.report(report, std::cout);
+  const RunReport benchmarkTests =
+      runAll(reporter, std::cout, TestSelection{.group = "math"}, benchmarkPreset);
+
+  const RunReport diagnosticTests = runAll(reporter,
+      std::cout,
+      TestSelection{
+          .group = "core",
+      },
+      diagnosticPreset);
 
   if constexpr (renderJson) {
     JsonReporter jsonReporter(JsonReporterOptions{
@@ -46,8 +66,8 @@ auto main() -> int { // NOLINT
       jsonReporter.reportList(list(), outputList);
     std::ofstream outputSummary{root / "summary.json"};
     if (outputSummary)
-      jsonReporter.report(report, outputSummary);
+      jsonReporter.report(diagnosticTests, outputSummary);
   }
 
-  return summary.passed() ? build::exitSuccess : build::exitFailure;
+  return diagnosticTests.passed() ? build::exitSuccess : build::exitFailure;
 }

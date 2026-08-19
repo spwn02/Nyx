@@ -154,6 +154,18 @@ preservesProfileBindingAcrossAsyncResumption() -> void {
   check(summary.approximate);
 }
 
+[[ = test, = group("framework"), = tag("measurements", "quantiles") ]] auto computesStartupQuantiles() -> void {
+  using Duration = std::chrono::steady_clock::duration;
+  const MeasurementSummary summary = detail::summarizeMeasurements(
+      Vec<Duration>{Duration{4}, Duration{1}, Duration{3}, Duration{2}});
+
+  require(summary.quantilesAvailable);
+  check(summary.firstQuartile == Duration{1} + Duration{3} / 4);
+  check(summary.median == Duration{5} / 2);
+  check(summary.thirdQuartile == Duration{13} / 4);
+  check(not summary.approximate);
+}
+
 [[ = test, = group("framework"), = tag("measurements", "retry") ]] auto doesNotRetryAssertions() -> void {
   const Vec<TestExecution> executions = runAllDetailed<^^NoRetrySubjects>(RunOptions{
       .timeMode = TimeMode::Virtual,

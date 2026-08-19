@@ -18,6 +18,7 @@ enum class RecordKind : u8 {
   Started = 1,
   Execution = 2,
   Completed = 3,
+  Compact = 4,
 };
 
 constexpr u32 journalMagic{0x4E59584A};
@@ -575,7 +576,7 @@ auto writeExecution(WireWriter &writer, const TestExecution &execution) -> void 
   return execution;
 }
 
-auto writeRecord(std::ofstream &output, RecordKind kind, StringView payload) -> bool {
+auto writeRecord(std::ofstream &output, RecordKind kind, StringView payload, bool flush = true) -> bool {
   try {
     const u32 magic = journalMagic;
     const u8 type = static_cast<u8>(kind);
@@ -586,7 +587,8 @@ auto writeRecord(std::ofstream &output, RecordKind kind, StringView payload) -> 
     output.write(reinterpret_cast<const char *>(std::addressof(size)), sizeof(size));
     // NOLINTEND(cppcoreguidelines-pro-type-reinterpret-cast)
     output.write(payload.data(), static_cast<std::streamsize>(payload.size()));
-    output.flush();
+    if (flush)
+      output.flush();
     return static_cast<bool>(output);
   } catch (...) {
     return false;
@@ -640,6 +642,11 @@ auto WorkerJournal::ready() const noexcept -> bool {
   return ready_;
 }
 
+auto WorkerJournal::setBuffered(bool buffered) noexcept -> void {
+  buffered_ = buffered;
+  recordsSinceFlush_ = 0;
+}
+
 auto WorkerJournal::attemptStarted(AttemptIndex attempt, bool warmup) noexcept -> void {
   if (not ready_)
     return;
@@ -650,7 +657,7 @@ auto WorkerJournal::attemptStarted(AttemptIndex attempt, bool warmup) noexcept -
     writer.pod(static_cast<u64>(attempt.sample));
     writer.pod(static_cast<u64>(attempt.retry));
     writer.pod(static_cast<u8>(warmup));
-    ready_ = writeRecord(*output_, RecordKind::Started, writer.bytes());
+    ready_ = writeRecord(*output_, RecordKind::Started, writer.bytes(), not buffered_);
   } catch (...) {
     ready_ = false;
   }
@@ -663,17 +670,66 @@ auto WorkerJournal::attemptCompleted(const TestExecution &execution) noexcept ->
   try {
     WireWriter writer{};
     writeExecution(writer, execution);
-    ready_ = writeRecord(*output_, RecordKind::Execution, writer.bytes());
+    ready_ = writeRecord(*output_, RecordKind::Execution, writer.bytes(), not buffered_);
   } catch (...) {
     ready_ = false;
   }
+}
+
+auto WorkerJournal::attemptCompleted(const AttemptOutcome &outcome) noexcept -> void {
+  if (not ready_)
+    return;
+
+  try {
+    ++compactPassCount_;
+    compactAssertionCount_ += outcome.assertions;
+    compactDuration_ += outcome.duration;
+    compactWallDuration_ += outcome.wallDuration;
+  } catch (...) {
+    ready_ = false;
+  }
+}
+
+auto WorkerJournal::batchCompleted(const BatchExecutionContext &batch) noexcept -> void {
+  compactPassCount_ += batch.passed;
+  compactAssertionCount_ += batch.assertions;
+  compactDuration_ += batch.duration;
+  compactWallDuration_ += batch.wallDuration;
+  compactMinimumDuration_ = batch.minimumDuration;
+  compactMaximumDuration_ = batch.maximumDuration;
+  compactMeanDuration_ = batch.meanDuration;
+  compactVariableAccumulator_ = batch.variableAccumulator;
+  compactTimingSamples_ = batch.timingSamples;
+  // Quantiles are finalized by the child batch and are safe to transfer as scalar values.
+  compactFirstQuartile_ = batch.firstQuartile;
+  compactMedian_ = batch.median;
+  compactThirdQuartile_ = batch.thirdQuartile;
+  compactQuantilesAvailable_ = batch.quantilesAvailable;
+  compactQuantilesApproximate_ = batch.quantilesApproximate;
+  if (batch.firstFailure)
+    attemptCompleted(*batch.firstFailure);
 }
 
 auto WorkerJournal::complete() noexcept -> void {
   if (not ready_)
     return;
 
-  ready_ = writeRecord(*output_, RecordKind::Completed, {});
+  WireWriter writer{};
+  writer.pod(static_cast<u64>(compactPassCount_));
+  writer.pod(static_cast<u64>(compactAssertionCount_));
+  writer.pod(static_cast<i64>(compactDuration_.count()));
+  writer.pod(static_cast<i64>(compactWallDuration_.count()));
+  writer.pod(static_cast<i64>(compactMinimumDuration_.count()));
+  writer.pod(static_cast<i64>(compactMaximumDuration_.count()));
+  writer.pod(compactMeanDuration_);
+  writer.pod(compactVariableAccumulator_);
+  writer.pod(static_cast<u64>(compactTimingSamples_));
+  writer.pod(static_cast<i64>(compactFirstQuartile_.count()));
+  writer.pod(static_cast<i64>(compactMedian_.count()));
+  writer.pod(static_cast<i64>(compactThirdQuartile_.count()));
+  writer.pod(compactQuantilesAvailable_);
+  writer.pod(compactQuantilesApproximate_);
+  ready_ = writeRecord(*output_, RecordKind::Completed, writer.bytes(), true);
 }
 
 auto consumeWorkerRequest() -> Option<WorkerRequest> {
@@ -691,22 +747,26 @@ auto consumeWorkerRequest() -> Option<WorkerRequest> {
   const Option<String> identifier = requiredEnvironmentValue("NYX_TEST_WORKER_IDENTIFIER");
   const Option<String> plannedCase = requiredEnvironmentValue("NYX_TEST_WORKER_CASE");
   const Option<String> runIteration = requiredEnvironmentValue("NYX_TEST_WORKER_ITERATION");
+  const Option<String> repeat = requiredEnvironmentValue("NYX_TEST_WORKER_REPEAT");
   const Option<String> runSeed = requiredEnvironmentValue("NYX_TEST_WORKER_SEED");
   const Option<String> timeMode = requiredEnvironmentValue("NYX_TEST_WORKER_TIME");
   const Option<String> traceMode = requiredEnvironmentValue("NYX_TEST_WORKER_TRACE");
   const Option<String> captureMemory = requiredEnvironmentValue("NYX_TEST_WORKER_MEMORY");
   const Option<String> captureProfile = requiredEnvironmentValue("NYX_TEST_WORKER_PROFILE");
+  const Option<String> captureTiming = requiredEnvironmentValue("NYX_TEST_WORKER_TIMING");
 
-  if (not resultPath or not faultPath or not identifier or not plannedCase or not runIteration or
-      not runSeed or not timeMode or not traceMode or not captureMemory or not captureProfile)
+  if (not resultPath or not faultPath or not identifier or not plannedCase or not runIteration or not repeat or
+      not runSeed or not timeMode or not traceMode or not captureMemory or not captureProfile or not captureTiming)
     return WorkerRequest{};
 
   const Option<u64> plannedCaseValue = parseU64(*plannedCase);
   const Option<u64> runIterationValue = parseU64(*runIteration);
+  const Option<u64> repeatValue = parseU64(*repeat);
   const Option<u64> runSeedValue = parseU64(*runSeed);
   const Option<u64> timeModeValue = parseU64(*timeMode);
   const Option<u64> traceModeValue = parseU64(*traceMode);
-  if (not plannedCaseValue.has_value() or not runIterationValue.has_value() or not runSeedValue.has_value() or
+  if (not plannedCaseValue.has_value() or not runIterationValue.has_value() or not repeatValue.has_value() or
+      not runSeedValue.has_value() or
       not timeModeValue.has_value() or not traceModeValue.has_value())
     return WorkerRequest{};
 
@@ -716,11 +776,13 @@ auto consumeWorkerRequest() -> Option<WorkerRequest> {
       .identifier = *identifier,
       .plannedCase = static_cast<usize>(*plannedCaseValue),
       .runIteration = static_cast<usize>(*runIterationValue),
+      .repeat = static_cast<usize>(*repeatValue),
       .runSeed = *runSeedValue,
       .timeMode = static_cast<TimeMode>(*timeModeValue),
       .traceMode = static_cast<TraceMode>(*traceModeValue),
       .captureMemory = *captureMemory == "1",
       .captureProfile = *captureProfile == "1",
+      .captureTiming = *captureTiming == "1" ? CapturePolicy::PerAttempt : CapturePolicy::None,
   };
 }
 
@@ -770,7 +832,59 @@ auto readWorkerJournal(const Path &path, const TestDescriptor &fallback) -> Work
       result.executions.push_back(std::move(execution));
       result.activeAttempt = None;
       result.activeWarmup = false;
+    } else if (kind == RecordKind::Compact) {
+      const AttemptIndex attempt{
+          .runIteration = static_cast<usize>(payloadReader.pod<u64>()),
+          .sample = static_cast<usize>(payloadReader.pod<u64>()),
+          .retry = static_cast<usize>(payloadReader.pod<u64>()),
+      };
+      const bool warmup = payloadReader.pod<u8>() != 0;
+      const auto duration = std::chrono::steady_clock::duration{payloadReader.pod<i64>()};
+      const auto wallDuration = std::chrono::steady_clock::duration{payloadReader.pod<i64>()};
+      const usize assertions = static_cast<usize>(payloadReader.pod<u64>());
+      const usize failedAssertions = static_cast<usize>(payloadReader.pod<u64>());
+      const usize errors = static_cast<usize>(payloadReader.pod<u64>());
+      const u64 runSeed = payloadReader.pod<u64>();
+      const u64 seed = payloadReader.pod<u64>();
+      const usize iteration = static_cast<usize>(payloadReader.pod<u64>());
+      const bool passed = payloadReader.pod<u8>() != 0;
+      static_cast<void>(payloadReader.pod<u8>()); // timeout is represented by diagnostics in detailed records.
+      TestExecution execution{
+          .descriptor = fallback,
+          .duration = duration,
+          .wallDuration = wallDuration,
+          .runSeed = runSeed,
+          .seed = seed,
+          .iteration = iteration,
+          .attempt = attempt,
+          .warmup = warmup,
+      };
+      execution.state.assertions = assertions;
+      execution.state.failedAssertions = failedAssertions;
+      execution.state.errors = errors;
+      if (not passed)
+        execution.state.errors = std::max(execution.state.errors, usize{1});
+      if (not payloadReader.valid())
+        break;
+
+      result.executions.push_back(std::move(execution));
+      result.activeAttempt = None;
+      result.activeWarmup = false;
     } else if (kind == RecordKind::Completed) {
+      result.compactPassCount = static_cast<usize>(payloadReader.pod<u64>());
+      result.compactAssertionCount = static_cast<usize>(payloadReader.pod<u64>());
+      result.compactDuration = std::chrono::steady_clock::duration{payloadReader.pod<i64>()};
+      result.compactWallDuration = std::chrono::steady_clock::duration{payloadReader.pod<i64>()};
+      result.compactMinimumDuration = std::chrono::steady_clock::duration{payloadReader.pod<i64>()};
+      result.compactMaximumDuration = std::chrono::steady_clock::duration{payloadReader.pod<i64>()};
+      result.compactMeanDuration = payloadReader.pod<long double>();
+      result.compactVariableAccumulator = payloadReader.pod<long double>();
+      result.compactTimingSamples = static_cast<usize>(payloadReader.pod<u64>());
+      result.compactFirstQuartile = std::chrono::steady_clock::duration{payloadReader.pod<i64>()};
+      result.compactMedian = std::chrono::steady_clock::duration{payloadReader.pod<i64>()};
+      result.compactThirdQuartile = std::chrono::steady_clock::duration{payloadReader.pod<i64>()};
+      result.compactQuantilesAvailable = payloadReader.pod<bool>();
+      result.compactQuantilesApproximate = payloadReader.pod<bool>();
       result.completed = true;
     }
   }

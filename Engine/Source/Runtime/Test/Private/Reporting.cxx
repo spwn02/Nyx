@@ -14,6 +14,8 @@ namespace {
 
 constexpr inline StringView green = "\x1b[1;32m";
 constexpr inline StringView red = "\x1b[1;31m";
+constexpr inline StringView yellow = "\x1b[1;33m";
+constexpr inline StringView dim = "\x1b[2m";
 constexpr inline StringView cyan = "\x1b[1;36m";
 constexpr inline StringView reset = "\x1b[1;0m";
 constexpr inline usize progressBarWidth{80};
@@ -34,13 +36,70 @@ constexpr inline usize progressBarWidth{80};
   return std::format("{} {}", count, count == 1 ? singular : plural);
 }
 
-[[nodiscard]] constexpr auto durationLabel(std::chrono::steady_clock::duration duration) -> String {
-  const auto milliseconds = std::chrono::duration_cast<std::chrono::milliseconds>(duration);
-  if (milliseconds.count() > 0)
-    return std::format("{} ms", milliseconds.count());
+[[nodiscard]] auto compactCount(usize count) -> String {
+  if (count >= 1'000'000)
+    return std::format("{:.3g}M", static_cast<double>(count) / 1'000'000.0);
+  if (count >= 1'000)
+    return std::format("{:.3g}K", static_cast<double>(count) / 1'000.0);
+  return std::format("{}", count);
+}
 
-  const auto microseconds = std::chrono::duration_cast<std::chrono::microseconds>(duration);
-  return std::format("{} μs", microseconds.count());
+[[nodiscard]] constexpr auto durationLabel(std::chrono::steady_clock::duration duration) -> String {
+  const long double nanoseconds =
+      static_cast<long double>(std::chrono::duration_cast<std::chrono::nanoseconds>(duration).count());
+  const long double magnitude = std::abs(nanoseconds);
+  StringView unit = "ns";
+  long double value = nanoseconds;
+  if (magnitude >= 1'000'000'000.0L) {
+    value /= 1'000'000'000.0L;
+    unit = "s";
+  } else if (magnitude >= 1'000'000.0L) {
+    value /= 1'000'000.0L;
+    unit = "ms";
+  } else if (magnitude >= 1'000.0L) {
+    value /= 1'000.0L;
+    unit = "μs";
+  }
+  if (std::floor(value) == value)
+    return std::format("{} {}", static_cast<i64>(value), unit);
+  return std::format("{:.3g} {}", static_cast<double>(value), unit);
+}
+
+[[nodiscard]] auto measurementLabel(std::chrono::steady_clock::duration duration) -> String {
+  const long double nanoseconds =
+      static_cast<long double>(std::chrono::duration_cast<std::chrono::nanoseconds>(duration).count());
+  const long double magnitude = std::abs(nanoseconds);
+  StringView unit = "ns";
+  long double value = nanoseconds;
+  if (magnitude >= 1'000'000'000.0L) {
+    value /= 1'000'000'000.0L;
+    unit = "s";
+  } else if (magnitude >= 1'000'000.0L) {
+    value /= 1'000'000.0L;
+    unit = "ms";
+  } else if (magnitude >= 1'000.0L) {
+    value /= 1'000.0L;
+    unit = "μs";
+  }
+  if (std::floor(value) == value)
+    return std::format("{} {}", static_cast<i64>(value), unit);
+  return std::format("{:.3g} {}", static_cast<double>(value), unit);
+}
+
+[[nodiscard]] auto relativeDeviation(const MeasurementSummary &measurement) -> String {
+  if (measurement.mean.count() == 0)
+    return {};
+  const long double percentage = 100.0L * static_cast<long double>(measurement.deviation.count()) /
+                                 static_cast<long double>(measurement.mean.count());
+  return std::format("{:.3g}%", static_cast<double>(percentage));
+}
+
+[[nodiscard]] auto deviationColor(const MeasurementSummary &measurement) -> StringView {
+  if (measurement.mean.count() == 0)
+    return dim;
+  const long double ratio = static_cast<long double>(measurement.deviation.count()) /
+                            static_cast<long double>(measurement.mean.count());
+  return ratio <= 0.02L ? green : ratio <= 0.10L ? yellow : red;
 }
 
 [[nodiscard]] auto withTestContext(StringView identifier, const Diagnostic &diagnostic) -> Diagnostic {
@@ -264,8 +323,13 @@ private:
 };
 
 /// Renders the fixed-width proress bar and the final human-readable run summary.
-auto renderSummary(const TestSummary &summary, bool useColor, std::ostream &output) -> void {
-  if (summary.testCount != 0) {
+auto renderSummary(const TestSummary &summary,
+    const RunReport &report,
+    bool useColor,
+    bool showProgress,
+    std::ostream &output)
+    -> void {
+  if (showProgress and summary.testCount != 0) {
     const usize passedWidth = summary.passedCaseCount * progressBarWidth / summary.caseCount;
     const usize failedWidth = progressBarWidth - passedWidth;
 
@@ -274,29 +338,51 @@ auto renderSummary(const TestSummary &summary, bool useColor, std::ostream &outp
            << paint(String(failedWidth, '='), red, useColor) << '\n';
   }
 
-  output << std::format("\ntest result: {}. {}; {}; {}; {}; {}; {}; {}; finished in {}; {}; {}; "
-                        "{}; {}; {}; wall {}\n",
-      paint(summary.passed() ? "ok" : "FAILED", summary.passed() ? green : red, useColor),
-      countLabel(summary.testCount, "test", "tests"),
-      countLabel(summary.passedCount, "passed", "passed"),
-      countLabel(summary.failedCount, "failed", "failed"),
-      countLabel(summary.assertionCount, "assertion", "assertions"),
-      countLabel(summary.failedAssertionCount, "failed assertions", "failed assertions"),
-      countLabel(summary.errorCount, "error", "errors"),
-      countLabel(summary.recoveredCount, "recovered case", "recovered cases"),
-      durationLabel(summary.duration),
-      countLabel(summary.caseCount, "case", "cases"),
-      countLabel(summary.attemptCount, "attempt", "attempts"),
-      countLabel(summary.sampleCount, "sample", "samples"),
-      countLabel(summary.warmupCount, "warmup", "warmups"),
-      countLabel(summary.retryCount, "retry", "retries"),
-      durationLabel(summary.wallDuration));
+  output << '\n'
+         << paint(summary.passed() ? "PASS" : "FAIL", summary.passed() ? green : red, useColor) << "  "
+         << (summary.failed() ? std::format("{} / {} tests", summary.passedCaseCount, summary.caseCount)
+                              : countLabel(summary.caseCount, "test", "tests"))
+         << " · " << countLabel(summary.assertionCount, "assertion", "assertions");
+  if (report.measurementsEnabled)
+    output << "  " << durationLabel(summary.wallDuration);
+  output << '\n'
+         << '\n'
+         << "  " << paint("Execution", dim, useColor) << "    "
+         << countLabel(summary.caseCount, "case", "cases") << " · "
+         << countLabel(summary.attemptCount, "attempt", "attempts");
+  if (report.measurementsEnabled and summary.sampleCount != 0)
+    output << " · " << compactCount(summary.sampleCount) << " samples";
+  if (report.measurementsEnabled and summary.warmupCount != 0)
+    output << " · " << compactCount(summary.warmupCount) << " warmups";
+  output << '\n';
+  if (summary.recoveredCount != 0 or summary.retryCount != 0)
+    output << "  " << paint("Recovery", dim, useColor) << "      " << summary.recoveredCount
+           << " recovered · " << summary.retryCount << " retries\n";
+  if (summary.errorCount != 0)
+    output << "  " << paint("Errors", dim, useColor) << "        " << summary.errorCount << '\n';
+  if (report.measurementsEnabled) {
+    const usize measured = report.measuredCaseCount;
+    if (measured != 0)
+      output << "  " << paint("Measurements", dim, useColor) << "   " << measured << " measured "
+             << (measured == 1 ? "case" : "cases") << '\n';
+  }
+  output << '\n';
 }
 
 } // namespace
 
 struct Reporter::RenderState final {
   bool previousFailure{};
+  bool measurementsEnabled{true};
+  bool measurementHeader{};
+  usize identityWidth{};
+  usize samplesWidth{};
+  usize timeWidth{};
+  usize minimumWidth{};
+  usize quartileWidth{};
+  usize maximumWidth{};
+  usize meanWidth{};
+  usize deviationWidth{};
 };
 
 auto TestSummary::passed() const noexcept -> bool {
@@ -325,10 +411,14 @@ CaseAccumulator::CaseAccumulator(TestDescriptor descriptor,
     : result_{.descriptor = std::move(descriptor)}
     , retention_(retention)
     , maxRetainedFailures_(maxRetainedFailures) {
-  sampleDurations_.reserve(std::min(maxRetainedFailures, maxRetainedFailuresDefault));
+}
+
+auto CaseAccumulator::setRetainSuccessful(bool retain) noexcept -> void {
+  retainSuccessful_ = retain;
 }
 
 auto CaseAccumulator::append(AttemptOutcome outcome) -> void {
+  ++attemptCount_;
   // Only a successful terminal attempt represents a measured logical sample.
   // Failed and timed-out attempts remain available through the retention policy.
   const bool measured = not outcome.warmup and outcome.passed;
@@ -348,12 +438,9 @@ auto CaseAccumulator::append(AttemptOutcome outcome) -> void {
     const long double delta = sample - meanDuration_;
     meanDuration_ += delta / static_cast<long double>(sampleCount_);
     variableAccumulator_ += delta * (sample - meanDuration_);
-    if (sampleDurations_.size() < maxRetainedFailuresDefault)
-      sampleDurations_.push_back(outcome.duration);
-    else {
-      approximateMedian_ = true;
-      sampleDurations_[(sampleCount_ - 1) % maxRetainedFailuresDefault] = outcome.duration;
-    }
+    firstQuartile_.add(outcome.duration);
+    median_.add(outcome.duration);
+    thirdQuartile_.add(outcome.duration);
   }
 
   if (outcome.failure) {
@@ -364,8 +451,33 @@ auto CaseAccumulator::append(AttemptOutcome outcome) -> void {
           .warmup = outcome.warmup,
       });
       ++retainedFailures_;
+      retainedFailure_ = true;
     } else {
       ++suppressedFailures_;
+    }
+  } else if (outcome.passed and retainSuccessful_) {
+    // Keep one successful representative for the ordinary live row. Repeated cases use the incremental
+    // measurement summary instead of rendering this representative as a physical-attempt row.
+    if (not std::ranges::any_of(result_.attempts,
+            [](const TestAttempt &attempt) { return attempt.execution.passed(); })) {
+      TestExecution execution{
+          .descriptor = result_.descriptor,
+          .duration = outcome.duration,
+          .wallDuration = outcome.wallDuration,
+          .runSeed = outcome.runSeed,
+          .seed = outcome.seed,
+          .iteration = outcome.iteration,
+          .attempt = outcome.attempt,
+          .warmup = outcome.warmup,
+      };
+      execution.state.assertions = outcome.assertions;
+      execution.state.failedAssertions = outcome.failedAssertions;
+      execution.state.errors = outcome.errors;
+      result_.attempts.push_back(TestAttempt{
+          .execution = std::move(execution),
+          .index = outcome.attempt,
+          .warmup = outcome.warmup,
+      });
     }
   }
   if (outcome.passed and outcome.attempt.retry != 0) {
@@ -383,26 +495,56 @@ auto CaseAccumulator::append(AttemptOutcome outcome) -> void {
   }
 }
 
+auto CaseAccumulator::appendAggregate(const BatchExecutionContext &batch) -> void {
+  attemptCount_ += batch.completed - (batch.firstFailure ? 1UZ : 0UZ);
+  aggregateTiming_ = true;
+  aggregateDistributionAvailable_ = batch.timingSamples != 0;
+  aggregateMinimum_ = batch.minimumDuration;
+  aggregateMaximum_ = batch.maximumDuration;
+  aggregateMean_ = batch.meanDuration;
+  aggregateVariable_ = batch.variableAccumulator;
+  aggregateFirstQuartile_ = batch.firstQuartile;
+  aggregateMedian_ = batch.median;
+  aggregateThirdQuartile_ = batch.thirdQuartile;
+  aggregateQuantilesAvailable_ = batch.quantilesAvailable;
+  aggregateQuantilesApproximate_ = batch.quantilesApproximate;
+  sampleCount_ += batch.passed;
+  totalDuration_ += batch.duration;
+  if (batch.firstFailure) {
+    AttemptOutcome failure = makeAttemptOutcome(*batch.firstFailure, true);
+    failure.attempt = batch.firstFailureAttempt.value_or(AttemptIndex{});
+    append(std::move(failure));
+  }
+}
+
 auto CaseAccumulator::finish() && -> TestCaseResult {
-  if (sampleCount_ != 0 and (result_.descriptor.policy.repeat > 1 or result_.descriptor.policy.warmup != 0 or
-                               result_.descriptor.policy.retry != 0)) {
-    std::ranges::sort(sampleDurations_);
-    const usize middle = sampleDurations_.size() / 2;
-    const auto median = sampleDurations_.size() % 2 == 0
-                            ? (sampleDurations_[middle - 1] + sampleDurations_[middle]) / 2
-                            : sampleDurations_[middle];
+  if (sampleCount_ != 0 and
+      (aggregateTiming_ or (retainSuccessful_ and attemptCount_ > 1) or result_.descriptor.policy.repeat > 1 or
+          result_.descriptor.policy.warmup != 0 or result_.descriptor.policy.retry != 0)) {
     result_.measurement = MeasurementSummary{
         .sampleCount = sampleCount_,
         .total = totalDuration_,
-        .minimum = minimumDuration_,
-        .maximum = maximumDuration_,
-        .mean = std::chrono::steady_clock::duration{static_cast<std::chrono::steady_clock::duration::rep>(
-            meanDuration_)},
-        .median = median,
+        .minimum = aggregateTiming_ ? aggregateMinimum_ : minimumDuration_,
+        .maximum = aggregateTiming_ ? aggregateMaximum_ : maximumDuration_,
+        .mean =
+            aggregateTiming_
+                ? (aggregateDistributionAvailable_
+                          ? std::chrono::steady_clock::duration{static_cast<
+                                std::chrono::steady_clock::duration::rep>(aggregateMean_)}
+                          : totalDuration_ /
+                                static_cast<std::chrono::steady_clock::duration::rep>(sampleCount_))
+                : std::chrono::steady_clock::duration{static_cast<std::chrono::steady_clock::duration::rep>(
+                      meanDuration_)},
+        .firstQuartile = aggregateTiming_ ? aggregateFirstQuartile_ : firstQuartile_.value(),
+        .median = aggregateTiming_ ? aggregateMedian_ : median_.value(),
+        .thirdQuartile = aggregateTiming_ ? aggregateThirdQuartile_ : thirdQuartile_.value(),
         .deviation =
             std::chrono::steady_clock::duration{static_cast<std::chrono::steady_clock::duration::rep>(
-                std::sqrt(variableAccumulator_ / static_cast<long double>(sampleCount_)))},
-        .approximate = approximateMedian_,
+                std::sqrt((aggregateTiming_ ? aggregateVariable_ : variableAccumulator_) /
+                          static_cast<long double>(sampleCount_)))},
+        .approximate = aggregateTiming_ ? aggregateQuantilesApproximate_ : median_.approximate(),
+        .distributionAvailable = not aggregateTiming_ or aggregateDistributionAvailable_,
+        .quantilesAvailable = aggregateTiming_ ? aggregateQuantilesAvailable_ : median_.available(),
     };
   }
   result_.failedCase = hardFailure_ or not pendingTimeouts_.empty();
@@ -417,10 +559,57 @@ auto CaseAccumulator::identifier() const noexcept -> StringView {
 
 RunAccumulator::RunAccumulator(RetentionPolicy retention,
     usize maxRetainedFailures,
-    SelectionMetadata selection)
+    SelectionMetadata selection,
+    bool measurementsEnabled)
     : retention_(retention)
     , maxRetainedFailures_(maxRetainedFailures)
-    , selection_(std::move(selection)) {
+    , selection_(std::move(selection))
+    , measurementsEnabled_(measurementsEnabled) {
+}
+
+auto RunAccumulator::setCompletionObserver(std::function<void(const TestCaseResult &)> observer) -> void {
+  std::scoped_lock lock{mutex_};
+  completionObserver_ = std::move(observer);
+  retainSuccessful_ = static_cast<bool>(completionObserver_);
+  for (UPtr<CaseAccumulator> &caseAccumulator : cases_)
+    caseAccumulator->setRetainSuccessful(retainSuccessful_);
+}
+
+auto RunAccumulator::expectCaseCompletion(const TestDescriptor &descriptor, usize completions) -> void {
+  std::scoped_lock lock{mutex_};
+  expectedCompletions_.push_back(Pair<String, usize>{descriptor.identifier, completions});
+}
+
+auto RunAccumulator::completeCase(StringView identifier) -> void {
+  std::unique_lock lock{mutex_, std::defer_lock};
+  if (concurrent_)
+    lock.lock();
+
+  auto expected = std::ranges::find_if(expectedCompletions_, [identifier](const Pair<String, usize> &item) {
+    return item.first == identifier;
+  });
+  auto observed = std::ranges::find_if(observedCompletions_, [identifier](const Pair<String, usize> &item) {
+    return item.first == identifier;
+  });
+  if (observed == observedCompletions_.end()) {
+    observedCompletions_.push_back(Pair<String, usize>{String{identifier}, 1});
+    observed = std::prev(observedCompletions_.end());
+  } else {
+    ++observed->second;
+  }
+  if (expected == expectedCompletions_.end() or observed->second < expected->second)
+    return;
+
+  auto existing = std::ranges::find_if(cases_, [identifier](const UPtr<CaseAccumulator> &candidate) {
+    return candidate->identifier() == identifier;
+  });
+  if (existing == cases_.end())
+    return;
+  TestCaseResult result = std::move(**existing).finish();
+  cases_.erase(existing);
+  if (completionObserver_)
+    completionObserver_(result);
+  completedCases_.push_back(std::move(result));
 }
 
 auto RunAccumulator::append(const TestExecution &execution) -> void {
@@ -428,7 +617,15 @@ auto RunAccumulator::append(const TestExecution &execution) -> void {
 }
 
 auto RunAccumulator::append(AttemptOutcome outcome) -> void {
-  std::scoped_lock lock{mutex_};
+  // Copy before moving the outcome: the descriptor reference must not observe the moved-from argument.
+  TestDescriptor descriptor = outcome.descriptor;
+  append(descriptor, std::move(outcome));
+}
+
+auto RunAccumulator::append(const TestDescriptor &descriptor, AttemptOutcome outcome) -> void {
+  std::unique_lock lock{mutex_, std::defer_lock};
+  if (concurrent_)
+    lock.lock();
   ++summary_.testCount;
   ++summary_.attemptCount;
   summary_.duration += outcome.duration;
@@ -454,23 +651,59 @@ auto RunAccumulator::append(AttemptOutcome outcome) -> void {
     runSeed_ = outcome.runSeed;
 
   auto existing = std::ranges::find_if(
-      cases_, [&outcome](const UPtr<CaseAccumulator> &candidate) constexpr noexcept -> bool {
-        return candidate->identifier() == outcome.descriptor.identifier;
+      cases_, [&descriptor](const UPtr<CaseAccumulator> &candidate) constexpr noexcept -> bool {
+        return candidate->identifier() == descriptor.identifier;
       });
   if (existing == cases_.end()) {
-    cases_.push_back(std::make_unique<CaseAccumulator>(outcome.descriptor, retention_, maxRetainedFailures_));
+    cases_.push_back(std::make_unique<CaseAccumulator>(descriptor, retention_, maxRetainedFailures_));
     existing = std::prev(cases_.end());
+    (*existing)->setRetainSuccessful(retainSuccessful_);
   }
   (*existing)->append(std::move(outcome));
 }
 
+auto RunAccumulator::appendAggregate(const TestDescriptor &descriptor,
+    const BatchExecutionContext &batch,
+    u64 runSeed) -> void {
+  std::unique_lock lock{mutex_, std::defer_lock};
+  if (concurrent_)
+    lock.lock();
+  summary_.testCount += batch.completed;
+  summary_.attemptCount += batch.completed;
+  summary_.sampleCount += batch.completed;
+  summary_.passedCount += batch.passed;
+  summary_.failedCount += batch.completed - batch.passed;
+  summary_.assertionCount += batch.assertions;
+  summary_.failedAssertionCount += batch.failedAssertions;
+  summary_.errorCount += batch.errors;
+  summary_.duration += batch.duration;
+  summary_.wallDuration += batch.wallDuration;
+  if (not runSeed_)
+    runSeed_ = runSeed;
+  auto existing = std::ranges::find_if(cases_, [&descriptor](const UPtr<CaseAccumulator> &candidate) -> bool {
+    return candidate->identifier() == descriptor.identifier;
+  });
+  if (existing == cases_.end()) {
+    cases_.push_back(std::make_unique<CaseAccumulator>(descriptor, retention_, maxRetainedFailures_));
+    existing = std::prev(cases_.end());
+    (*existing)->setRetainSuccessful(retainSuccessful_);
+  }
+  (*existing)->appendAggregate(batch);
+}
+
+auto RunAccumulator::setConcurrent(bool concurrent) noexcept -> void {
+  concurrent_ = concurrent;
+}
+
 auto RunAccumulator::finish() && -> RunReport {
   RunReport report{
+      .measurementsEnabled = measurementsEnabled_,
       .selection = std::move(selection_),
       .runSeed = runSeed_,
       .retention = retention_,
   };
   report.cases.reserve(cases_.size());
+  report.cases.append_range(std::move(completedCases_));
   std::ranges::for_each(cases_, [&report](UPtr<CaseAccumulator> &caseAccumulator) -> void {
     report.cases.push_back(std::move(*caseAccumulator).finish());
   });
@@ -489,10 +722,15 @@ auto RunAccumulator::finish() && -> RunReport {
     });
   });
 
-  report.retainedAttemptCount = std::ranges::fold_left(report.cases, usize{},
+  report.retainedAttemptCount = std::ranges::fold_left(report.cases,
+      usize{},
       [](usize count, const TestCaseResult &testCase) -> usize { return count + testCase.attempts.size(); });
-  report.suppressedAttemptCount = std::ranges::fold_left(report.cases, usize{},
-      [](usize count, const TestCaseResult &testCase) -> usize { return count + testCase.suppressedAttemptCount; });
+  report.suppressedAttemptCount =
+      std::ranges::fold_left(report.cases, usize{}, [](usize count, const TestCaseResult &testCase) -> usize {
+        return count + testCase.suppressedAttemptCount;
+      });
+  report.measuredCaseCount = static_cast<usize>(std::ranges::count_if(
+      report.cases, [](const TestCaseResult &testCase) { return testCase.measurement.has_value(); }));
 
   summary_.caseCount = report.cases.size();
   summary_.passedCaseCount = static_cast<usize>(std::ranges::count_if(report.cases,
@@ -519,6 +757,8 @@ Reporter::Reporter(ReporterOptions options)
     : options_(options) {
 }
 
+Reporter::~Reporter() = default;
+
 auto Reporter::addRoot(Path root) -> void {
   if constexpr (build::tests)
     roots_.push_back(std::move(root));
@@ -544,15 +784,97 @@ auto Reporter::report(const RunReport &report, std::ostream &output) const -> Te
     const SourceManager sources{roots_};
     const TestSummary summary = summarize(report);
     RenderState state{};
-    std::ranges::for_each(
-        report.cases, [this, &sources, &output, useColor, &state](const TestCaseResult &testCase) -> void {
-          renderCase(testCase, sources, output, useColor, state);
-        });
+    state.measurementsEnabled = report.measurementsEnabled;
+    for (usize index{}; index < report.cases.size();) {
+      const bool measured = state.measurementsEnabled and report.cases[index].measurement.has_value();
+      usize end = index + 1;
+      if (measured) {
+        while (end < report.cases.size() and report.cases[end].measurement.has_value())
+          ++end;
+        if (end - index >= 2) {
+          state.identityWidth = 0;
+          for (usize row = index; row < end; ++row)
+            state.identityWidth = std::max(state.identityWidth,
+                std::format("tests {}", report.cases[row].descriptor.identifier).size() + 3);
+          output << String(state.identityWidth, ' ')
+                 << paint("samples   time │ min ├─[q1 · med · q3]─┤ max │ mean · deviation", dim, useColor)
+                 << '\n';
+        }
+      }
+      for (; index < end; ++index)
+        renderCase(report.cases[index], sources, output, useColor, state);
+      state.identityWidth = 0;
+    }
 
     if (options_.showSummary)
-      renderSummary(summary, useColor, output);
+      renderSummary(summary, report, useColor, options_.showProgress, output);
     return summary;
   }
+}
+
+auto Reporter::beginLive(std::ostream &output, bool measurementsEnabled) -> void {
+  liveOutput_ = std::addressof(output);
+  liveState_ = std::make_unique<RenderState>();
+  liveState_->measurementsEnabled = measurementsEnabled;
+}
+
+auto Reporter::consumeLive(const TestCaseResult &testCase) -> void {
+  if (liveOutput_ == nullptr or liveState_ == nullptr)
+    return;
+  renderLiveCase(testCase, *liveOutput_);
+  liveOutput_->flush();
+}
+
+auto Reporter::finishLive(const RunReport &report) -> TestSummary {
+  const TestSummary summary = summarize(report);
+  if (liveOutput_ != nullptr and options_.showSummary)
+    renderSummary(summary, report, colorEnabled(), options_.showProgress, *liveOutput_);
+  if (liveOutput_ != nullptr)
+    liveOutput_->flush();
+  liveOutput_ = nullptr;
+  liveState_.reset();
+  return summary;
+}
+
+auto Reporter::renderLiveCase(const TestCaseResult &testCase, std::ostream &output) const -> void {
+  if (liveState_ == nullptr)
+    return;
+
+  const bool useColor = colorEnabled();
+  const SourceManager sources{roots_};
+  if (testCase.measurement or testCase.attempts.size() <= 1) {
+    renderCase(testCase, sources, output, useColor, *liveState_);
+    return;
+  }
+
+  // A logical case may contain many outer repetitions and retries. They remain in the retained report,
+  // but live output is one case-level summary rather than one physical-attempt row.
+  const TestAttempt *representative = nullptr;
+  for (const TestAttempt &attempt : testCase.attempts) {
+    if (not attempt.warmup)
+      representative = std::addressof(attempt);
+  }
+  if (representative == nullptr)
+    representative = std::addressof(testCase.attempts.back());
+
+  TestCaseResult summaryCase{
+      .descriptor = testCase.descriptor,
+      .attempts = Vec<TestAttempt>{*representative},
+      .failedCase = testCase.failedCase,
+  };
+  summaryCase.attempts.front().execution.duration = std::ranges::fold_left(
+      testCase.attempts,
+      std::chrono::steady_clock::duration{},
+      [](std::chrono::steady_clock::duration total, const TestAttempt &attempt) {
+        return total + attempt.execution.duration;
+      });
+  summaryCase.attempts.front().execution.wallDuration = std::ranges::fold_left(
+      testCase.attempts,
+      std::chrono::steady_clock::duration{},
+      [](std::chrono::steady_clock::duration total, const TestAttempt &attempt) {
+        return total + attempt.execution.wallDuration;
+      });
+  renderCase(summaryCase, sources, output, useColor, *liveState_);
 }
 
 auto Reporter::colorEnabled() const noexcept -> bool {
@@ -609,28 +931,49 @@ auto Reporter::renderProfile(const TestExecution &execution, std::ostream &outpu
   });
 }
 
-auto Reporter::renderMeasurement(const TestCaseResult &testCase, std::ostream &output) const -> void {
+auto Reporter::renderMeasurement(const TestCaseResult &testCase,
+    std::ostream &output,
+    RenderState &state) const -> void {
   const bool useColor = colorEnabled();
-  const MeasurementSummary &measurement = testCase.measurement.value_or(MeasurementSummary{});
+  if (not testCase.measurement)
+    return;
+  const MeasurementSummary &measurement = *testCase.measurement;
   const bool passed = testCase.passed();
-  const String status = String{passed ? "ok" : "FAILED"};
-  output << std::format("tests {} ... {} {} in {} | min {}; max {}; mean {}; median {}; deviation {}\n",
-      testCase.descriptor.identifier,
-      paint(status, passed ? green : red, useColor),
-      countLabel(measurement.sampleCount, "sample", "samples"),
-      durationLabel(measurement.total),
-      durationLabel(measurement.minimum),
-      durationLabel(measurement.maximum),
-      durationLabel(measurement.mean),
-      durationLabel(measurement.median),
-      durationLabel(measurement.deviation));
+  const String status = String{passed ? "ok" : "failed"};
+  if (not measurement.distributionAvailable) {
+    output << std::format("tests {} ... {} · {} samples · {}\n",
+        testCase.descriptor.identifier,
+        paint(status, passed ? green : red, useColor),
+        compactCount(measurement.sampleCount),
+        durationLabel(measurement.total));
+    return;
+  }
+  const String minimum = measurementLabel(measurement.minimum);
+  const String firstQuartile =
+      measurement.quantilesAvailable ? measurementLabel(measurement.firstQuartile) : "?";
+  const String median = measurement.quantilesAvailable ? measurementLabel(measurement.median) : "?";
+  const String thirdQuartile =
+      measurement.quantilesAvailable ? measurementLabel(measurement.thirdQuartile) : "?";
+  const String maximum = measurementLabel(measurement.maximum);
+  const String mean = measurementLabel(measurement.mean);
+  const String deviation = measurementLabel(measurement.deviation);
+  const String identity = std::format("tests {}", testCase.descriptor.identifier);
+  const usize leader = state.identityWidth > identity.size() ? state.identityWidth - identity.size() : 3;
+  output << identity << paint(String(leader, '.'), dim, useColor) << ' '
+         << paint(status, passed ? green : red, useColor) << ' ' << compactCount(measurement.sampleCount)
+         << " samples " << durationLabel(measurement.total) << " │ " << minimum << " ├─[" << firstQuartile
+         << " · " << median << " · " << thirdQuartile << "]─┤ " << maximum << " │ μ " << mean << " · σ "
+         << deviation;
+  if (not relativeDeviation(measurement).empty())
+    output << " · " << paint(relativeDeviation(measurement), deviationColor(measurement), useColor);
+  output << '\n';
 }
 
 auto Reporter::renderMeasuredCase(const TestCaseResult &testCase,
     const SourceManager &sources,
     std::ostream &output,
     RenderState &state) const -> void {
-  renderMeasurement(testCase, output);
+  renderMeasurement(testCase, output, state);
 
   if (options_.showAttempts) {
     const bool useColor = colorEnabled();
@@ -674,11 +1017,11 @@ auto Reporter::renderAttempt(const TestAttempt &attempt,
     if (state.previousFailure)
       output << '\n';
 
-    output << std::format("test {} ({}) ... {} {}\n",
+    output << std::format("tests {} ({}) ... {}{}\n",
         execution.descriptor.identifier,
         attemptLabel(execution),
         paint("FAILED", red, useColor),
-        durationLabel(execution.duration));
+        state.measurementsEnabled ? std::format(" {}", durationLabel(execution.duration)) : String{});
     if (shouldRenderTrace(execution))
       renderTrace(execution, output);
     renderProfile(execution, output);
@@ -700,12 +1043,12 @@ auto Reporter::renderAttempt(const TestAttempt &attempt,
                             ? std::format("passed after {} timeout {}",
                                   execution.attempt.retry,
                                   countLabel(execution.attempt.retry, "retry", "retries"))
-                            : String{passed ? "ok" : "FAILED"};
-  output << std::format("test {}{} ... {} {}\n",
+                            : String{passed ? "ok" : "failed"};
+  output << std::format("tests {}{} ... {}{}\n",
       execution.descriptor.identifier,
       label.empty() ? String{} : std::format(" ({}) ", label),
       paint(status, passed ? green : red, useColor),
-      durationLabel(execution.duration));
+      state.measurementsEnabled ? std::format(" {}", durationLabel(execution.duration)) : String{});
 
   if (passed) {
     if (showTrace)
@@ -729,7 +1072,7 @@ auto Reporter::renderCase(const TestCaseResult &testCase,
     std::ostream &output,
     bool useColor,
     RenderState &state) const -> void {
-  if (testCase.measurement) {
+  if (state.measurementsEnabled and testCase.measurement) {
     renderMeasuredCase(testCase, sources, output, state);
     return;
   }

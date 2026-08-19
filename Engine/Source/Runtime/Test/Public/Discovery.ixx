@@ -486,6 +486,32 @@ public:
   [[nodiscard]] auto invoke(const InvocationRequest &request) const -> TestExecution override {
     return noProviderExecution<Function>(request.descriptor.get(), request.timeMode);
   }
+
+  [[nodiscard]] auto invokeCompact(const InvocationRequest &request) const -> AttemptOutcome override {
+    return runCompact(
+        request.descriptor.get(),
+        [] -> void {
+          const Option<Ref<TestEnvironment>> environment = currentEnvironment();
+          if (not environment)
+            fatal("Nyx::Test could not report an empty provider without an active environment");
+          Diagnostic diagnostic = makeDiagnostic(
+              DiagnosticCode::ProviderProducedNoValues, detail::firstProviderLocation<Function>());
+          diagnostic.details.spans.front().label = "provider";
+          diagnostic.addNote("no reflected parameter-provider values were produced");
+          environment->get().recordError(std::move(diagnostic));
+        },
+        request.timeMode);
+  }
+
+  auto invokeBatch(const InvocationRequest &request, usize count, BatchExecutionContext &sink) const -> void override {
+    runBatch(request.descriptor.get(), [] -> void {
+      const Option<Ref<TestEnvironment>> environment = currentEnvironment();
+      if (not environment)
+        fatal("Nyx::Test could not report an empty provider without an active environment");
+      environment->get().recordError(makeDiagnostic(
+          DiagnosticCode::ProviderProducedNoValues, detail::firstProviderLocation<Function>()));
+    }, request.timeMode, count, sink);
+  }
 };
 
 template <std::meta::info Namespace, std::meta::info Function, class CaseValues, class ProviderValues>
@@ -507,6 +533,23 @@ public:
               context, suiteFixtures_, caseValues_, providerValues_);
         },
         request.timeMode);
+  }
+
+  [[nodiscard]] auto invokeCompact(const InvocationRequest &request) const -> AttemptOutcome override {
+    return runCompact(
+        request.descriptor.get(),
+        [this](const Context &context) -> decltype(auto) {
+          return detail::invokeWithFixtures<Namespace, Function>(
+              context, suiteFixtures_, caseValues_, providerValues_);
+        },
+        request.timeMode);
+  }
+
+  auto invokeBatch(const InvocationRequest &request, usize count, BatchExecutionContext &sink) const -> void override {
+    runBatch(request.descriptor.get(), [this](const Context &context) -> decltype(auto) {
+      return detail::invokeWithFixtures<Namespace, Function>(
+          context, suiteFixtures_, caseValues_, providerValues_);
+    }, request.timeMode, count, sink);
   }
 
 private:
@@ -542,6 +585,23 @@ public:
         request.timeMode);
   }
 
+  [[nodiscard]] auto invokeCompact(const InvocationRequest &request) const -> AttemptOutcome override {
+    return runCompact(
+        request.descriptor.get(),
+        [this](const Context &context) -> decltype(auto) {
+          return detail::invokeMemberWithFixtures<Namespace, Function>(
+              context, suiteFixtures_, subject_, caseValues_, providerValues_);
+        },
+        request.timeMode);
+  }
+
+  auto invokeBatch(const InvocationRequest &request, usize count, BatchExecutionContext &sink) const -> void override {
+    runBatch(request.descriptor.get(), [this](const Context &context) -> decltype(auto) {
+      return detail::invokeMemberWithFixtures<Namespace, Function>(
+          context, suiteFixtures_, subject_, caseValues_, providerValues_);
+    }, request.timeMode, count, sink);
+  }
+
 private:
   mutable SubjectValue subject_;
   const CaseValues caseValues_;
@@ -568,6 +628,23 @@ public:
               context, suiteFixtures_, caseValues_, providerValues_);
         },
         request.timeMode);
+  }
+
+  [[nodiscard]] auto invokeCompact(const InvocationRequest &request) const -> AttemptOutcome override {
+    return runCompact(
+        request.descriptor.get(),
+        [this](const Context &context) -> decltype(auto) {
+          return detail::invokeMemberFromFixture<Namespace, Function>(
+              context, suiteFixtures_, caseValues_, providerValues_);
+        },
+        request.timeMode);
+  }
+
+  auto invokeBatch(const InvocationRequest &request, usize count, BatchExecutionContext &sink) const -> void override {
+    runBatch(request.descriptor.get(), [this](const Context &context) -> decltype(auto) {
+      return detail::invokeMemberFromFixture<Namespace, Function>(
+          context, suiteFixtures_, caseValues_, providerValues_);
+    }, request.timeMode, count, sink);
   }
 
 private:
@@ -801,9 +878,42 @@ template <std::meta::info Scope, class Configuration>
             .tagsAll = selection.tagsAll,
             .tagsAny = selection.tagsAny,
             .group = selection.group,
-        }};
+        },
+        options.captureTiming != CapturePolicy::None};
     static_cast<void>(detail::executePlannedCases(session, options, accumulator));
     return std::move(accumulator).finish();
+  } else {
+    return {};
+  }
+}
+
+template <std::meta::info Scope, class Configuration>
+[[nodiscard]] auto runScopeLive(Reporter &reporter,
+    std::ostream &output,
+    const TestSelection &selection,
+    RunOptions options) -> RunReport {
+  if constexpr (build::tests) {
+    detail::RunSession session{};
+    appendScopePlan<Scope, Configuration>(session);
+    filterPlannedCases(session, selection);
+    RunAccumulator accumulator{options.retention,
+        options.maxRetainedFailures,
+        SelectionMetadata{
+            .include = selection.include,
+            .exclude = selection.exclude,
+            .tagsAll = selection.tagsAll,
+            .tagsAny = selection.tagsAny,
+            .group = selection.group,
+        },
+        options.captureTiming != CapturePolicy::None};
+    reporter.beginLive(output, options.captureTiming != CapturePolicy::None);
+    accumulator.setCompletionObserver([&reporter](const TestCaseResult &testCase) {
+      reporter.consumeLive(testCase);
+    });
+    static_cast<void>(detail::executePlannedCases(session, options, accumulator));
+    RunReport report = std::move(accumulator).finish();
+    reporter.finishLive(report);
+    return report;
   } else {
     return {};
   }
@@ -1014,6 +1124,11 @@ template <std::meta::info Scope, detail::DiscoveryOption... Options>
 
 /// Executes selected registered cases and returns a bounded aggregate report.
 [[nodiscard]] auto runAll(TestSelection selection, RunOptions options = {}) -> RunReport;
+[[nodiscard]] auto runAll(Reporter &reporter, std::ostream &output, RunOptions options = {}) -> RunReport;
+[[nodiscard]] auto runAll(Reporter &reporter,
+    std::ostream &output,
+    TestSelection selection,
+    RunOptions options = {}) -> RunReport;
 
 template <std::meta::info Namespace>
 [[nodiscard]] auto runAll(RunOptions options = {}) -> RunReport {
@@ -1023,6 +1138,57 @@ template <std::meta::info Namespace>
 template <std::meta::info Namespace>
 [[nodiscard]] auto runAll(TestSelection selection, RunOptions options = {}) -> RunReport {
   return detail::runScopeReport<Namespace, detail::DiscoveryConfiguration<>>(selection, options);
+}
+
+template <std::meta::info Namespace>
+[[nodiscard]] auto runAll(Reporter &reporter, std::ostream &output, RunOptions options = {}) -> RunReport {
+  return detail::runScopeLive<Namespace, detail::DiscoveryConfiguration<>>(reporter, output, {}, options);
+}
+
+template <std::meta::info Namespace>
+[[nodiscard]] auto runAll(Reporter &reporter,
+    std::ostream &output,
+    TestSelection selection,
+    RunOptions options = {}) -> RunReport {
+  return detail::runScopeLive<Namespace, detail::DiscoveryConfiguration<>>(
+      reporter, output, selection, options);
+}
+
+template <std::meta::info Scope, detail::DiscoveryOption... Options>
+  requires(sizeof...(Options) != 0)
+[[nodiscard]] auto runAll(Reporter &reporter, std::ostream &output, Options... /*unused*/) -> RunReport {
+  using Configuration = detail::DiscoveryConfiguration<std::remove_cvref_t<Options>...>;
+  return detail::runScopeLive<Scope, Configuration>(reporter, output, {}, {});
+}
+
+template <std::meta::info Scope, detail::DiscoveryOption... Options>
+  requires(sizeof...(Options) != 0)
+[[nodiscard]] auto runAll(Reporter &reporter,
+    std::ostream &output,
+    RunOptions runOptions,
+    Options... /*unused*/) -> RunReport {
+  using Configuration = detail::DiscoveryConfiguration<std::remove_cvref_t<Options>...>;
+  return detail::runScopeLive<Scope, Configuration>(reporter, output, {}, runOptions);
+}
+
+template <std::meta::info Scope, detail::DiscoveryOption... Options>
+  requires(sizeof...(Options) != 0)
+[[nodiscard]] auto runAll(Reporter &reporter,
+    std::ostream &output,
+    TestSelection selection,
+    Options... /*unused*/) -> RunReport {
+  using Configuration = detail::DiscoveryConfiguration<std::remove_cvref_t<Options>...>;
+  return detail::runScopeLive<Scope, Configuration>(reporter, output, selection, {});
+}
+
+template <std::meta::info Scope, detail::DiscoveryOption... Options>
+[[nodiscard]] auto runAll(Reporter &reporter,
+    std::ostream &output,
+    TestSelection selection,
+    RunOptions runOptions,
+    Options... /*unused*/) -> RunReport {
+  using Configuration = detail::DiscoveryConfiguration<std::remove_cvref_t<Options>...>;
+  return detail::runScopeLive<Scope, Configuration>(reporter, output, selection, runOptions);
 }
 
 template <std::meta::info Scope, detail::DiscoveryOption... Options>

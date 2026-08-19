@@ -86,6 +86,28 @@ public:
 
   [[nodiscard]] virtual auto invoke(const InvocationRequest &request) const -> TestExecution = 0;
 
+  [[nodiscard]] virtual auto invokeCompact(const InvocationRequest &request) const -> AttemptOutcome {
+    return makeAttemptOutcome(invoke(request), false);
+  }
+
+  virtual auto invokeBatch(const InvocationRequest &request,
+      usize count,
+      BatchExecutionContext &sink) const -> void {
+    std::ranges::for_each(std::views::indices(count), [&](usize) -> void {
+      if (sink.failed())
+        return;
+      AttemptOutcome outcome = invokeCompact(request);
+      ++sink.completed;
+      sink.assertions += outcome.assertions;
+      sink.failedAssertions += outcome.failedAssertions;
+      sink.errors += outcome.errors;
+      if (outcome.passed)
+        ++sink.passed;
+      else
+        sink.firstFailure = std::move(outcome.failure);
+    });
+  }
+
 protected:
   InvocationFactory() noexcept = default;
 };
@@ -120,6 +142,15 @@ public:
 
   [[nodiscard]] auto invoke(const InvocationRequest &request) const -> TestExecution {
     return factory_->invoke(request);
+  }
+
+  [[nodiscard]] auto invokeCompact(const InvocationRequest &request) const -> AttemptOutcome {
+    return factory_->invokeCompact(request);
+  }
+
+
+  auto invokeBatch(const InvocationRequest &request, usize count, BatchExecutionContext &sink) const -> void {
+    factory_->invokeBatch(request, count, sink);
   }
 
 private:

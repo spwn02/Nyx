@@ -28,6 +28,12 @@ enum class ExecutionOrder : u8 {
   Shuffled,
 };
 
+/// Selects between attempt-level diagnostics and aggregate high-volume execution.
+enum class[[= debug::derive]] ExecutionMode : u8 {
+  Diagnostic[[= debug::rename("diagnostic")]],
+  Benchmark[[= debug::rename("benchmark")]],
+};
+
 /// Configures execution of independent reflected test cases.
 ///
 /// jobs == 1 selects single-threaded dispatch. Declaration order remains the default and can be replaced by
@@ -35,6 +41,7 @@ enum class ExecutionOrder : u8 {
 /// worker when it cannot be determined. Higher values cap dispatch to that many workers. Each case retains
 /// its own deterministic Task<T> run loop.
 struct RunOptions final {
+  ExecutionMode executionMode{ExecutionMode::Diagnostic};
   /// Number of independent scheduler workers. One is deterministic serial execution; zero selects hardware
   /// concurrency.
   usize threads{1};
@@ -53,6 +60,9 @@ struct RunOptions final {
 
   /// Captures profiling scopes for each attempt.
   bool captureProfile{true};
+
+  /// Controls aggregate/per-attempt execution timing. Use None for pass/fail-only stress runs.
+  CapturePolicy captureTiming{CapturePolicy::PerAttempt};
 
   /// Preserves declaration order by default; shuffled order is reproducible with seed.
   ExecutionOrder order{ExecutionOrder::Declaration};

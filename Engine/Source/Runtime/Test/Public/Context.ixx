@@ -6,6 +6,12 @@ import :Resources;
 
 export namespace Nyx::Test {
 
+/// Controls timing detail captured for each execution.
+enum class[[= debug::derive]] CapturePolicy : u8 {
+  None[[= debug::rename("none")]],
+  PerAttempt[[= debug::rename("per_attempt")]],
+};
+
 struct Context final {
   // NOLINTBEGIN(cppcoreguidelines-avoid-const-or-ref-data-members)
   const StringView name;
@@ -40,6 +46,7 @@ struct InvocationSettings final {
   bool forceTrace{};
   bool captureMemory{};
   bool captureProfile{true};
+  CapturePolicy captureTiming{CapturePolicy::PerAttempt};
 };
 
 class InvocationBinding final {

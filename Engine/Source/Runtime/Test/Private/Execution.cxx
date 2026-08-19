@@ -104,6 +104,8 @@ auto TestExecution::failed() const noexcept -> bool {
 auto makeAttemptOutcome(TestExecution execution, bool retainExecution) -> AttemptOutcome {
   AttemptOutcome outcome{
       .descriptor = execution.descriptor,
+      // The outcome owns its descriptor; do not store a view into the local execution copy here.
+      .identifier = {},
       .attempt = execution.attempt,
       .duration = execution.duration,
       .wallDuration = execution.wallDuration,

@@ -12,6 +12,8 @@ struct JsonReporterOptions final {
   /// Emits indentation and line breaks when enabled. Machine output is compact by default.
   bool pretty{};
   usize indentWidth{2};
+  /// Writes human-readable start/finish markers to stderr while preserving valid JSON on output.
+  bool showProgress{};
 };
 
 /// Emits complete test-run state as JSON without ANSI colours or human-rendering policies.
