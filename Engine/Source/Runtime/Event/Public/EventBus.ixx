@@ -1,9 +1,11 @@
 export module Nyx.Event:EventBus;
 
 import std;
-import Nyx.Core;
+import Miracle;
 
 import :Events;
+
+using namespace Miracle;
 
 export namespace Nyx {
 

@@ -4,9 +4,10 @@ module;
 
 export module Nyx.Platform:Window;
 
-import Nyx.Core;
-
+import Miracle;
 import Nyx.Event;
+
+using namespace Miracle;
 
 export namespace Nyx {
 

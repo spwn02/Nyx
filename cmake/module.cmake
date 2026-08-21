@@ -1,8 +1,7 @@
 include_guard(GLOBAL)
 
-if(CMAKE_VERSION VERSION_LESS 3.28)
-  message(FATAL_ERROR
-    "module.cmake requires CMake 3.28 or newer for CXX_MODULES file sets")
+if(CMAKE_VERSION VERSION_LESS 4.4)
+  message(FATAL_ERROR "module.cmake requires CMake 4.4 or newer")
 endif()
 
 # LINK_ONLY must suppress compile-time usage requirements, otherwise an
@@ -13,11 +12,7 @@ endif()
 
 # Find a package and verify that it provides the imported targets Nyx expects.
 #
-# Example:
-#   nyx_require_package(SDL3
-#     TARGETS SDL3::SDL3
-#     CONFIG
-#   )
+# Example: nyx_require_package(SDL3 TARGETS SDL3::SDL3 CONFIG )
 #
 # REQUIRED is implicit. If every requested target already exists and no version
 # or components are requested, find_package() is skipped. This makes the helper
@@ -28,29 +23,36 @@ function(nyx_require_package package)
   set(one_value_args VERSION)
   set(multi_value_args TARGETS COMPONENTS OPTIONAL_COMPONENTS)
 
-  cmake_parse_arguments(PARSE_ARGV 1 arg
-    "${options}" "${one_value_args}" "${multi_value_args}"
-  )
+  cmake_parse_arguments(PARSE_ARGV 1 arg "${options}" "${one_value_args}"
+                        "${multi_value_args}")
 
   if(arg_UNPARSED_ARGUMENTS)
-    message(FATAL_ERROR
-      "nyx_require_package(${package}): unknown arguments: ${arg_UNPARSED_ARGUMENTS}")
+    message(
+      FATAL_ERROR
+        "nyx_require_package(${package}): unknown arguments: ${arg_UNPARSED_ARGUMENTS}"
+    )
   endif()
   if(arg_KEYWORDS_MISSING_VALUES)
-    message(FATAL_ERROR
-      "nyx_require_package(${package}): missing values for: ${arg_KEYWORDS_MISSING_VALUES}")
+    message(
+      FATAL_ERROR
+        "nyx_require_package(${package}): missing values for: ${arg_KEYWORDS_MISSING_VALUES}"
+    )
   endif()
   if(NOT arg_TARGETS)
-    message(FATAL_ERROR
-      "nyx_require_package(${package}): TARGETS must list at least one imported target")
+    message(
+      FATAL_ERROR
+        "nyx_require_package(${package}): TARGETS must list at least one imported target"
+    )
   endif()
   if(arg_CONFIG AND arg_MODULE)
-    message(FATAL_ERROR
-      "nyx_require_package(${package}): CONFIG and MODULE are mutually exclusive")
+    message(
+      FATAL_ERROR
+        "nyx_require_package(${package}): CONFIG and MODULE are mutually exclusive"
+    )
   endif()
   if(arg_EXACT AND NOT arg_VERSION)
-    message(FATAL_ERROR
-      "nyx_require_package(${package}): EXACT requires VERSION")
+    message(
+      FATAL_ERROR "nyx_require_package(${package}): EXACT requires VERSION")
   endif()
 
   set(all_targets_exist TRUE)
@@ -62,10 +64,10 @@ function(nyx_require_package package)
   endforeach()
 
   if(all_targets_exist
-      AND NOT arg_ALWAYS_FIND
-      AND NOT arg_VERSION
-      AND NOT arg_COMPONENTS
-      AND NOT arg_OPTIONAL_COMPONENTS)
+     AND NOT arg_ALWAYS_FIND
+     AND NOT arg_VERSION
+     AND NOT arg_COMPONENTS
+     AND NOT arg_OPTIONAL_COMPONENTS)
     return()
   endif()
 
@@ -109,16 +111,17 @@ function(nyx_require_package package)
 
   if(missing_targets)
     list(JOIN missing_targets ", " missing_targets_text)
-    message(FATAL_ERROR
-      "nyx_require_package(${package}): the package was found, but it did not "
-      "provide the required target(s): ${missing_targets_text}")
+    message(
+      FATAL_ERROR
+        "nyx_require_package(${package}): the package was found, but it did not "
+        "provide the required target(s): ${missing_targets_text}")
   endif()
 endfunction()
 
 # Create the two project-wide aggregation targets:
 #
-#   Nyx::Nyx     - public API of every registered module
-#   Nyx::Engine  - engine API umbrella; currently the same public API
+# Nyx::Nyx     - public API of every registered module Nyx::Engine  - engine API
+# umbrella; currently the same public API
 function(nyx_initialize_module_system)
   if(NOT TARGET Nyx)
     add_library(Nyx INTERFACE)
@@ -134,47 +137,57 @@ endfunction()
 function(_nyx_apply_module_defaults target)
   target_compile_features(${target} PUBLIC cxx_std_26)
 
-  target_compile_options(${target} PRIVATE
-    -Wall
-    -Wextra
-    -pedantic
-    -Werror
-    -Wconversion-null
-    -Wmissing-declarations
-    -Woverlength-strings
-    -Wpointer-arith
-    -Wunused-local-typedefs
-    -Wunused-result
-    -Wvarargs
-    -Wvla
-    -Wwrite-strings
-    -Wno-missing-declarations
-    -Wno-missing-designated-field-initializers
-    -Wmodule-file-config-mismatch
-  )
+  set(nyx_warning_options
+      PRIVATE
+      -Wall
+      -Wextra
+      -Wpedantic
+      -Werror
+      -Wunused-local-typedefs
+      -Wunused-result
+      -Wwrite-strings
+      -Wno-missing-designated-field-initializers)
 
-  set_target_properties(${target} PROPERTIES
-    CXX_EXTENSIONS OFF
-    CXX_STANDARD_REQUIRED ON
-    CXX_SCAN_FOR_MODULES ON
-  )
+  if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
+    list(
+      APPEND
+      nyx_warning_options
+      -Wconversion-null
+      -Woverlength-strings
+      -Wpointer-arith
+      -Wvarargs
+      -Wvla)
+  elseif(CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
+    list(
+      APPEND
+      nyx_warning_options
+      -Woverlength-strings
+      -Wpointer-arith
+      -Wvarargs
+      -Wvla
+      -Wmodule-file-config-mismatch)
+  endif()
+
+  target_compile_options(${target} PRIVATE ${nyx_warning_options})
+
+  set_target_properties(
+    ${target}
+    PROPERTIES CXX_EXTENSIONS OFF
+               CXX_STANDARD_REQUIRED ON
+               CXX_SCAN_FOR_MODULES ON
+               CXX_MODULE_STD ON)
 
   target_link_libraries(${target} PUBLIC Nyx::CompilerOptions)
-  if(TARGET Nyx::ExperimentalStd)
-    target_link_libraries(${target} PUBLIC Nyx::ExperimentalStd)
-    if(TARGET nyx_std_module)
-      add_dependencies(${target} nyx_std_module)
-    endif()
-  endif()
 endfunction()
 
 function(_nyx_require_targets owner scope)
   foreach(dependency IN LISTS ARGN)
     if(dependency MATCHES "::" AND NOT TARGET "${dependency}")
-      message(FATAL_ERROR
-        "${owner}: ${scope} dependency '${dependency}' is not a target. "
-        "Call nyx_require_package() or otherwise create the target before "
-        "nyx_add_module().")
+      message(
+        FATAL_ERROR
+          "${owner}: ${scope} dependency '${dependency}' is not a target. "
+          "Call nyx_require_package() or otherwise create the target before "
+          "nyx_add_module().")
     endif()
   endforeach()
 endfunction()
@@ -186,13 +199,15 @@ function(_nyx_collect_sources output owner root dir extension)
     foreach(source IN LISTS ARGN)
       string(REPLACE "\\" "/" relative "${source}")
       if(IS_ABSOLUTE "${relative}" OR relative MATCHES "(^|/)\.\.(/|$)")
-        message(FATAL_ERROR
-          "${owner}: source '${source}' must stay relative to ${dir}/")
+        message(
+          FATAL_ERROR
+            "${owner}: source '${source}' must stay relative to ${dir}/")
       endif()
       if(relative MATCHES "^(Public|Shared|Internal|Private)/")
-        message(FATAL_ERROR
-          "${owner}: source '${source}' already contains a visibility root; "
-          "pass a path relative to ${dir}/")
+        message(
+          FATAL_ERROR
+            "${owner}: source '${source}' already contains a visibility root; "
+            "pass a path relative to ${dir}/")
       endif()
 
       set(relative_path "${relative}")
@@ -205,8 +220,9 @@ function(_nyx_collect_sources output owner root dir extension)
       if(extension)
         cmake_path(GET relative_path EXTENSION LAST_ONLY source_extension)
         if(NOT source_extension STREQUAL extension)
-          message(FATAL_ERROR
-            "${owner}: ${dir} source '${source}' must use '${extension}'")
+          message(
+            FATAL_ERROR
+              "${owner}: ${dir} source '${source}' must use '${extension}'")
         endif()
       endif()
 
@@ -214,10 +230,12 @@ function(_nyx_collect_sources output owner root dir extension)
     endforeach()
   elseif(IS_DIRECTORY "${root}/${dir}")
     if(extension)
-      file(GLOB_RECURSE result CONFIGURE_DEPENDS
-        "${root}/${dir}/*${extension}")
+      file(GLOB_RECURSE result CONFIGURE_DEPENDS "${root}/${dir}/*${extension}")
     else()
-      file(GLOB_RECURSE result CONFIGURE_DEPENDS
+      file(
+        GLOB_RECURSE
+        result
+        CONFIGURE_DEPENDS
         "${root}/${dir}/*.c"
         "${root}/${dir}/*.cc"
         "${root}/${dir}/*.cpp"
@@ -232,29 +250,43 @@ function(_nyx_collect_sources output owner root dir extension)
     list(SORT result)
   endif()
 
-  set(${output} ${result} PARENT_SCOPE)
+  set(${output}
+      ${result}
+      PARENT_SCOPE)
 endfunction()
 
-function(_nyx_collect_configured_sources output owner root dir extension generated_root)
+function(
+  _nyx_collect_configured_sources
+  output
+  owner
+  root
+  dir
+  extension
+  generated_root)
   set(result)
 
   foreach(template IN LISTS ARGN)
     string(REPLACE "\\" "/" relative "${template}")
     if(IS_ABSOLUTE "${relative}" OR relative MATCHES "(^|/)\.\.(/|$)")
-      message(FATAL_ERROR
-        "${owner}: configured ${dir} template '${template}' must stay relative to ${dir}/")
+      message(
+        FATAL_ERROR
+          "${owner}: configured ${dir} template '${template}' must stay relative to ${dir}/"
+      )
     endif()
     if(relative MATCHES "^(Public|Shared|Internal|Private)/")
-      message(FATAL_ERROR
-        "${owner}: configured ${dir} template '${template}' already contains a visibility root; "
-        "pass a path relative to ${dir}/")
+      message(
+        FATAL_ERROR
+          "${owner}: configured ${dir} template '${template}' already contains a visibility root; "
+          "pass a path relative to ${dir}/")
     endif()
 
     set(relative_path "${relative}")
     cmake_path(NORMAL_PATH relative_path)
     set(template_file "${root}/${dir}/${relative_path}")
     if(NOT EXISTS "${template_file}")
-      message(FATAL_ERROR "${owner}: configured template does not exist: ${template_file}")
+      message(
+        FATAL_ERROR
+          "${owner}: configured template does not exist: ${template_file}")
     endif()
 
     if(extension)
@@ -269,12 +301,8 @@ function(_nyx_collect_configured_sources output owner root dir extension generat
 
     if(relative_length GREATER_EQUAL suffix_length)
       math(EXPR suffix_offset "${relative_length} - ${suffix_length}")
-      string(SUBSTRING
-        "${relative_path}"
-        "${suffix_offset}"
-        "${suffix_length}"
-        actual_suffix
-      )
+      string(SUBSTRING "${relative_path}" "${suffix_offset}" "${suffix_length}"
+                       actual_suffix)
 
       if(actual_suffix STREQUAL expected_suffix)
         set(valid_suffix TRUE)
@@ -282,15 +310,18 @@ function(_nyx_collect_configured_sources output owner root dir extension generat
     endif()
 
     if(NOT valid_suffix)
-      message(FATAL_ERROR
-        "${owner}: configured ${dir} template '${template}' must use '${expected_suffix}'")
+      message(
+        FATAL_ERROR
+          "${owner}: configured ${dir} template '${template}' must use '${expected_suffix}'"
+      )
     endif()
 
     string(REGEX REPLACE "\\.in$" "" configured_relative "${relative_path}")
     set(configured_file "${generated_root}/${dir}/${configured_relative}")
     cmake_path(GET configured_file PARENT_PATH configured_directory)
     file(MAKE_DIRECTORY "${configured_directory}")
-    configure_file("${template_file}" "${configured_file}" @ONLY NEWLINE_STYLE LF)
+    configure_file("${template_file}" "${configured_file}" @ONLY
+                   NEWLINE_STYLE LF)
     set_source_files_properties("${configured_file}" PROPERTIES GENERATED TRUE)
     list(APPEND result "${configured_file}")
   endforeach()
@@ -300,27 +331,41 @@ function(_nyx_collect_configured_sources output owner root dir extension generat
     list(SORT result)
   endif()
 
-  set(${output} ${result} PARENT_SCOPE)
+  set(${output}
+      ${result}
+      PARENT_SCOPE)
 endfunction()
 
 function(nyx_add_platform_sources name)
   set(options)
   set(one_value_args)
-  set(multi_value_args LINUX WINDOWS MACOS IOS ANDROID FREEBSD UNSUPPORTED)
+  set(multi_value_args
+      LINUX
+      WINDOWS
+      MACOS
+      IOS
+      ANDROID
+      FREEBSD
+      UNSUPPORTED)
 
-  cmake_parse_arguments(PARSE_ARGV 1 arg
-    "${options}" "${one_value_args}" "${multi_value_args}")
+  cmake_parse_arguments(PARSE_ARGV 1 arg "${options}" "${one_value_args}"
+                        "${multi_value_args}")
 
   set(owner "nyx_add_platform_sources(${name})")
   if(arg_UNPARSED_ARGUMENTS)
-    message(FATAL_ERROR "${owner}: unknown arguments: ${arg_UNPARSED_ARGUMENTS}")
+    message(
+      FATAL_ERROR "${owner}: unknown arguments: ${arg_UNPARSED_ARGUMENTS}")
   endif()
   if(arg_KEYWORDS_MISSING_VALUES)
-    message(FATAL_ERROR "${owner}: missing values for: ${arg_KEYWORDS_MISSING_VALUES}")
+    message(
+      FATAL_ERROR "${owner}: missing values for: ${arg_KEYWORDS_MISSING_VALUES}"
+    )
   endif()
   if(NOT DEFINED NYX_BUILD_PLATFORM_KEY)
-    message(FATAL_ERROR
-      "${owner}: call nyx_initialize_build_configuration() before selecting platform sources")
+    message(
+      FATAL_ERROR
+        "${owner}: call nyx_initialize_build_configuration() before selecting platform sources"
+    )
   endif()
 
   set(target "Nyx${name}")
@@ -328,9 +373,13 @@ function(nyx_add_platform_sources name)
     message(FATAL_ERROR "${owner}: module target '${target}' does not exist")
   endif()
 
-  get_property(root TARGET "${target}" PROPERTY NYX_SOURCE_ROOT)
+  get_property(
+    root
+    TARGET "${target}"
+    PROPERTY NYX_SOURCE_ROOT)
   if(NOT root)
-    message(FATAL_ERROR "${owner}: module target '${target}' has no Nyx source root")
+    message(
+      FATAL_ERROR "${owner}: module target '${target}' has no Nyx source root")
   endif()
 
   set(platform_sources_key "arg_${NYX_BUILD_PLATFORM_KEY}")
@@ -339,11 +388,14 @@ function(nyx_add_platform_sources name)
     set(selected_sources "${arg_UNSUPPORTED}")
   endif()
   if(NOT selected_sources)
-    message(FATAL_ERROR
-      "${owner}: no ${NYX_BUILD_PLATFORM} or UNSUPPORTED sources were provided")
+    message(
+      FATAL_ERROR
+        "${owner}: no ${NYX_BUILD_PLATFORM} or UNSUPPORTED sources were provided"
+    )
   endif()
 
-  _nyx_collect_sources(platform_sources "${owner}" "${root}" Private "" ${selected_sources})
+  _nyx_collect_sources(platform_sources "${owner}" "${root}" Private ""
+                       ${selected_sources})
   target_sources("${target}" PRIVATE ${platform_sources})
   source_group(TREE "${root}" FILES ${platform_sources})
 endfunction()
@@ -352,26 +404,35 @@ function(nyx_add_module name)
   set(options NO_UMBRELLA)
   set(one_value_args ROOT TYPE MODULE_EXTENSION)
   set(multi_value_args
-    PUBLIC SHARED INTERNAL PRIVATE
-    CONFIGURED_PUBLIC CONFIGURED_SHARED CONFIGURED_INTERNAL CONFIGURED_PRIVATE
-    PUBLIC_DEPS SHARED_DEPS INTERNAL_DEPS PRIVATE_DEPS
-  )
+      PUBLIC
+      SHARED
+      INTERNAL
+      PRIVATE
+      CONFIGURED_PUBLIC
+      CONFIGURED_SHARED
+      CONFIGURED_INTERNAL
+      CONFIGURED_PRIVATE
+      PUBLIC_DEPS
+      SHARED_DEPS
+      INTERNAL_DEPS
+      PRIVATE_DEPS)
 
-  cmake_parse_arguments(PARSE_ARGV 1 arg
-    "${options}" "${one_value_args}" "${multi_value_args}"
-  )
+  cmake_parse_arguments(PARSE_ARGV 1 arg "${options}" "${one_value_args}"
+                        "${multi_value_args}")
 
   set(owner "nyx_add_module(${name})")
 
   if(arg_UNPARSED_ARGUMENTS)
-    message(FATAL_ERROR "${owner}: unknown arguments: ${arg_UNPARSED_ARGUMENTS}")
+    message(
+      FATAL_ERROR "${owner}: unknown arguments: ${arg_UNPARSED_ARGUMENTS}")
   endif()
   if(arg_KEYWORDS_MISSING_VALUES)
-    message(FATAL_ERROR "${owner}: missing values for: ${arg_KEYWORDS_MISSING_VALUES}")
+    message(
+      FATAL_ERROR "${owner}: missing values for: ${arg_KEYWORDS_MISSING_VALUES}"
+    )
   endif()
   if(NOT arg_ROOT)
-    set(arg_ROOT "${CMAKE_CURRENT_SOURCE_DIR}"
-    )
+    set(arg_ROOT "${CMAKE_CURRENT_SOURCE_DIR}")
   endif()
   cmake_path(ABSOLUTE_PATH arg_ROOT NORMALIZE OUTPUT_VARIABLE root)
 
@@ -393,39 +454,58 @@ function(nyx_add_module name)
   endforeach()
 
   _nyx_collect_sources(_nyx_public_interfaces "${owner}" "${root}" Public
-    "${arg_MODULE_EXTENSION}" ${arg_PUBLIC})
+                       "${arg_MODULE_EXTENSION}" ${arg_PUBLIC})
   _nyx_collect_sources(_nyx_shared_interfaces "${owner}" "${root}" Shared
-    "${arg_MODULE_EXTENSION}" ${arg_SHARED})
+                       "${arg_MODULE_EXTENSION}" ${arg_SHARED})
   _nyx_collect_sources(_nyx_internal_interfaces "${owner}" "${root}" Internal
-    "${arg_MODULE_EXTENSION}" ${arg_INTERNAL})
-  _nyx_collect_sources(_nyx_private_sources "${owner}" "${root}" Private "" ${arg_PRIVATE})
+                       "${arg_MODULE_EXTENSION}" ${arg_INTERNAL})
+  _nyx_collect_sources(_nyx_private_sources "${owner}" "${root}" Private ""
+                       ${arg_PRIVATE})
 
-  _nyx_collect_configured_sources(_nyx_configured_public_interfaces "${owner}" "${root}" Public
-    "${arg_MODULE_EXTENSION}" "${generated_root}" ${arg_CONFIGURED_PUBLIC})
-  _nyx_collect_configured_sources(_nyx_configured_shared_interfaces "${owner}" "${root}" Shared
-    "${arg_MODULE_EXTENSION}" "${generated_root}" ${arg_CONFIGURED_SHARED})
-  _nyx_collect_configured_sources(_nyx_configured_internal_interfaces "${owner}" "${root}" Internal
-    "${arg_MODULE_EXTENSION}" "${generated_root}" ${arg_CONFIGURED_INTERNAL})
-  _nyx_collect_configured_sources(_nyx_configured_private_sources "${owner}" "${root}" Private
-    "" "${generated_root}" ${arg_CONFIGURED_PRIVATE})
+  _nyx_collect_configured_sources(
+    _nyx_configured_public_interfaces
+    "${owner}"
+    "${root}"
+    Public
+    "${arg_MODULE_EXTENSION}"
+    "${generated_root}"
+    ${arg_CONFIGURED_PUBLIC})
+  _nyx_collect_configured_sources(
+    _nyx_configured_shared_interfaces
+    "${owner}"
+    "${root}"
+    Shared
+    "${arg_MODULE_EXTENSION}"
+    "${generated_root}"
+    ${arg_CONFIGURED_SHARED})
+  _nyx_collect_configured_sources(
+    _nyx_configured_internal_interfaces
+    "${owner}"
+    "${root}"
+    Internal
+    "${arg_MODULE_EXTENSION}"
+    "${generated_root}"
+    ${arg_CONFIGURED_INTERNAL})
+  _nyx_collect_configured_sources(
+    _nyx_configured_private_sources
+    "${owner}"
+    "${root}"
+    Private
+    ""
+    "${generated_root}"
+    ${arg_CONFIGURED_PRIVATE})
 
-  set(_nyx_source_sources
-    ${_nyx_public_interfaces}
-    ${_nyx_shared_interfaces}
-    ${_nyx_internal_interfaces}
-    ${_nyx_private_sources}
-  )
+  set(_nyx_source_sources ${_nyx_public_interfaces} ${_nyx_shared_interfaces}
+                          ${_nyx_internal_interfaces} ${_nyx_private_sources})
   set(_nyx_generated_sources
-    ${_nyx_configured_public_interfaces}
-    ${_nyx_configured_shared_interfaces}
-    ${_nyx_configured_internal_interfaces}
-    ${_nyx_configured_private_sources}
-  )
+      ${_nyx_configured_public_interfaces} ${_nyx_configured_shared_interfaces}
+      ${_nyx_configured_internal_interfaces} ${_nyx_configured_private_sources})
   set(_nyx_all_sources ${_nyx_source_sources} ${_nyx_generated_sources})
   if(NOT _nyx_all_sources)
-    message(FATAL_ERROR
-      "${owner}: no sources found under ${root}/Public, ${root}/Shared, ${root}/Internal, "
-      "${root}/Private, or configured source lists")
+    message(
+      FATAL_ERROR
+        "${owner}: no sources found under ${root}/Public, ${root}/Shared, ${root}/Internal, "
+        "${root}/Private, or configured source lists")
   endif()
 
   if(arg_TYPE)
@@ -443,51 +523,81 @@ function(nyx_add_module name)
   _nyx_apply_module_defaults(${target})
 
   if(_nyx_public_interfaces)
-    target_sources(${target}
-      PUBLIC FILE_SET public_modules TYPE CXX_MODULES
-        BASE_DIRS "${root}/Public"
-        FILES ${_nyx_public_interfaces}
-    )
+    target_sources(
+      ${target}
+      PUBLIC FILE_SET
+             public_modules
+             TYPE
+             CXX_MODULES
+             BASE_DIRS
+             "${root}/Public"
+             FILES
+             ${_nyx_public_interfaces})
   endif()
 
   if(_nyx_configured_public_interfaces)
-    target_sources(${target}
-      PUBLIC FILE_SET configured_public_modules TYPE CXX_MODULES
-        BASE_DIRS "${generated_root}/Public"
-        FILES ${_nyx_configured_public_interfaces}
-    )
+    target_sources(
+      ${target}
+      PUBLIC FILE_SET
+             configured_public_modules
+             TYPE
+             CXX_MODULES
+             BASE_DIRS
+             "${generated_root}/Public"
+             FILES
+             ${_nyx_configured_public_interfaces})
   endif()
 
   if(_nyx_shared_interfaces)
-    target_sources(${target}
-      PUBLIC FILE_SET shared_modules TYPE CXX_MODULES
-        BASE_DIRS "${root}/Shared"
-        FILES ${_nyx_shared_interfaces}
-    )
+    target_sources(
+      ${target}
+      PUBLIC FILE_SET
+             shared_modules
+             TYPE
+             CXX_MODULES
+             BASE_DIRS
+             "${root}/Shared"
+             FILES
+             ${_nyx_shared_interfaces})
   endif()
 
   if(_nyx_configured_shared_interfaces)
-    target_sources(${target}
-      PUBLIC FILE_SET configured_shared_modules TYPE CXX_MODULES
-        BASE_DIRS "${generated_root}/Shared"
-        FILES ${_nyx_configured_shared_interfaces}
-    )
+    target_sources(
+      ${target}
+      PUBLIC FILE_SET
+             configured_shared_modules
+             TYPE
+             CXX_MODULES
+             BASE_DIRS
+             "${generated_root}/Shared"
+             FILES
+             ${_nyx_configured_shared_interfaces})
   endif()
 
   if(_nyx_internal_interfaces)
-    target_sources(${target}
-      PRIVATE FILE_SET internal_modules TYPE CXX_MODULES
-        BASE_DIRS "${root}/Internal"
-        FILES ${_nyx_internal_interfaces}
-    )
+    target_sources(
+      ${target}
+      PRIVATE FILE_SET
+              internal_modules
+              TYPE
+              CXX_MODULES
+              BASE_DIRS
+              "${root}/Internal"
+              FILES
+              ${_nyx_internal_interfaces})
   endif()
 
   if(_nyx_configured_internal_interfaces)
-    target_sources(${target}
-      PRIVATE FILE_SET configured_internal_modules TYPE CXX_MODULES
-        BASE_DIRS "${generated_root}/Internal"
-        FILES ${_nyx_configured_internal_interfaces}
-    )
+    target_sources(
+      ${target}
+      PRIVATE FILE_SET
+              configured_internal_modules
+              TYPE
+              CXX_MODULES
+              BASE_DIRS
+              "${generated_root}/Internal"
+              FILES
+              ${_nyx_configured_internal_interfaces})
   endif()
 
   if(_nyx_private_sources)
@@ -509,7 +619,8 @@ function(nyx_add_module name)
     target_link_libraries(${target} PUBLIC ${arg_SHARED_DEPS})
   endif()
   if(arg_INTERNAL_DEPS OR arg_PRIVATE_DEPS)
-    target_link_libraries(${target} PRIVATE ${arg_INTERNAL_DEPS} ${arg_PRIVATE_DEPS})
+    target_link_libraries(${target} PRIVATE ${arg_INTERNAL_DEPS}
+                                            ${arg_PRIVATE_DEPS})
   endif()
 
   add_library(${engine_facade} INTERFACE)

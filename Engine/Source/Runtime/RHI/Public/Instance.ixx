@@ -5,16 +5,16 @@ module;
 
 export module Nyx.RHI:Instance;
 
-import Nyx.Core;
+import Miracle;
 import Nyx.Platform;
 
-import :Adapter;
-import :Backend;
 import :Forward;
+import :Types;
+import :Backend;
+import :Adapter;
 import :Surface;
-import :Types;
 
-import :Types;
+using namespace Miracle;
 
 namespace Nyx::RHI {
 

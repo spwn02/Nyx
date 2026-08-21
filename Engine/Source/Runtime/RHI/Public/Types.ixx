@@ -1,8 +1,11 @@
 export module Nyx.RHI:Types;
 
 import std;
-import Nyx.Core;
+import Miracle;
+
 import :Forward;
+
+using namespace Miracle;
 
 export namespace Nyx::RHI {
 

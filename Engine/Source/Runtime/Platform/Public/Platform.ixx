@@ -1,8 +1,11 @@
 export module Nyx.Platform;
 
+import Miracle;
 import Nyx.Event;
 
 export import :Window;
+
+using namespace Miracle;
 
 export namespace Nyx {
 

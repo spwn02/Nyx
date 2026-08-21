@@ -3,10 +3,12 @@ module;
 module Nyx.Kernel;
 
 import std;
-import Nyx.Core;
+import Miracle;
 import Nyx.Platform;
 import Nyx.RHI;
 import Nyx.Event;
+
+using namespace Miracle;
 
 namespace Nyx {
 

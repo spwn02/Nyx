@@ -1,30 +1,30 @@
 add_library(NyxCompilerOptions INTERFACE)
 add_library(Nyx::CompilerOptions ALIAS NyxCompilerOptions)
 
-target_compile_features(
-  NyxCompilerOptions
-  INTERFACE
-    cxx_std_26
-)
+target_compile_features(NyxCompilerOptions INTERFACE cxx_std_26)
 
-if(NOT CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
-  message(FATAL_ERROR
-    "Nyx requires Clang, but the selected compiler is "
-    "${CMAKE_CXX_COMPILER_ID}."
-  )
+set(nyx_compiler_options)
+
+if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
+  if(CMAKE_CXX_COMPILER_VERSION VERSION_LESS 16)
+    message(FATAL_ERROR "Nyx requires GCC 16 or newer when building with GCC.")
+  endif(list (APPEND nyx_compiler_options -fmodules -freflection -fexceptions))
+
+  message(STATUS "Nyx C++26 reflection: GCC ${CMAKE_CXX_COMPILER_VERSION}")
+elseif(CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
+  list(APPEND nyx_compiler_options -freflection-latest -fexceptions)
+
+  message(STATUS "Nyx C++26 reflection: Clang ${CMAKE_CXX_COMPILER_VERSION}")
+else()
+  message(
+    WARNING "Nyx has not been validated with "
+            "${CMAKE_CXX_COMPILER_ID} ${CMAKE_CXX_COMPILER_VERSION}. "
+            "The selected toolchain must provide the required C++26 reflection "
+            "support itself.")
 endif()
 
-message(STATUS "Bloomberg P2296 reflection support enabled")
+target_compile_options(NyxCompilerOptions INTERFACE ${nyx_compiler_options})
 
-# The experimental std module currently requires exception handling to remain
-# enabled for constexpr formatter diagnostics and module-file compatibility.
-# Nyx still treats exceptions as an exceptional boundary and audits accidental
-# application-level throws separately.
-target_compile_options(
-  NyxCompilerOptions
-  INTERFACE
-    $<$<COMPILE_LANGUAGE:CXX>:-freflection-latest>
-    $<$<COMPILE_LANGUAGE:CXX>:-fexceptions>
-)
-
-message(STATUS "Nyx exception policy: minimized; compiler exception support retained for STL contracts")
+message(
+  STATUS "Nyx exception policy: minimized; compiler exception support retained "
+         "for STL contracts")

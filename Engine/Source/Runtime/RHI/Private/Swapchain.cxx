@@ -6,12 +6,14 @@ module;
 module Nyx.RHI;
 
 import std;
-import Nyx.Core;
+import Miracle;
 
-import :Device;
 import :Surface;
+import :Device;
 import :Swapchain;
 import :Vulkan;
+
+using namespace Miracle;
 
 namespace Nyx::RHI {
 

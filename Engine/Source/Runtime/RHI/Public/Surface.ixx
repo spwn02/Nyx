@@ -5,11 +5,13 @@ module;
 
 export module Nyx.RHI:Surface;
 
-import Nyx.Core;
+import Miracle;
 import Nyx.Platform;
 
 import :Forward;
 import :Types;
+
+using namespace Miracle;
 
 namespace Nyx::RHI {
 

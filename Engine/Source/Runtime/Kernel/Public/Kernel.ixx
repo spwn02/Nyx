@@ -1,8 +1,10 @@
 export module Nyx.Kernel;
 
-import Nyx.Core;
+import Miracle;
 import Nyx.Platform;
 import Nyx.RHI;
+
+using namespace Miracle;
 
 namespace Nyx {
 

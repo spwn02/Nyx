@@ -7,7 +7,9 @@ module;
 export module Nyx.Log;
 
 import std;
-import Nyx.Core;
+import Miracle;
+
+using namespace Miracle;
 
 export namespace Nyx {
 

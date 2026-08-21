@@ -6,6 +6,6 @@ nyx_require_package(spdlog
 
 nyx_add_module(Log
   PUBLIC_DEPS
-    Nyx::Core
+    Miracle::Miracle
     spdlog::spdlog
 )

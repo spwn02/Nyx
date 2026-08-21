@@ -20,7 +20,7 @@ nyx_require_package(VulkanMemoryAllocator
 
 nyx_add_module(RHI
   PUBLIC_DEPS
-    Nyx::Core
+    Miracle::Miracle
     Nyx::Platform
   PRIVATE_DEPS
     Nyx::Log

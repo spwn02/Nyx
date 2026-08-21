@@ -5,9 +5,11 @@ module;
 
 export module Nyx.RHI:Backend;
 
-import Nyx.Core;
+import Miracle;
 
 import :Types;
+
+using namespace Miracle;
 
 namespace Nyx::RHI {
 

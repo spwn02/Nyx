@@ -5,10 +5,12 @@ module;
 
 export module Nyx.RHI:Adapter;
 
-import Nyx.Core;
+import Miracle;
 
 import :Forward;
 import :Types;
+
+using namespace Miracle;
 
 namespace Nyx::RHI {
 

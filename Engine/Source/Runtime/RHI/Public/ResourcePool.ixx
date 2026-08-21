@@ -1,9 +1,11 @@
 export module Nyx.RHI:ResourcePool;
 
 import std;
-import Nyx.Core;
+import Miracle;
 
 import :Handle;
+
+using namespace Miracle;
 
 export namespace Nyx::RHI::detail {
 

@@ -1,3 +1,9 @@
 [submodule "vcpkg"]
 	path = vcpkg
 	url = git@github.com:microsoft/vcpkg
+[submodule "Engine/Source/Runtime/Miracle"]
+	path = Engine/Source/Runtime/Miracle
+	url = git@github.com:spwn02/Miracle.git
+[submodule "Engine/Source/Runtime/Switch"]
+	path = Engine/Source/Runtime/Switch
+	url = git@github.com:spwn02/Switch.git

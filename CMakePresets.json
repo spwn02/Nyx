@@ -1,8 +1,8 @@
 {
   "version": 6,
   "cmakeMinimumRequired": {
-    "major": 3,
-    "minor": 30,
+    "major": 4,
+    "minor": 4,
     "patch": 0
   },
   "configurePresets": [
@@ -47,7 +47,7 @@
     {
       "name": "development-tests",
       "displayName": "Nyx Development Tests",
-      "description": "Isolated exception-enabled Nyx.Test build",
+      "description": "Unified Nyx + Miracle + Switch integration build",
       "inherits": "vcpkg",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Debug",
@@ -90,7 +90,11 @@
     {
       "name": "development-tests",
       "configurePreset": "development-tests",
-      "jobs": 4
+      "jobs": 4,
+      "targets": [
+        "NyxEngine",
+        "unit_tests"
+      ]
     },
     {
       "name": "release",

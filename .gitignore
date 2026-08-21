@@ -1,9 +1,6 @@
-build/
-imgui.ini
-vcpkg_installed/
-logs/
-legacy/
+/build/
+/vcpkg_installed/
+/logs/
+/contracts/
 *.log
-*.json
-temp/
 .*/

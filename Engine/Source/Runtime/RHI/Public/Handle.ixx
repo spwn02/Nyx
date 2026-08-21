@@ -1,7 +1,9 @@
 export module Nyx.RHI:Handle;
 
 import std;
-import Nyx.Core;
+import Miracle;
+
+using namespace Miracle;
 
 namespace Nyx::RHI {
 

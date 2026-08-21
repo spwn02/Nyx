@@ -1,7 +1,9 @@
 export module Nyx.Event:Events;
 
 import std;
-import Nyx.Core;
+import Miracle;
+
+using namespace Miracle;
 
 export namespace Nyx {
 

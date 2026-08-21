@@ -1,6 +1,6 @@
 nyx_add_module(Kernel
   PUBLIC_DEPS
-    Nyx::Core
+    Miracle::Miracle
     Nyx::Log
     Nyx::Platform
     Nyx::Event

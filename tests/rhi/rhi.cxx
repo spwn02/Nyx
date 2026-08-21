@@ -1,9 +1,9 @@
-import Nyx.Core;
+import Miracle;
+import Switch;
 import Nyx.RHI;
-import Nyx.Test;
 
-using namespace Nyx;
-using namespace Nyx::Test;
+using namespace Miracle;
+using namespace Switch;
 using namespace Nyx::RHI;
 
 // NOLINTBEGIN(cppcoreguidelines-avoid-magic-numbers, readability-magic-numbers)

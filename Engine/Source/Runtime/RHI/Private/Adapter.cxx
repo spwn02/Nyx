@@ -5,8 +5,11 @@ module;
 module Nyx.RHI;
 
 import std;
-import Nyx.Core;
+import Miracle;
+
 import :Adapter;
+
+using namespace Miracle;
 
 namespace Nyx::RHI {
 

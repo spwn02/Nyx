@@ -1,9 +1,10 @@
 import std;
+import Miracle;
 import Nyx.Log;
-import Nyx.Core;
 import Nyx.Kernel;
 
 using namespace Nyx;
+using namespace Miracle;
 
 auto main() -> int {
   {
@@ -14,7 +15,7 @@ auto main() -> int {
   Result<Kernel> kernel = Kernel::create();
   if (not kernel) {
     NLogger::error("{}", kernel.error().display({.colours = true}));
-    return build::exitFailure;
+    return 1;
   }
 
   NLogger::info("Kernel has been initialized!");
@@ -23,9 +24,9 @@ auto main() -> int {
     Result<void> result = kernel->run();
     if (not result) {
       NLogger::error("{}", result.error().display({.colours = true}));
-      return build::exitFailure;
+      return 1;
     }
   }
 
-  return build::exitSuccess;
+  return 0;
 }

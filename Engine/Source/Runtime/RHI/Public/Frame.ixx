@@ -5,12 +5,15 @@ module;
 
 export module Nyx.RHI:Frame;
 
-import Nyx.Core;
-import :Device;
+import Miracle;
+
 import :Forward;
-import :Swapchain;
 import :Types;
+import :Device;
+import :Swapchain;
 import :Command;
+
+using namespace Miracle;
 
 namespace Nyx::RHI {
 

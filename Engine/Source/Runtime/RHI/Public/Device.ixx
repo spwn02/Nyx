@@ -6,13 +6,16 @@ module;
 
 export module Nyx.RHI:Device;
 
-import Nyx.Core;
-import :Adapter;
+import Miracle;
+
 import :Forward;
-import :Queue;
-import :Resources;
 import :Types;
+import :Resources;
 import :ResourcePool;
+import :Adapter;
+import :Queue;
+
+using namespace Miracle;
 
 namespace Nyx::RHI {
 

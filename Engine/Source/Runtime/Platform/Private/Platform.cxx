@@ -5,6 +5,7 @@ module;
 module Nyx.Platform;
 
 import std;
+
 namespace Nyx {
 
 namespace {

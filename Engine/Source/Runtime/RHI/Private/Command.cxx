@@ -6,10 +6,12 @@ module;
 module Nyx.RHI;
 
 import std;
-import Nyx.Core;
+import Miracle;
 
 import :Command;
 import :Vulkan;
+
+using namespace Miracle;
 
 namespace Nyx::RHI {
 

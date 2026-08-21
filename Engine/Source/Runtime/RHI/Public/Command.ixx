@@ -5,12 +5,15 @@ module;
 
 export module Nyx.RHI:Command;
 
-import Nyx.Core;
-import :Device;
+import Miracle;
+
 import :Forward;
-import :Resources;
-import :Swapchain;
 import :Types;
+import :Resources;
+import :Device;
+import :Swapchain;
+
+using namespace Miracle;
 
 export namespace Nyx::RHI {
 

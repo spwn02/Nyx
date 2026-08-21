@@ -1,0 +1,2785 @@
+{
+  "schema_version": 3,
+  "framework": "Nyx.Test",
+  "kind": "test_list",
+  "count": 111,
+  "tests": [
+    {
+      "identifier": "Tests::RHI::textureFormatMetadata",
+      "name": "textureFormatMetadata",
+      "description": "",
+      "test_case": 0,
+      "location": {
+        "file": "/home/spawn/dev/cpp/Nyx/tests/core/rhi.cxx",
+        "line": 12,
+        "column": 50
+      },
+      "metadata": {
+        "group": "core",
+        "tags": [
+          "rhi"
+        ]
+      },
+      "policy": {
+        "trace": false,
+        "expected_panic": null,
+        "timeout_ns": null,
+        "repeat": 1,
+        "warmup": 0,
+        "retry": 0
+      }
+    },
+    {
+      "identifier": "Tests::assertions::checksRecordDiagnostics",
+      "name": "checksRecordDiagnostics",
+      "description": "",
+      "test_case": 0,
+      "location": {
+        "file": "/home/spawn/dev/cpp/Nyx/tests/framework/assertions.cxx",
+        "line": 10,
+        "column": 58
+      },
+      "metadata": {
+        "group": "framework",
+        "tags": [
+          "assertions"
+        ]
+      },
+      "policy": {
+        "trace": false,
+        "expected_panic": null,
+        "timeout_ns": null,
+        "repeat": 1,
+        "warmup": 0,
+        "retry": 0
+      }
+    },
+    {
+      "identifier": "Tests::assertions::failedRequirementsStopContinuation",
+      "name": "failedRequirementsStopContinuation",
+      "description": "",
+      "test_case": 0,
+      "location": {
+        "file": "/home/spawn/dev/cpp/Nyx/tests/framework/assertions.cxx",
+        "line": 60,
+        "column": 58
+      },
+      "metadata": {
+        "group": "framework",
+        "tags": [
+          "assertions"
+        ]
+      },
+      "policy": {
+        "trace": false,
+        "expected_panic": null,
+        "timeout_ns": null,
+        "repeat": 1,
+        "warmup": 0,
+        "retry": 0
+      }
+    },
+    {
+      "identifier": "Tests::assertions::successfulRequirementsAllowContinuation",
+      "name": "successfulRequirementsAllowContinuation",
+      "description": "",
+      "test_case": 0,
+      "location": {
+        "file": "/home/spawn/dev/cpp/Nyx/tests/framework/assertions.cxx",
+        "line": 37,
+        "column": 58
+      },
+      "metadata": {
+        "group": "framework",
+        "tags": [
+          "assertions"
+        ]
+      },
+      "policy": {
+        "trace": false,
+        "expected_panic": null,
+        "timeout_ns": null,
+        "repeat": 1,
+        "warmup": 0,
+        "retry": 0
+      }
+    },
+    {
+      "identifier": "Tests::bitflags::bitflags",
+      "name": "bitflags",
+      "description": "",
+      "test_case": 0,
+      "location": {
+        "file": "/home/spawn/dev/cpp/Nyx/tests/core/bitflags.cxx",
+        "line": 18,
+        "column": 55
+      },
+      "metadata": {
+        "group": "core",
+        "tags": [
+          "bitflags"
+        ]
+      },
+      "policy": {
+        "trace": false,
+        "expected_panic": null,
+        "timeout_ns": null,
+        "repeat": 1,
+        "warmup": 0,
+        "retry": 0
+      }
+    },
+    {
+      "identifier": "Tests::bitflags::bitflagsAll",
+      "name": "bitflagsAll",
+      "description": "",
+      "test_case": 0,
+      "location": {
+        "file": "/home/spawn/dev/cpp/Nyx/tests/core/bitflags.cxx",
+        "line": 40,
+        "column": 55
+      },
+      "metadata": {
+        "group": "core",
+        "tags": [
+          "bitflags"
+        ]
+      },
+      "policy": {
+        "trace": false,
+        "expected_panic": null,
+        "timeout_ns": null,
+        "repeat": 1,
+        "warmup": 0,
+        "retry": 0
+      }
+    },
+    {
+      "identifier": "Tests::bitflags::bitflagsDisplay",
+      "name": "bitflagsDisplay",
+      "description": "",
+      "test_case": 0,
+      "location": {
+        "file": "/home/spawn/dev/cpp/Nyx/tests/core/bitflags.cxx",
+        "line": 26,
+        "column": 55
+      },
+      "metadata": {
+        "group": "core",
+        "tags": [
+          "bitflags"
+        ]
+      },
+      "policy": {
+        "trace": false,
+        "expected_panic": null,
+        "timeout_ns": null,
+        "repeat": 1,
+        "warmup": 0,
+        "retry": 0
+      }
+    },
+    {
+      "identifier": "Tests::bitflags::bitflagsDisplayWithPrefix",
+      "name": "bitflagsDisplayWithPrefix",
+      "description": "",
+      "test_case": 0,
+      "location": {
+        "file": "/home/spawn/dev/cpp/Nyx/tests/core/bitflags.cxx",
+        "line": 33,
+        "column": 55
+      },
+      "metadata": {
+        "group": "core",
+        "tags": [
+          "bitflags"
+        ]
+      },
+      "policy": {
+        "trace": false,
+        "expected_panic": null,
+        "timeout_ns": null,
+        "repeat": 1,
+        "warmup": 0,
+        "retry": 0
+      }
+    },
+    {
+      "identifier": "Tests::debug::allHiddenStruct",
+      "name": "allHiddenStruct",
+      "description": "",
+      "test_case": 0,
+      "location": {
+        "file": "/home/spawn/dev/cpp/Nyx/tests/core/debug.cxx",
+        "line": 132,
+        "column": 52
+      },
+      "metadata": {
+        "group": "core",
+        "tags": [
+          "debug"
+        ]
+      },
+      "policy": {
+        "trace": false,
+        "expected_panic": null,
+        "timeout_ns": null,
+        "repeat": 1,
+        "warmup": 0,
+        "retry": 0
+      }
+    },
+    {
+      "identifier": "Tests::debug::debug",
+      "name": "debug",
+      "description": "",
+      "test_case": 0,
+      "location": {
+        "file": "/home/spawn/dev/cpp/Nyx/tests/core/debug.cxx",
+        "line": 33,
+        "column": 61
+      },
+      "metadata": {
+        "group": "core",
+        "tags": [
+          "debug"
+        ]
+      },
+      "policy": {
+        "trace": true,
+        "expected_panic": null,
+        "timeout_ns": null,
+        "repeat": 1,
+        "warmup": 0,
+        "retry": 0
+      }
+    },
+    {
+      "identifier": "Tests::debug::emptyNestedStruct",
+      "name": "emptyNestedStruct",
+      "description": "",
+      "test_case": 0,
+      "location": {
+        "file": "/home/spawn/dev/cpp/Nyx/tests/core/debug.cxx",
+        "line": 123,
+        "column": 52
+      },
+      "metadata": {
+        "group": "core",
+        "tags": [
+          "debug"
+        ]
+      },
+      "policy": {
+        "trace": false,
+        "expected_panic": null,
+        "timeout_ns": null,
+        "repeat": 1,
+        "warmup": 0,
+        "retry": 0
+      }
+    },
+    {
+      "identifier": "Tests::debug::emptyStruct",
+      "name": "emptyStruct",
+      "description": "",
+      "test_case": 0,
+      "location": {
+        "file": "/home/spawn/dev/cpp/Nyx/tests/core/debug.cxx",
+        "line": 114,
+        "column": 52
+      },
+      "metadata": {
+        "group": "core",
+        "tags": [
+          "debug"
+        ]
+      },
+      "policy": {
+        "trace": false,
+        "expected_panic": null,
+        "timeout_ns": null,
+        "repeat": 1,
+        "warmup": 0,
+        "retry": 0
+      }
+    },
+    {
+      "identifier": "Tests::debug::enumDisplay",
+      "name": "enumDisplay",
+      "description": "",
+      "test_case": 0,
+      "location": {
+        "file": "/home/spawn/dev/cpp/Nyx/tests/core/debug.cxx",
+        "line": 143,
+        "column": 52
+      },
+      "metadata": {
+        "group": "core",
+        "tags": [
+          "debug"
+        ]
+      },
+      "policy": {
+        "trace": false,
+        "expected_panic": null,
+        "timeout_ns": null,
+        "repeat": 1,
+        "warmup": 0,
+        "retry": 0
+      }
+    },
+    {
+      "identifier": "Tests::debug::hiddenEnum",
+      "name": "hiddenEnum",
+      "description": "",
+      "test_case": 0,
+      "location": {
+        "file": "/home/spawn/dev/cpp/Nyx/tests/core/debug.cxx",
+        "line": 162,
+        "column": 52
+      },
+      "metadata": {
+        "group": "core",
+        "tags": [
+          "debug"
+        ]
+      },
+      "policy": {
+        "trace": false,
+        "expected_panic": null,
+        "timeout_ns": null,
+        "repeat": 1,
+        "warmup": 0,
+        "retry": 0
+      }
+    },
+    {
+      "identifier": "Tests::debug::hiddenEnumWithDefaultEnumerator",
+      "name": "hiddenEnumWithDefaultEnumerator",
+      "description": "",
+      "test_case": 0,
+      "location": {
+        "file": "/home/spawn/dev/cpp/Nyx/tests/core/debug.cxx",
+        "line": 172,
+        "column": 52
+      },
+      "metadata": {
+        "group": "core",
+        "tags": [
+          "debug"
+        ]
+      },
+      "policy": {
+        "trace": false,
+        "expected_panic": null,
+        "timeout_ns": null,
+        "repeat": 1,
+        "warmup": 0,
+        "retry": 0
+      }
+    },
+    {
+      "identifier": "Tests::debug::renamedEnum",
+      "name": "renamedEnum",
+      "description": "",
+      "test_case": 0,
+      "location": {
+        "file": "/home/spawn/dev/cpp/Nyx/tests/core/debug.cxx",
+        "line": 150,
+        "column": 52
+      },
+      "metadata": {
+        "group": "core",
+        "tags": [
+          "debug"
+        ]
+      },
+      "policy": {
+        "trace": false,
+        "expected_panic": null,
+        "timeout_ns": null,
+        "repeat": 1,
+        "warmup": 0,
+        "retry": 0
+      }
+    },
+    {
+      "identifier": "Tests::debug::structWithRenamedMembers",
+      "name": "structWithRenamedMembers",
+      "description": "",
+      "test_case": 0,
+      "location": {
+        "file": "/home/spawn/dev/cpp/Nyx/tests/core/debug.cxx",
+        "line": 108,
+        "column": 52
+      },
+      "metadata": {
+        "group": "core",
+        "tags": [
+          "debug"
+        ]
+      },
+      "policy": {
+        "trace": false,
+        "expected_panic": null,
+        "timeout_ns": null,
+        "repeat": 1,
+        "warmup": 0,
+        "retry": 0
+      }
+    },
+    {
+      "identifier": "Tests::debug::structsWithHiddenMembers",
+      "name": "structsWithHiddenMembers",
+      "description": "",
+      "test_case": 0,
+      "location": {
+        "file": "/home/spawn/dev/cpp/Nyx/tests/core/debug.cxx",
+        "line": 92,
+        "column": 52
+      },
+      "metadata": {
+        "group": "core",
+        "tags": [
+          "debug"
+        ]
+      },
+      "policy": {
+        "trace": false,
+        "expected_panic": null,
+        "timeout_ns": null,
+        "repeat": 1,
+        "warmup": 0,
+        "retry": 0
+      }
+    },
+    {
+      "identifier": "Tests::diagnostics::diagnostics",
+      "name": "diagnostics",
+      "description": "",
+      "test_case": 0,
+      "location": {
+        "file": "/home/spawn/dev/cpp/Nyx/tests/framework/diagnostics.cxx",
+        "line": 30,
+        "column": 63
+      },
+      "metadata": {
+        "group": "framework",
+        "tags": [
+          "diagnostics"
+        ]
+      },
+      "policy": {
+        "trace": false,
+        "expected_panic": null,
+        "timeout_ns": null,
+        "repeat": 1,
+        "warmup": 0,
+        "retry": 0
+      }
+    },
+    {
+      "identifier": "Tests::discovery::discoversEachDeclarativeCase",
+      "name": "discoversEachDeclarativeCase",
+      "description": "",
+      "test_case": 0,
+      "location": {
+        "file": "/home/spawn/dev/cpp/Nyx/tests/framework/discovery.cxx",
+        "line": 277,
+        "column": 61
+      },
+      "metadata": {
+        "group": "framework",
+        "tags": [
+          "discovery"
+        ]
+      },
+      "policy": {
+        "trace": false,
+        "expected_panic": null,
+        "timeout_ns": null,
+        "repeat": 1,
+        "warmup": 0,
+        "retry": 0
+      }
+    },
+    {
+      "identifier": "Tests::discovery::dispatchesIndependentCasesInParallel",
+      "name": "dispatchesIndependentCasesInParallel",
+      "description": "",
+      "test_case": 0,
+      "location": {
+        "file": "/home/spawn/dev/cpp/Nyx/tests/framework/discovery.cxx",
+        "line": 316,
+        "column": 61
+      },
+      "metadata": {
+        "group": "framework",
+        "tags": [
+          "discovery"
+        ]
+      },
+      "policy": {
+        "trace": false,
+        "expected_panic": null,
+        "timeout_ns": null,
+        "repeat": 1,
+        "warmup": 0,
+        "retry": 0
+      }
+    },
+    {
+      "identifier": "Tests::discovery::dispatchesParameterisedTests",
+      "name": "dispatchesParameterisedTests",
+      "description": "",
+      "test_case": 0,
+      "location": {
+        "file": "/home/spawn/dev/cpp/Nyx/tests/framework/discovery.cxx",
+        "line": 288,
+        "column": 61
+      },
+      "metadata": {
+        "group": "framework",
+        "tags": [
+          "discovery"
+        ]
+      },
+      "policy": {
+        "trace": false,
+        "expected_panic": null,
+        "timeout_ns": null,
+        "repeat": 1,
+        "warmup": 0,
+        "retry": 0
+      }
+    },
+    {
+      "identifier": "Tests::discovery::flattensIndependentSuitesAndUsesAutomaticWorkerCount",
+      "name": "flattensIndependentSuitesAndUsesAutomaticWorkerCount",
+      "description": "",
+      "test_case": 0,
+      "location": {
+        "file": "/home/spawn/dev/cpp/Nyx/tests/framework/discovery.cxx",
+        "line": 358,
+        "column": 1
+      },
+      "metadata": {
+        "group": "framework",
+        "tags": [
+          "discovery"
+        ]
+      },
+      "policy": {
+        "trace": false,
+        "expected_panic": null,
+        "timeout_ns": null,
+        "repeat": 1,
+        "warmup": 0,
+        "retry": 0
+      }
+    },
+    {
+      "identifier": "Tests::discovery::preservesCaseIdentityForFailures",
+      "name": "preservesCaseIdentityForFailures",
+      "description": "",
+      "test_case": 0,
+      "location": {
+        "file": "/home/spawn/dev/cpp/Nyx/tests/framework/discovery.cxx",
+        "line": 301,
+        "column": 61
+      },
+      "metadata": {
+        "group": "framework",
+        "tags": [
+          "discovery"
+        ]
+      },
+      "policy": {
+        "trace": false,
+        "expected_panic": null,
+        "timeout_ns": null,
+        "repeat": 1,
+        "warmup": 0,
+        "retry": 0
+      }
+    },
+    {
+      "identifier": "Tests::discovery::preservesFixtureScopesAndVirtualTimeAcrossParallelCases",
+      "name": "preservesFixtureScopesAndVirtualTimeAcrossParallelCases",
+      "description": "",
+      "test_case": 0,
+      "location": {
+        "file": "/home/spawn/dev/cpp/Nyx/tests/framework/discovery.cxx",
+        "line": 333,
+        "column": 1
+      },
+      "metadata": {
+        "group": "framework",
+        "tags": [
+          "discovery"
+        ]
+      },
+      "policy": {
+        "trace": false,
+        "expected_panic": null,
+        "timeout_ns": null,
+        "repeat": 1,
+        "warmup": 0,
+        "retry": 0
+      }
+    },
+    {
+      "identifier": "Tests::discovery::selectsTestsByQualifiedNameGroupAndTags",
+      "name": "selectsTestsByQualifiedNameGroupAndTags",
+      "description": "",
+      "test_case": 0,
+      "location": {
+        "file": "/home/spawn/dev/cpp/Nyx/tests/framework/discovery.cxx",
+        "line": 385,
+        "column": 61
+      },
+      "metadata": {
+        "group": "framework",
+        "tags": [
+          "discovery"
+        ]
+      },
+      "policy": {
+        "trace": false,
+        "expected_panic": null,
+        "timeout_ns": null,
+        "repeat": 1,
+        "warmup": 0,
+        "retry": 0
+      }
+    },
+    {
+      "identifier": "Tests::environment::bindingRestoresPreviousEnvironment",
+      "name": "bindingRestoresPreviousEnvironment",
+      "description": "",
+      "test_case": 0,
+      "location": {
+        "file": "/home/spawn/dev/cpp/Nyx/tests/framework/environment.cxx",
+        "line": 16,
+        "column": 63
+      },
+      "metadata": {
+        "group": "framework",
+        "tags": [
+          "environment"
+        ]
+      },
+      "policy": {
+        "trace": false,
+        "expected_panic": null,
+        "timeout_ns": null,
+        "repeat": 1,
+        "warmup": 0,
+        "retry": 0
+      }
+    },
+    {
+      "identifier": "Tests::error::empty",
+      "name": "empty",
+      "description": "",
+      "test_case": 0,
+      "location": {
+        "file": "/home/spawn/dev/cpp/Nyx/tests/core/error.cxx",
+        "line": 23,
+        "column": 69
+      },
+      "metadata": {
+        "group": "Core",
+        "tags": [
+          "error"
+        ]
+      },
+      "policy": {
+        "trace": false,
+        "expected_panic": "",
+        "timeout_ns": null,
+        "repeat": 1,
+        "warmup": 0,
+        "retry": 0
+      }
+    },
+    {
+      "identifier": "Tests::error::errorFunction",
+      "name": "errorFunction",
+      "description": "",
+      "test_case": 0,
+      "location": {
+        "file": "/home/spawn/dev/cpp/Nyx/tests/core/error.cxx",
+        "line": 19,
+        "column": 52
+      },
+      "metadata": {
+        "group": "Core",
+        "tags": [
+          "error"
+        ]
+      },
+      "policy": {
+        "trace": false,
+        "expected_panic": null,
+        "timeout_ns": null,
+        "repeat": 1,
+        "warmup": 0,
+        "retry": 0
+      }
+    },
+    {
+      "identifier": "Tests::error::errorLocation",
+      "name": "errorLocation",
+      "description": "",
+      "test_case": 0,
+      "location": {
+        "file": "/home/spawn/dev/cpp/Nyx/tests/core/error.cxx",
+        "line": 64,
+        "column": 52
+      },
+      "metadata": {
+        "group": "core",
+        "tags": [
+          "debug"
+        ]
+      },
+      "policy": {
+        "trace": false,
+        "expected_panic": null,
+        "timeout_ns": null,
+        "repeat": 1,
+        "warmup": 0,
+        "retry": 0
+      }
+    },
+    {
+      "identifier": "Tests::error::errorStoresMessage",
+      "name": "errorStoresMessage",
+      "description": "",
+      "test_case": 0,
+      "location": {
+        "file": "/home/spawn/dev/cpp/Nyx/tests/core/error.cxx",
+        "line": 14,
+        "column": 52
+      },
+      "metadata": {
+        "group": "Core",
+        "tags": [
+          "error"
+        ]
+      },
+      "policy": {
+        "trace": false,
+        "expected_panic": null,
+        "timeout_ns": null,
+        "repeat": 1,
+        "warmup": 0,
+        "retry": 0
+      }
+    },
+    {
+      "identifier": "Tests::error::fail",
+      "name": "fail",
+      "description": "",
+      "test_case": 0,
+      "location": {
+        "file": "/home/spawn/dev/cpp/Nyx/tests/core/error.cxx",
+        "line": 10,
+        "column": 77
+      },
+      "metadata": {
+        "group": "Core",
+        "tags": [
+          "error"
+        ]
+      },
+      "policy": {
+        "trace": false,
+        "expected_panic": "Failed",
+        "timeout_ns": null,
+        "repeat": 1,
+        "warmup": 0,
+        "retry": 0
+      }
+    },
+    {
+      "identifier": "Tests::error::releaseError",
+      "name": "releaseError",
+      "description": "",
+      "test_case": 0,
+      "location": {
+        "file": "/home/spawn/dev/cpp/Nyx/tests/core/error.cxx",
+        "line": 72,
+        "column": 61
+      },
+      "metadata": {
+        "group": "core",
+        "tags": [
+          "debug"
+        ]
+      },
+      "policy": {
+        "trace": true,
+        "expected_panic": null,
+        "timeout_ns": null,
+        "repeat": 1,
+        "warmup": 0,
+        "retry": 0
+      }
+    },
+    {
+      "identifier": "Tests::error::stackTrace",
+      "name": "stackTrace",
+      "description": "",
+      "test_case": 0,
+      "location": {
+        "file": "/home/spawn/dev/cpp/Nyx/tests/core/error.cxx",
+        "line": 53,
+        "column": 52
+      },
+      "metadata": {
+        "group": "core",
+        "tags": [
+          "debug"
+        ]
+      },
+      "policy": {
+        "trace": false,
+        "expected_panic": null,
+        "timeout_ns": null,
+        "repeat": 1,
+        "warmup": 0,
+        "retry": 0
+      }
+    },
+    {
+      "identifier": "Tests::example::divideFail(5, 0)",
+      "name": "divideFail",
+      "description": "",
+      "test_case": 0,
+      "location": {
+        "file": "/home/spawn/dev/cpp/Nyx/tests/framework/example.cxx",
+        "line": 34,
+        "column": 51
+      },
+      "metadata": {
+        "group": "example",
+        "tags": [
+          "math"
+        ]
+      },
+      "policy": {
+        "trace": false,
+        "expected_panic": "Cannot divide by zero!",
+        "timeout_ns": null,
+        "repeat": 1,
+        "warmup": 0,
+        "retry": 0
+      }
+    },
+    {
+      "identifier": "Tests::example::dividePass(5, 2)",
+      "name": "dividePass",
+      "description": "",
+      "test_case": 0,
+      "location": {
+        "file": "/home/spawn/dev/cpp/Nyx/tests/framework/example.cxx",
+        "line": 25,
+        "column": 68
+      },
+      "metadata": {
+        "group": "example",
+        "tags": [
+          "math"
+        ]
+      },
+      "policy": {
+        "trace": false,
+        "expected_panic": null,
+        "timeout_ns": null,
+        "repeat": 1,
+        "warmup": 0,
+        "retry": 0
+      }
+    },
+    {
+      "identifier": "Tests::example::foo",
+      "name": "foo",
+      "description": "",
+      "test_case": 0,
+      "location": {
+        "file": "/home/spawn/dev/cpp/Nyx/tests/framework/example.cxx",
+        "line": 11,
+        "column": 53
+      },
+      "metadata": {
+        "group": "example",
+        "tags": []
+      },
+      "policy": {
+        "trace": false,
+        "expected_panic": null,
+        "timeout_ns": null,
+        "repeat": 10,
+        "warmup": 0,
+        "retry": 0
+      }
+    },
+    {
+      "identifier": "Tests::executions::awaitsNestedAsyncTasks",
+      "name": "awaitsNestedAsyncTasks",
+      "description": "",
+      "test_case": 0,
+      "location": {
+        "file": "/home/spawn/dev/cpp/Nyx/tests/framework/executions.cxx",
+        "line": 111,
+        "column": 62
+      },
+      "metadata": {
+        "group": "framework",
+        "tags": [
+          "executions"
+        ]
+      },
+      "policy": {
+        "trace": false,
+        "expected_panic": null,
+        "timeout_ns": null,
+        "repeat": 1,
+        "warmup": 0,
+        "retry": 0
+      }
+    },
+    {
+      "identifier": "Tests::executions::capturesAsyncExceptionsAtTheTestBoundary",
+      "name": "capturesAsyncExceptionsAtTheTestBoundary",
+      "description": "",
+      "test_case": 0,
+      "location": {
+        "file": "/home/spawn/dev/cpp/Nyx/tests/framework/executions.cxx",
+        "line": 171,
+        "column": 62
+      },
+      "metadata": {
+        "group": "framework",
+        "tags": [
+          "executions"
+        ]
+      },
+      "policy": {
+        "trace": false,
+        "expected_panic": null,
+        "timeout_ns": null,
+        "repeat": 1,
+        "warmup": 0,
+        "retry": 0
+      }
+    },
+    {
+      "identifier": "Tests::executions::capturesAsyncFatalRequirementsAtTheTestBoundary",
+      "name": "capturesAsyncFatalRequirementsAtTheTestBoundary",
+      "description": "",
+      "test_case": 0,
+      "location": {
+        "file": "/home/spawn/dev/cpp/Nyx/tests/framework/executions.cxx",
+        "line": 151,
+        "column": 62
+      },
+      "metadata": {
+        "group": "framework",
+        "tags": [
+          "executions"
+        ]
+      },
+      "policy": {
+        "trace": false,
+        "expected_panic": null,
+        "timeout_ns": null,
+        "repeat": 1,
+        "warmup": 0,
+        "retry": 0
+      }
+    },
+    {
+      "identifier": "Tests::executions::capturesFatalRequirementsAtTheTestBoundary",
+      "name": "capturesFatalRequirementsAtTheTestBoundary",
+      "description": "",
+      "test_case": 0,
+      "location": {
+        "file": "/home/spawn/dev/cpp/Nyx/tests/framework/executions.cxx",
+        "line": 72,
+        "column": 62
+      },
+      "metadata": {
+        "group": "framework",
+        "tags": [
+          "executions"
+        ]
+      },
+      "policy": {
+        "trace": false,
+        "expected_panic": null,
+        "timeout_ns": null,
+        "repeat": 1,
+        "warmup": 0,
+        "retry": 0
+      }
+    },
+    {
+      "identifier": "Tests::executions::capturesUnhandledExceptions",
+      "name": "capturesUnhandledExceptions",
+      "description": "",
+      "test_case": 0,
+      "location": {
+        "file": "/home/spawn/dev/cpp/Nyx/tests/framework/executions.cxx",
+        "line": 186,
+        "column": 62
+      },
+      "metadata": {
+        "group": "framework",
+        "tags": [
+          "executions"
+        ]
+      },
+      "policy": {
+        "trace": false,
+        "expected_panic": null,
+        "timeout_ns": null,
+        "repeat": 1,
+        "warmup": 0,
+        "retry": 0
+      }
+    },
+    {
+      "identifier": "Tests::executions::executesVoidTestsInAnEnvironment",
+      "name": "executesVoidTestsInAnEnvironment",
+      "description": "",
+      "test_case": 0,
+      "location": {
+        "file": "/home/spawn/dev/cpp/Nyx/tests/framework/executions.cxx",
+        "line": 17,
+        "column": 62
+      },
+      "metadata": {
+        "group": "framework",
+        "tags": [
+          "executions"
+        ]
+      },
+      "policy": {
+        "trace": false,
+        "expected_panic": null,
+        "timeout_ns": null,
+        "repeat": 1,
+        "warmup": 0,
+        "retry": 0
+      }
+    },
+    {
+      "identifier": "Tests::executions::normalizesAsyncReturnValues",
+      "name": "normalizesAsyncReturnValues",
+      "description": "",
+      "test_case": 0,
+      "location": {
+        "file": "/home/spawn/dev/cpp/Nyx/tests/framework/executions.cxx",
+        "line": 124,
+        "column": 62
+      },
+      "metadata": {
+        "group": "framework",
+        "tags": [
+          "executions"
+        ]
+      },
+      "policy": {
+        "trace": false,
+        "expected_panic": null,
+        "timeout_ns": null,
+        "repeat": 1,
+        "warmup": 0,
+        "retry": 0
+      }
+    },
+    {
+      "identifier": "Tests::executions::normalizesBooleanReturnValues",
+      "name": "normalizesBooleanReturnValues",
+      "description": "",
+      "test_case": 0,
+      "location": {
+        "file": "/home/spawn/dev/cpp/Nyx/tests/framework/executions.cxx",
+        "line": 25,
+        "column": 62
+      },
+      "metadata": {
+        "group": "framework",
+        "tags": [
+          "executions"
+        ]
+      },
+      "policy": {
+        "trace": false,
+        "expected_panic": null,
+        "timeout_ns": null,
+        "repeat": 1,
+        "warmup": 0,
+        "retry": 0
+      }
+    },
+    {
+      "identifier": "Tests::executions::normalizesResultReturnValues",
+      "name": "normalizesResultReturnValues",
+      "description": "",
+      "test_case": 0,
+      "location": {
+        "file": "/home/spawn/dev/cpp/Nyx/tests/framework/executions.cxx",
+        "line": 47,
+        "column": 62
+      },
+      "metadata": {
+        "group": "framework",
+        "tags": [
+          "executions"
+        ]
+      },
+      "policy": {
+        "trace": false,
+        "expected_panic": null,
+        "timeout_ns": null,
+        "repeat": 1,
+        "warmup": 0,
+        "retry": 0
+      }
+    },
+    {
+      "identifier": "Tests::executions::preservesTaskLocalBindingsAcrossAsyncResumption",
+      "name": "preservesTaskLocalBindingsAcrossAsyncResumption",
+      "description": "",
+      "test_case": 0,
+      "location": {
+        "file": "/home/spawn/dev/cpp/Nyx/tests/framework/executions.cxx",
+        "line": 91,
+        "column": 62
+      },
+      "metadata": {
+        "group": "framework",
+        "tags": [
+          "executions"
+        ]
+      },
+      "policy": {
+        "trace": false,
+        "expected_panic": null,
+        "timeout_ns": null,
+        "repeat": 1,
+        "warmup": 0,
+        "retry": 0
+      }
+    },
+    {
+      "identifier": "Tests::executions::reportsAggregateResults",
+      "name": "reportsAggregateResults",
+      "description": "",
+      "test_case": 0,
+      "location": {
+        "file": "/home/spawn/dev/cpp/Nyx/tests/framework/executions.cxx",
+        "line": 198,
+        "column": 62
+      },
+      "metadata": {
+        "group": "framework",
+        "tags": [
+          "executions"
+        ]
+      },
+      "policy": {
+        "trace": false,
+        "expected_panic": null,
+        "timeout_ns": null,
+        "repeat": 1,
+        "warmup": 0,
+        "retry": 0
+      }
+    },
+    {
+      "identifier": "Tests::expressions::compactLiteralsUseTheAssertionLocation",
+      "name": "compactLiteralsUseTheAssertionLocation",
+      "description": "",
+      "test_case": 0,
+      "location": {
+        "file": "/home/spawn/dev/cpp/Nyx/tests/framework/expressions.cxx",
+        "line": 18,
+        "column": 63
+      },
+      "metadata": {
+        "group": "framework",
+        "tags": [
+          "expressions"
+        ]
+      },
+      "policy": {
+        "trace": false,
+        "expected_panic": null,
+        "timeout_ns": null,
+        "repeat": 1,
+        "warmup": 0,
+        "retry": 0
+      }
+    },
+    {
+      "identifier": "Tests::expressions::comparisonsExposeValuesAndLocations",
+      "name": "comparisonsExposeValuesAndLocations",
+      "description": "",
+      "test_case": 0,
+      "location": {
+        "file": "/home/spawn/dev/cpp/Nyx/tests/framework/expressions.cxx",
+        "line": 153,
+        "column": 63
+      },
+      "metadata": {
+        "group": "framework",
+        "tags": [
+          "expressions"
+        ]
+      },
+      "policy": {
+        "trace": false,
+        "expected_panic": null,
+        "timeout_ns": null,
+        "repeat": 1,
+        "warmup": 0,
+        "retry": 0
+      }
+    },
+    {
+      "identifier": "Tests::expressions::literalOperatorsProduceExpressions",
+      "name": "literalOperatorsProduceExpressions",
+      "description": "",
+      "test_case": 0,
+      "location": {
+        "file": "/home/spawn/dev/cpp/Nyx/tests/framework/expressions.cxx",
+        "line": 37,
+        "column": 63
+      },
+      "metadata": {
+        "group": "framework",
+        "tags": [
+          "expressions"
+        ]
+      },
+      "policy": {
+        "trace": false,
+        "expected_panic": null,
+        "timeout_ns": null,
+        "repeat": 1,
+        "warmup": 0,
+        "retry": 0
+      }
+    },
+    {
+      "identifier": "Tests::expressions::requiredExpressionsAbortTheTest",
+      "name": "requiredExpressionsAbortTheTest",
+      "description": "",
+      "test_case": 0,
+      "location": {
+        "file": "/home/spawn/dev/cpp/Nyx/tests/framework/expressions.cxx",
+        "line": 111,
+        "column": 63
+      },
+      "metadata": {
+        "group": "framework",
+        "tags": [
+          "expressions"
+        ]
+      },
+      "policy": {
+        "trace": false,
+        "expected_panic": null,
+        "timeout_ns": null,
+        "repeat": 1,
+        "warmup": 0,
+        "retry": 0
+      }
+    },
+    {
+      "identifier": "Tests::expressions::returnedExpressionsPreserveTheirDiagnostics",
+      "name": "returnedExpressionsPreserveTheirDiagnostics",
+      "description": "",
+      "test_case": 0,
+      "location": {
+        "file": "/home/spawn/dev/cpp/Nyx/tests/framework/expressions.cxx",
+        "line": 140,
+        "column": 63
+      },
+      "metadata": {
+        "group": "framework",
+        "tags": [
+          "expressions"
+        ]
+      },
+      "policy": {
+        "trace": false,
+        "expected_panic": null,
+        "timeout_ns": null,
+        "repeat": 1,
+        "warmup": 0,
+        "retry": 0
+      }
+    },
+    {
+      "identifier": "Tests::expressions::stringDifferencesVisualizeWhitespace",
+      "name": "stringDifferencesVisualizeWhitespace",
+      "description": "",
+      "test_case": 0,
+      "location": {
+        "file": "/home/spawn/dev/cpp/Nyx/tests/framework/expressions.cxx",
+        "line": 50,
+        "column": 63
+      },
+      "metadata": {
+        "group": "framework",
+        "tags": [
+          "expressions"
+        ]
+      },
+      "policy": {
+        "trace": false,
+        "expected_panic": null,
+        "timeout_ns": null,
+        "repeat": 1,
+        "warmup": 0,
+        "retry": 0
+      }
+    },
+    {
+      "identifier": "Tests::expressions::utilityComparatorsProduceExpressions",
+      "name": "utilityComparatorsProduceExpressions",
+      "description": "",
+      "test_case": 0,
+      "location": {
+        "file": "/home/spawn/dev/cpp/Nyx/tests/framework/expressions.cxx",
+        "line": 68,
+        "column": 63
+      },
+      "metadata": {
+        "group": "framework",
+        "tags": [
+          "expressions"
+        ]
+      },
+      "policy": {
+        "trace": false,
+        "expected_panic": null,
+        "timeout_ns": null,
+        "repeat": 1,
+        "warmup": 0,
+        "retry": 0
+      }
+    },
+    {
+      "identifier": "Tests::fibonacciCases(0, 0)",
+      "name": "fibonacciCases",
+      "description": "",
+      "test_case": 0,
+      "location": {
+        "file": "/home/spawn/dev/cpp/Nyx/tests/framework/demo.cxx",
+        "line": 29,
+        "column": 19
+      },
+      "metadata": {
+        "group": "math",
+        "tags": [
+          "fibonacci"
+        ]
+      },
+      "policy": {
+        "trace": false,
+        "expected_panic": null,
+        "timeout_ns": null,
+        "repeat": 1000,
+        "warmup": 50,
+        "retry": 0
+      }
+    },
+    {
+      "identifier": "Tests::fibonacciCases(1, 1)",
+      "name": "fibonacciCases",
+      "description": "",
+      "test_case": 1,
+      "location": {
+        "file": "/home/spawn/dev/cpp/Nyx/tests/framework/demo.cxx",
+        "line": 29,
+        "column": 19
+      },
+      "metadata": {
+        "group": "math",
+        "tags": [
+          "fibonacci"
+        ]
+      },
+      "policy": {
+        "trace": false,
+        "expected_panic": null,
+        "timeout_ns": null,
+        "repeat": 1000,
+        "warmup": 50,
+        "retry": 0
+      }
+    },
+    {
+      "identifier": "Tests::fibonacciCases(5, 5)",
+      "name": "fibonacciCases",
+      "description": "",
+      "test_case": 2,
+      "location": {
+        "file": "/home/spawn/dev/cpp/Nyx/tests/framework/demo.cxx",
+        "line": 29,
+        "column": 19
+      },
+      "metadata": {
+        "group": "math",
+        "tags": [
+          "fibonacci"
+        ]
+      },
+      "policy": {
+        "trace": false,
+        "expected_panic": null,
+        "timeout_ns": null,
+        "repeat": 1000,
+        "warmup": 50,
+        "retry": 0
+      }
+    },
+    {
+      "identifier": "Tests::fixtures::directRunInjectsContext",
+      "name": "directRunInjectsContext",
+      "description": "",
+      "test_case": 0,
+      "location": {
+        "file": "/home/spawn/dev/cpp/Nyx/tests/framework/fixtures.cxx",
+        "line": 263,
+        "column": 60
+      },
+      "metadata": {
+        "group": "framework",
+        "tags": [
+          "fixtures"
+        ]
+      },
+      "policy": {
+        "trace": false,
+        "expected_panic": null,
+        "timeout_ns": null,
+        "repeat": 1,
+        "warmup": 0,
+        "retry": 0
+      }
+    },
+    {
+      "identifier": "Tests::fixtures::reflectedFixtureDependenciesRespectScopeLifetimes",
+      "name": "reflectedFixtureDependenciesRespectScopeLifetimes",
+      "description": "",
+      "test_case": 0,
+      "location": {
+        "file": "/home/spawn/dev/cpp/Nyx/tests/framework/fixtures.cxx",
+        "line": 312,
+        "column": 60
+      },
+      "metadata": {
+        "group": "framework",
+        "tags": [
+          "fixtures"
+        ]
+      },
+      "policy": {
+        "trace": false,
+        "expected_panic": null,
+        "timeout_ns": null,
+        "repeat": 1,
+        "warmup": 0,
+        "retry": 0
+      }
+    },
+    {
+      "identifier": "Tests::fixtures::reflectedInjectionUsesFixtureScopes",
+      "name": "reflectedInjectionUsesFixtureScopes",
+      "description": "",
+      "test_case": 0,
+      "location": {
+        "file": "/home/spawn/dev/cpp/Nyx/tests/framework/fixtures.cxx",
+        "line": 290,
+        "column": 60
+      },
+      "metadata": {
+        "group": "framework",
+        "tags": [
+          "fixtures"
+        ]
+      },
+      "policy": {
+        "trace": false,
+        "expected_panic": null,
+        "timeout_ns": null,
+        "repeat": 1,
+        "warmup": 0,
+        "retry": 0
+      }
+    },
+    {
+      "identifier": "Tests::fs::createFileWithoutWriteMode",
+      "name": "createFileWithoutWriteMode",
+      "description": "",
+      "test_case": 0,
+      "location": {
+        "file": "/home/spawn/dev/cpp/Nyx/tests/core/fs.cxx",
+        "line": 22,
+        "column": 49
+      },
+      "metadata": {
+        "group": "core",
+        "tags": [
+          "fs"
+        ]
+      },
+      "policy": {
+        "trace": false,
+        "expected_panic": null,
+        "timeout_ns": null,
+        "repeat": 1,
+        "warmup": 0,
+        "retry": 0
+      }
+    },
+    {
+      "identifier": "Tests::fs::fileDoesNotExist",
+      "name": "fileDoesNotExist",
+      "description": "",
+      "test_case": 0,
+      "location": {
+        "file": "/home/spawn/dev/cpp/Nyx/tests/core/fs.cxx",
+        "line": 33,
+        "column": 49
+      },
+      "metadata": {
+        "group": "core",
+        "tags": [
+          "fs"
+        ]
+      },
+      "policy": {
+        "trace": false,
+        "expected_panic": null,
+        "timeout_ns": null,
+        "repeat": 1,
+        "warmup": 0,
+        "retry": 0
+      }
+    },
+    {
+      "identifier": "Tests::fs::fileIsDirectory",
+      "name": "fileIsDirectory",
+      "description": "",
+      "test_case": 0,
+      "location": {
+        "file": "/home/spawn/dev/cpp/Nyx/tests/core/fs.cxx",
+        "line": 11,
+        "column": 49
+      },
+      "metadata": {
+        "group": "core",
+        "tags": [
+          "fs"
+        ]
+      },
+      "policy": {
+        "trace": false,
+        "expected_panic": null,
+        "timeout_ns": null,
+        "repeat": 1,
+        "warmup": 0,
+        "retry": 0
+      }
+    },
+    {
+      "identifier": "Tests::fs::fileOperations",
+      "name": "fileOperations",
+      "description": "",
+      "test_case": 0,
+      "location": {
+        "file": "/home/spawn/dev/cpp/Nyx/tests/core/fs.cxx",
+        "line": 64,
+        "column": 58
+      },
+      "metadata": {
+        "group": "core",
+        "tags": [
+          "fs"
+        ]
+      },
+      "policy": {
+        "trace": true,
+        "expected_panic": null,
+        "timeout_ns": null,
+        "repeat": 1,
+        "warmup": 0,
+        "retry": 0
+      }
+    },
+    {
+      "identifier": "Tests::fs::readWriteNotChosen",
+      "name": "readWriteNotChosen",
+      "description": "",
+      "test_case": 0,
+      "location": {
+        "file": "/home/spawn/dev/cpp/Nyx/tests/core/fs.cxx",
+        "line": 45,
+        "column": 49
+      },
+      "metadata": {
+        "group": "core",
+        "tags": [
+          "fs"
+        ]
+      },
+      "policy": {
+        "trace": false,
+        "expected_panic": null,
+        "timeout_ns": null,
+        "repeat": 1,
+        "warmup": 0,
+        "retry": 0
+      }
+    },
+    {
+      "identifier": "Tests::fs::truncateFileWithoutWriteMode",
+      "name": "truncateFileWithoutWriteMode",
+      "description": "",
+      "test_case": 0,
+      "location": {
+        "file": "/home/spawn/dev/cpp/Nyx/tests/core/fs.cxx",
+        "line": 55,
+        "column": 49
+      },
+      "metadata": {
+        "group": "core",
+        "tags": [
+          "fs"
+        ]
+      },
+      "policy": {
+        "trace": false,
+        "expected_panic": null,
+        "timeout_ns": null,
+        "repeat": 1,
+        "warmup": 0,
+        "retry": 0
+      }
+    },
+    {
+      "identifier": "Tests::json::writesCompleteMachineReports",
+      "name": "writesCompleteMachineReports",
+      "description": "",
+      "test_case": 0,
+      "location": {
+        "file": "/home/spawn/dev/cpp/Nyx/tests/framework/json.cxx",
+        "line": 12,
+        "column": 69
+      },
+      "metadata": {
+        "group": "framework",
+        "tags": [
+          "json",
+          "reporting"
+        ]
+      },
+      "policy": {
+        "trace": false,
+        "expected_panic": null,
+        "timeout_ns": null,
+        "repeat": 1,
+        "warmup": 0,
+        "retry": 0
+      }
+    },
+    {
+      "identifier": "Tests::lifecycle::clearsRunLoopTicketsWhenDrivingFails",
+      "name": "clearsRunLoopTicketsWhenDrivingFails",
+      "description": "",
+      "test_case": 0,
+      "location": {
+        "file": "/home/spawn/dev/cpp/Nyx/tests/framework/lifecycle.cxx",
+        "line": 153,
+        "column": 61
+      },
+      "metadata": {
+        "group": "framework",
+        "tags": [
+          "lifecycle"
+        ]
+      },
+      "policy": {
+        "trace": false,
+        "expected_panic": null,
+        "timeout_ns": null,
+        "repeat": 1,
+        "warmup": 0,
+        "retry": 0
+      }
+    },
+    {
+      "identifier": "Tests::lifecycle::doesNotResumeADoublyScheduledCoroutineBeforeItsTimer",
+      "name": "doesNotResumeADoublyScheduledCoroutineBeforeItsTimer",
+      "description": "",
+      "test_case": 0,
+      "location": {
+        "file": "/home/spawn/dev/cpp/Nyx/tests/framework/lifecycle.cxx",
+        "line": 95,
+        "column": 1
+      },
+      "metadata": {
+        "group": "framework",
+        "tags": [
+          "lifecycle"
+        ]
+      },
+      "policy": {
+        "trace": false,
+        "expected_panic": null,
+        "timeout_ns": null,
+        "repeat": 1,
+        "warmup": 0,
+        "retry": 0
+      }
+    },
+    {
+      "identifier": "Tests::lifecycle::reportsAStrandedAsyncTask",
+      "name": "reportsAStrandedAsyncTask",
+      "description": "",
+      "test_case": 0,
+      "location": {
+        "file": "/home/spawn/dev/cpp/Nyx/tests/framework/lifecycle.cxx",
+        "line": 110,
+        "column": 61
+      },
+      "metadata": {
+        "group": "framework",
+        "tags": [
+          "lifecycle"
+        ]
+      },
+      "policy": {
+        "trace": false,
+        "expected_panic": null,
+        "timeout_ns": null,
+        "repeat": 1,
+        "warmup": 0,
+        "retry": 0
+      }
+    },
+    {
+      "identifier": "Tests::lifecycle::reportsAndCleansPendingWorkAfterATaskCompletes",
+      "name": "reportsAndCleansPendingWorkAfterATaskCompletes",
+      "description": "",
+      "test_case": 0,
+      "location": {
+        "file": "/home/spawn/dev/cpp/Nyx/tests/framework/lifecycle.cxx",
+        "line": 137,
+        "column": 61
+      },
+      "metadata": {
+        "group": "framework",
+        "tags": [
+          "lifecycle"
+        ]
+      },
+      "policy": {
+        "trace": false,
+        "expected_panic": null,
+        "timeout_ns": null,
+        "repeat": 1,
+        "warmup": 0,
+        "retry": 0
+      }
+    },
+    {
+      "identifier": "Tests::lifecycle::reportsOnlyTheTimeoutWhenCancellationCannotResumeATask",
+      "name": "reportsOnlyTheTimeoutWhenCancellationCannotResumeATask",
+      "description": "",
+      "test_case": 0,
+      "location": {
+        "file": "/home/spawn/dev/cpp/Nyx/tests/framework/lifecycle.cxx",
+        "line": 127,
+        "column": 1
+      },
+      "metadata": {
+        "group": "framework",
+        "tags": [
+          "lifecycle"
+        ]
+      },
+      "policy": {
+        "trace": false,
+        "expected_panic": null,
+        "timeout_ns": null,
+        "repeat": 1,
+        "warmup": 0,
+        "retry": 0
+      }
+    },
+    {
+      "identifier": "Tests::lifecycle::restoresTaskLocalBindingsAfterAsyncAbort",
+      "name": "restoresTaskLocalBindingsAfterAsyncAbort",
+      "description": "",
+      "test_case": 0,
+      "location": {
+        "file": "/home/spawn/dev/cpp/Nyx/tests/framework/lifecycle.cxx",
+        "line": 175,
+        "column": 61
+      },
+      "metadata": {
+        "group": "framework",
+        "tags": [
+          "lifecycle"
+        ]
+      },
+      "policy": {
+        "trace": false,
+        "expected_panic": null,
+        "timeout_ns": null,
+        "repeat": 1,
+        "warmup": 0,
+        "retry": 0
+      }
+    },
+    {
+      "identifier": "Tests::lifecycle::runsCancellationCleanupExactlyOnce",
+      "name": "runsCancellationCleanupExactlyOnce",
+      "description": "",
+      "test_case": 0,
+      "location": {
+        "file": "/home/spawn/dev/cpp/Nyx/tests/framework/lifecycle.cxx",
+        "line": 199,
+        "column": 61
+      },
+      "metadata": {
+        "group": "framework",
+        "tags": [
+          "lifecycle"
+        ]
+      },
+      "policy": {
+        "trace": false,
+        "expected_panic": null,
+        "timeout_ns": null,
+        "repeat": 1,
+        "warmup": 0,
+        "retry": 0
+      }
+    },
+    {
+      "identifier": "Tests::measurements::capturesProfileScopes",
+      "name": "capturesProfileScopes",
+      "description": "",
+      "test_case": 0,
+      "location": {
+        "file": "/home/spawn/dev/cpp/Nyx/tests/framework/measurements.cxx",
+        "line": 99,
+        "column": 77
+      },
+      "metadata": {
+        "group": "framework",
+        "tags": [
+          "measurements",
+          "profiling"
+        ]
+      },
+      "policy": {
+        "trace": false,
+        "expected_panic": null,
+        "timeout_ns": null,
+        "repeat": 1,
+        "warmup": 0,
+        "retry": 0
+      }
+    },
+    {
+      "identifier": "Tests::measurements::cleansTestResources",
+      "name": "cleansTestResources",
+      "description": "",
+      "test_case": 0,
+      "location": {
+        "file": "/home/spawn/dev/cpp/Nyx/tests/framework/measurements.cxx",
+        "line": 72,
+        "column": 77
+      },
+      "metadata": {
+        "group": "framework",
+        "tags": [
+          "measurements",
+          "resources"
+        ]
+      },
+      "policy": {
+        "trace": false,
+        "expected_panic": null,
+        "timeout_ns": null,
+        "repeat": 1,
+        "warmup": 0,
+        "retry": 0
+      }
+    },
+    {
+      "identifier": "Tests::measurements::doesNotRetryAssertions",
+      "name": "doesNotRetryAssertions",
+      "description": "",
+      "test_case": 0,
+      "location": {
+        "file": "/home/spawn/dev/cpp/Nyx/tests/framework/measurements.cxx",
+        "line": 123,
+        "column": 73
+      },
+      "metadata": {
+        "group": "framework",
+        "tags": [
+          "measurements",
+          "retry"
+        ]
+      },
+      "policy": {
+        "trace": false,
+        "expected_panic": null,
+        "timeout_ns": null,
+        "repeat": 1,
+        "warmup": 0,
+        "retry": 0
+      }
+    },
+    {
+      "identifier": "Tests::measurements::measuresCallables",
+      "name": "measuresCallables",
+      "description": "",
+      "test_case": 0,
+      "location": {
+        "file": "/home/spawn/dev/cpp/Nyx/tests/framework/measurements.cxx",
+        "line": 112,
+        "column": 76
+      },
+      "metadata": {
+        "group": "framework",
+        "tags": [
+          "measurements",
+          "callable"
+        ]
+      },
+      "policy": {
+        "trace": false,
+        "expected_panic": null,
+        "timeout_ns": null,
+        "repeat": 1,
+        "warmup": 0,
+        "retry": 0
+      }
+    },
+    {
+      "identifier": "Tests::measurements::reportsSamplesAndRecovery",
+      "name": "reportsSamplesAndRecovery",
+      "description": "",
+      "test_case": 0,
+      "location": {
+        "file": "/home/spawn/dev/cpp/Nyx/tests/framework/measurements.cxx",
+        "line": 47,
+        "column": 77
+      },
+      "metadata": {
+        "group": "framework",
+        "tags": [
+          "measurements",
+          "reporting"
+        ]
+      },
+      "policy": {
+        "trace": false,
+        "expected_panic": null,
+        "timeout_ns": null,
+        "repeat": 1,
+        "warmup": 0,
+        "retry": 0
+      }
+    },
+    {
+      "identifier": "Tests::policies::appliesDeclarativePolicies",
+      "name": "appliesDeclarativePolicies",
+      "description": "",
+      "test_case": 0,
+      "location": {
+        "file": "/home/spawn/dev/cpp/Nyx/tests/framework/policies.cxx",
+        "line": 67,
+        "column": 60
+      },
+      "metadata": {
+        "group": "framework",
+        "tags": [
+          "policies"
+        ]
+      },
+      "policy": {
+        "trace": false,
+        "expected_panic": null,
+        "timeout_ns": null,
+        "repeat": 1,
+        "warmup": 0,
+        "retry": 0
+      }
+    },
+    {
+      "identifier": "Tests::policies::cancelsIgnoredTimeoutAtNextYield",
+      "name": "cancelsIgnoredTimeoutAtNextYield",
+      "description": "",
+      "test_case": 0,
+      "location": {
+        "file": "/home/spawn/dev/cpp/Nyx/tests/framework/policies.cxx",
+        "line": 192,
+        "column": 60
+      },
+      "metadata": {
+        "group": "framework",
+        "tags": [
+          "policies"
+        ]
+      },
+      "policy": {
+        "trace": false,
+        "expected_panic": null,
+        "timeout_ns": null,
+        "repeat": 1,
+        "warmup": 0,
+        "retry": 0
+      }
+    },
+    {
+      "identifier": "Tests::policies::exposesStopTokenAtTimeoutBoundary",
+      "name": "exposesStopTokenAtTimeoutBoundary",
+      "description": "",
+      "test_case": 0,
+      "location": {
+        "file": "/home/spawn/dev/cpp/Nyx/tests/framework/policies.cxx",
+        "line": 165,
+        "column": 60
+      },
+      "metadata": {
+        "group": "framework",
+        "tags": [
+          "policies"
+        ]
+      },
+      "policy": {
+        "trace": false,
+        "expected_panic": null,
+        "timeout_ns": null,
+        "repeat": 1,
+        "warmup": 0,
+        "retry": 0
+      }
+    },
+    {
+      "identifier": "Tests::policies::keepsThePanicCallSite",
+      "name": "keepsThePanicCallSite",
+      "description": "",
+      "test_case": 0,
+      "location": {
+        "file": "/home/spawn/dev/cpp/Nyx/tests/framework/policies.cxx",
+        "line": 96,
+        "column": 60
+      },
+      "metadata": {
+        "group": "framework",
+        "tags": [
+          "policies"
+        ]
+      },
+      "policy": {
+        "trace": false,
+        "expected_panic": null,
+        "timeout_ns": null,
+        "repeat": 1,
+        "warmup": 0,
+        "retry": 0
+      }
+    },
+    {
+      "identifier": "Tests::policies::preservesFailuresBeforeAnExpectedPanic",
+      "name": "preservesFailuresBeforeAnExpectedPanic",
+      "description": "",
+      "test_case": 0,
+      "location": {
+        "file": "/home/spawn/dev/cpp/Nyx/tests/framework/policies.cxx",
+        "line": 113,
+        "column": 60
+      },
+      "metadata": {
+        "group": "framework",
+        "tags": [
+          "policies"
+        ]
+      },
+      "policy": {
+        "trace": false,
+        "expected_panic": null,
+        "timeout_ns": null,
+        "repeat": 1,
+        "warmup": 0,
+        "retry": 0
+      }
+    },
+    {
+      "identifier": "Tests::policies::rendersCapturedTrace",
+      "name": "rendersCapturedTrace",
+      "description": "",
+      "test_case": 0,
+      "location": {
+        "file": "/home/spawn/dev/cpp/Nyx/tests/framework/policies.cxx",
+        "line": 136,
+        "column": 60
+      },
+      "metadata": {
+        "group": "framework",
+        "tags": [
+          "policies"
+        ]
+      },
+      "policy": {
+        "trace": false,
+        "expected_panic": null,
+        "timeout_ns": null,
+        "repeat": 1,
+        "warmup": 0,
+        "retry": 0
+      }
+    },
+    {
+      "identifier": "Tests::reflection::cli([\"NyxEngine\", \"-n\", \"Spawn\", \"-c\", \"3\"])",
+      "name": "cli",
+      "description": "",
+      "test_case": 3,
+      "location": {
+        "file": "/home/spawn/dev/cpp/Nyx/tests/core/reflection.cxx",
+        "line": 168,
+        "column": 9
+      },
+      "metadata": {
+        "group": "experimental",
+        "tags": [
+          "reflection"
+        ]
+      },
+      "policy": {
+        "trace": false,
+        "expected_panic": null,
+        "timeout_ns": null,
+        "repeat": 1,
+        "warmup": 0,
+        "retry": 0
+      }
+    },
+    {
+      "identifier": "Tests::reflection::cli([\"NyxEngine\", \"-n\", \"Spawn\"])",
+      "name": "cli",
+      "description": "",
+      "test_case": 2,
+      "location": {
+        "file": "/home/spawn/dev/cpp/Nyx/tests/core/reflection.cxx",
+        "line": 168,
+        "column": 9
+      },
+      "metadata": {
+        "group": "experimental",
+        "tags": [
+          "reflection"
+        ]
+      },
+      "policy": {
+        "trace": false,
+        "expected_panic": null,
+        "timeout_ns": null,
+        "repeat": 1,
+        "warmup": 0,
+        "retry": 0
+      }
+    },
+    {
+      "identifier": "Tests::reflection::cli([\"NyxEngine\"])",
+      "name": "cli",
+      "description": "",
+      "test_case": 1,
+      "location": {
+        "file": "/home/spawn/dev/cpp/Nyx/tests/core/reflection.cxx",
+        "line": 168,
+        "column": 9
+      },
+      "metadata": {
+        "group": "experimental",
+        "tags": [
+          "reflection"
+        ]
+      },
+      "policy": {
+        "trace": false,
+        "expected_panic": null,
+        "timeout_ns": null,
+        "repeat": 1,
+        "warmup": 0,
+        "retry": 0
+      }
+    },
+    {
+      "identifier": "Tests::reflection::cli([])",
+      "name": "cli",
+      "description": "",
+      "test_case": 0,
+      "location": {
+        "file": "/home/spawn/dev/cpp/Nyx/tests/core/reflection.cxx",
+        "line": 168,
+        "column": 9
+      },
+      "metadata": {
+        "group": "experimental",
+        "tags": [
+          "reflection"
+        ]
+      },
+      "policy": {
+        "trace": false,
+        "expected_panic": null,
+        "timeout_ns": null,
+        "repeat": 1,
+        "warmup": 0,
+        "retry": 0
+      }
+    },
+    {
+      "identifier": "Tests::reflection::enumToString(0, red)",
+      "name": "enumToString",
+      "description": "",
+      "test_case": 0,
+      "location": {
+        "file": "/home/spawn/dev/cpp/Nyx/tests/core/reflection.cxx",
+        "line": 37,
+        "column": 9
+      },
+      "metadata": {
+        "group": "experimental",
+        "tags": [
+          "reflection"
+        ]
+      },
+      "policy": {
+        "trace": false,
+        "expected_panic": null,
+        "timeout_ns": null,
+        "repeat": 1,
+        "warmup": 0,
+        "retry": 0
+      }
+    },
+    {
+      "identifier": "Tests::reflection::enumToString(1, green)",
+      "name": "enumToString",
+      "description": "",
+      "test_case": 1,
+      "location": {
+        "file": "/home/spawn/dev/cpp/Nyx/tests/core/reflection.cxx",
+        "line": 37,
+        "column": 9
+      },
+      "metadata": {
+        "group": "experimental",
+        "tags": [
+          "reflection"
+        ]
+      },
+      "policy": {
+        "trace": false,
+        "expected_panic": null,
+        "timeout_ns": null,
+        "repeat": 1,
+        "warmup": 0,
+        "retry": 0
+      }
+    },
+    {
+      "identifier": "Tests::reflection::enumToString(2, blue)",
+      "name": "enumToString",
+      "description": "",
+      "test_case": 2,
+      "location": {
+        "file": "/home/spawn/dev/cpp/Nyx/tests/core/reflection.cxx",
+        "line": 37,
+        "column": 9
+      },
+      "metadata": {
+        "group": "experimental",
+        "tags": [
+          "reflection"
+        ]
+      },
+      "policy": {
+        "trace": false,
+        "expected_panic": null,
+        "timeout_ns": null,
+        "repeat": 1,
+        "warmup": 0,
+        "retry": 0
+      }
+    },
+    {
+      "identifier": "Tests::reflection::enumToString(69, <unnamed>)",
+      "name": "enumToString",
+      "description": "",
+      "test_case": 3,
+      "location": {
+        "file": "/home/spawn/dev/cpp/Nyx/tests/core/reflection.cxx",
+        "line": 37,
+        "column": 9
+      },
+      "metadata": {
+        "group": "experimental",
+        "tags": [
+          "reflection"
+        ]
+      },
+      "policy": {
+        "trace": false,
+        "expected_panic": null,
+        "timeout_ns": null,
+        "repeat": 1,
+        "warmup": 0,
+        "retry": 0
+      }
+    },
+    {
+      "identifier": "Tests::reflection::listMembers(Vec2 { x: 0, y: 0 }, x: 0; y: 0)",
+      "name": "listMembers",
+      "description": "",
+      "test_case": 0,
+      "location": {
+        "file": "/home/spawn/dev/cpp/Nyx/tests/core/reflection.cxx",
+        "line": 67,
+        "column": 9
+      },
+      "metadata": {
+        "group": "experimental",
+        "tags": [
+          "reflection"
+        ]
+      },
+      "policy": {
+        "trace": false,
+        "expected_panic": null,
+        "timeout_ns": null,
+        "repeat": 1,
+        "warmup": 0,
+        "retry": 0
+      }
+    },
+    {
+      "identifier": "Tests::reflection::listMembers(Vec2 { x: 34, y: 35 }, x: 34; y: 35)",
+      "name": "listMembers",
+      "description": "",
+      "test_case": 2,
+      "location": {
+        "file": "/home/spawn/dev/cpp/Nyx/tests/core/reflection.cxx",
+        "line": 67,
+        "column": 9
+      },
+      "metadata": {
+        "group": "experimental",
+        "tags": [
+          "reflection"
+        ]
+      },
+      "policy": {
+        "trace": false,
+        "expected_panic": null,
+        "timeout_ns": null,
+        "repeat": 1,
+        "warmup": 0,
+        "retry": 0
+      }
+    },
+    {
+      "identifier": "Tests::reflection::listMembers(Vec2 { x: 69, y: 0 }, x: 69; y: 0)",
+      "name": "listMembers",
+      "description": "",
+      "test_case": 1,
+      "location": {
+        "file": "/home/spawn/dev/cpp/Nyx/tests/core/reflection.cxx",
+        "line": 67,
+        "column": 9
+      },
+      "metadata": {
+        "group": "experimental",
+        "tags": [
+          "reflection"
+        ]
+      },
+      "policy": {
+        "trace": false,
+        "expected_panic": null,
+        "timeout_ns": null,
+        "repeat": 1,
+        "warmup": 0,
+        "retry": 0
+      }
+    },
+    {
+      "identifier": "Tests::runner::defaultTraceCapturesEveryCaseAndRendersFailuresByDefault",
+      "name": "defaultTraceCapturesEveryCaseAndRendersFailuresByDefault",
+      "description": "",
+      "test_case": 0,
+      "location": {
+        "file": "/home/spawn/dev/cpp/Nyx/tests/framework/runner.cxx",
+        "line": 165,
+        "column": 1
+      },
+      "metadata": {
+        "group": "framework",
+        "tags": [
+          "runner"
+        ]
+      },
+      "policy": {
+        "trace": false,
+        "expected_panic": null,
+        "timeout_ns": null,
+        "repeat": 1,
+        "warmup": 0,
+        "retry": 0
+      }
+    },
+    {
+      "identifier": "Tests::runner::forceTraceCanRenderSuccessfulCases",
+      "name": "forceTraceCanRenderSuccessfulCases",
+      "description": "",
+      "test_case": 0,
+      "location": {
+        "file": "/home/spawn/dev/cpp/Nyx/tests/framework/runner.cxx",
+        "line": 191,
+        "column": 58
+      },
+      "metadata": {
+        "group": "framework",
+        "tags": [
+          "runner"
+        ]
+      },
+      "policy": {
+        "trace": false,
+        "expected_panic": null,
+        "timeout_ns": null,
+        "repeat": 1,
+        "warmup": 0,
+        "retry": 0
+      }
+    },
+    {
+      "identifier": "Tests::runner::repeatsCasesWithStableContextSeeds",
+      "name": "repeatsCasesWithStableContextSeeds",
+      "description": "",
+      "test_case": 0,
+      "location": {
+        "file": "/home/spawn/dev/cpp/Nyx/tests/framework/runner.cxx",
+        "line": 90,
+        "column": 58
+      },
+      "metadata": {
+        "group": "framework",
+        "tags": [
+          "runner"
+        ]
+      },
+      "policy": {
+        "trace": false,
+        "expected_panic": null,
+        "timeout_ns": null,
+        "repeat": 1,
+        "warmup": 0,
+        "retry": 0
+      }
+    },
+    {
+      "identifier": "Tests::runner::shufflesCasesReproducibly",
+      "name": "shufflesCasesReproducibly",
+      "description": "",
+      "test_case": 0,
+      "location": {
+        "file": "/home/spawn/dev/cpp/Nyx/tests/framework/runner.cxx",
+        "line": 130,
+        "column": 58
+      },
+      "metadata": {
+        "group": "framework",
+        "tags": [
+          "runner"
+        ]
+      },
+      "policy": {
+        "trace": false,
+        "expected_panic": null,
+        "timeout_ns": null,
+        "repeat": 1,
+        "warmup": 0,
+        "retry": 0
+      }
+    },
+    {
+      "identifier": "Tests::runner::stopsSerialDispatchAfterTheFirstFailure",
+      "name": "stopsSerialDispatchAfterTheFirstFailure",
+      "description": "",
+      "test_case": 0,
+      "location": {
+        "file": "/home/spawn/dev/cpp/Nyx/tests/framework/runner.cxx",
+        "line": 151,
+        "column": 58
+      },
+      "metadata": {
+        "group": "framework",
+        "tags": [
+          "runner"
+        ]
+      },
+      "policy": {
+        "trace": false,
+        "expected_panic": null,
+        "timeout_ns": null,
+        "repeat": 1,
+        "warmup": 0,
+        "retry": 0
+      }
+    },
+    {
+      "identifier": "Tests::stress::cleansEveryParallelTimeoutExactlyOnce",
+      "name": "cleansEveryParallelTimeoutExactlyOnce",
+      "description": "",
+      "test_case": 0,
+      "location": {
+        "file": "/home/spawn/dev/cpp/Nyx/tests/framework/stress.cxx",
+        "line": 146,
+        "column": 58
+      },
+      "metadata": {
+        "group": "framework",
+        "tags": [
+          "stress"
+        ]
+      },
+      "policy": {
+        "trace": false,
+        "expected_panic": null,
+        "timeout_ns": null,
+        "repeat": 1,
+        "warmup": 0,
+        "retry": 0
+      }
+    },
+    {
+      "identifier": "Tests::stress::preservesRepeatedAsyncLifecycle",
+      "name": "preservesRepeatedAsyncLifecycle",
+      "description": "",
+      "test_case": 0,
+      "location": {
+        "file": "/home/spawn/dev/cpp/Nyx/tests/framework/stress.cxx",
+        "line": 122,
+        "column": 58
+      },
+      "metadata": {
+        "group": "framework",
+        "tags": [
+          "stress"
+        ]
+      },
+      "policy": {
+        "trace": false,
+        "expected_panic": null,
+        "timeout_ns": null,
+        "repeat": 1,
+        "warmup": 0,
+        "retry": 0
+      }
+    },
+    {
+      "identifier": "Tests::virtualTime::equalDeadlineTimersKeepSchedulingOrder",
+      "name": "equalDeadlineTimersKeepSchedulingOrder",
+      "description": "",
+      "test_case": 0,
+      "location": {
+        "file": "/home/spawn/dev/cpp/Nyx/tests/framework/virtual_time.cxx",
+        "line": 126,
+        "column": 64
+      },
+      "metadata": {
+        "group": "framework",
+        "tags": [
+          "virtual_time"
+        ]
+      },
+      "policy": {
+        "trace": false,
+        "expected_panic": null,
+        "timeout_ns": null,
+        "repeat": 1,
+        "warmup": 0,
+        "retry": 0
+      }
+    },
+    {
+      "identifier": "Tests::virtualTime::runOptionsPropagateVirtualTime",
+      "name": "runOptionsPropagateVirtualTime",
+      "description": "",
+      "test_case": 0,
+      "location": {
+        "file": "/home/spawn/dev/cpp/Nyx/tests/framework/virtual_time.cxx",
+        "line": 209,
+        "column": 64
+      },
+      "metadata": {
+        "group": "framework",
+        "tags": [
+          "virtual_time"
+        ]
+      },
+      "policy": {
+        "trace": false,
+        "expected_panic": null,
+        "timeout_ns": null,
+        "repeat": 1,
+        "warmup": 0,
+        "retry": 0
+      }
+    },
+    {
+      "identifier": "Tests::virtualTime::virtualTimeCompletesOneHourWithoutWaiting",
+      "name": "virtualTimeCompletesOneHourWithoutWaiting",
+      "description": "",
+      "test_case": 0,
+      "location": {
+        "file": "/home/spawn/dev/cpp/Nyx/tests/framework/virtual_time.cxx",
+        "line": 151,
+        "column": 64
+      },
+      "metadata": {
+        "group": "framework",
+        "tags": [
+          "virtual_time"
+        ]
+      },
+      "policy": {
+        "trace": false,
+        "expected_panic": null,
+        "timeout_ns": null,
+        "repeat": 1,
+        "warmup": 0,
+        "retry": 0
+      }
+    },
+    {
+      "identifier": "Tests::virtualTime::virtualTimeFlowsThroughNestedTasks",
+      "name": "virtualTimeFlowsThroughNestedTasks",
+      "description": "",
+      "test_case": 0,
+      "location": {
+        "file": "/home/spawn/dev/cpp/Nyx/tests/framework/virtual_time.cxx",
+        "line": 162,
+        "column": 64
+      },
+      "metadata": {
+        "group": "framework",
+        "tags": [
+          "virtual_time"
+        ]
+      },
+      "policy": {
+        "trace": false,
+        "expected_panic": null,
+        "timeout_ns": null,
+        "repeat": 1,
+        "warmup": 0,
+        "retry": 0
+      }
+    },
+    {
+      "identifier": "Tests::virtualTime::virtualTimeoutRunsCoroutineCleanup",
+      "name": "virtualTimeoutRunsCoroutineCleanup",
+      "description": "",
+      "test_case": 0,
+      "location": {
+        "file": "/home/spawn/dev/cpp/Nyx/tests/framework/virtual_time.cxx",
+        "line": 189,
+        "column": 64
+      },
+      "metadata": {
+        "group": "framework",
+        "tags": [
+          "virtual_time"
+        ]
+      },
+      "policy": {
+        "trace": false,
+        "expected_panic": null,
+        "timeout_ns": null,
+        "repeat": 1,
+        "warmup": 0,
+        "retry": 0
+      }
+    },
+    {
+      "identifier": "Tests::virtualTime::virtualTimeoutWinsTimerTie",
+      "name": "virtualTimeoutWinsTimerTie",
+      "description": "",
+      "test_case": 0,
+      "location": {
+        "file": "/home/spawn/dev/cpp/Nyx/tests/framework/virtual_time.cxx",
+        "line": 169,
+        "column": 64
+      },
+      "metadata": {
+        "group": "framework",
+        "tags": [
+          "virtual_time"
+        ]
+      },
+      "policy": {
+        "trace": false,
+        "expected_panic": null,
+        "timeout_ns": null,
+        "repeat": 1,
+        "warmup": 0,
+        "retry": 0
+      }
+    },
+    {
+      "identifier": "Tests::voidCase",
+      "name": "voidCase",
+      "description": "",
+      "test_case": 0,
+      "location": {
+        "file": "/home/spawn/dev/cpp/Nyx/tests/framework/demo.cxx",
+        "line": 33,
+        "column": 36
+      },
+      "metadata": {
+        "group": "demo",
+        "tags": []
+      },
+      "policy": {
+        "trace": false,
+        "expected_panic": null,
+        "timeout_ns": null,
+        "repeat": 1,
+        "warmup": 0,
+        "retry": 0
+      }
+    }
+  ]
+}

@@ -12,12 +12,14 @@ module;
 module Nyx.RHI;
 
 import std;
-import Nyx.Core;
+import Miracle;
 
+import :ResourcePool;
 import :Adapter;
 import :Device;
 import :Vulkan;
-import :ResourcePool;
+
+using namespace Miracle;
 
 namespace Nyx::RHI {
 

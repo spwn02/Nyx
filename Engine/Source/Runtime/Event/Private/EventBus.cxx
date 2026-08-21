@@ -1,7 +1,6 @@
 module Nyx.Event;
 
 import std;
-import Nyx.Core;
 
 import :EventBus;
 

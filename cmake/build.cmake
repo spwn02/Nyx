@@ -1,24 +1,33 @@
 include_guard(GLOBAL)
 
 function(_nyx_set_build_value name value)
-  set(${name} "${value}" CACHE INTERNAL "Generated Nyx build configuration" FORCE)
+  set(${name}
+      "${value}"
+      CACHE INTERNAL "Generated Nyx build configuration" FORCE)
 endfunction()
 
 function(nyx_initialize_build_configuration)
-  set(NYX_BUILD_PROFILE "Debug" CACHE STRING
-    "Nyx build profile: Debug, Development, DevelopmentTests, or Release")
+  set(NYX_BUILD_PROFILE
+      "Debug"
+      CACHE
+        STRING
+        "Nyx build profile: Debug, Development, DevelopmentTests, or Release")
 
-  set_property(CACHE NYX_BUILD_PROFILE PROPERTY STRINGS
-    Debug Development DevelopmentTests Release)
+  set_property(CACHE NYX_BUILD_PROFILE PROPERTY STRINGS Debug Development
+                                                DevelopmentTests Release)
 
-  if(NOT NYX_BUILD_PROFILE MATCHES "^(Debug|Development|DevelopmentTests|Release)$")
-    message(FATAL_ERROR
-      "NYX_BUILD_PROFILE must be Debug, Development, DevelopmentTests, or Release; "
-      "received '${NYX_BUILD_PROFILE}'")
+  if(NOT NYX_BUILD_PROFILE MATCHES
+     "^(Debug|Development|DevelopmentTests|Release)$")
+    message(
+      FATAL_ERROR
+        "NYX_BUILD_PROFILE must be Debug, Development, DevelopmentTests, or Release; "
+        "received '${NYX_BUILD_PROFILE}'")
   endif()
 
-  option(NYX_ALLOW_UNSUPPORTED_PLATFORM
-    "Allow a build target whose operating system does not have a Nyx platform mapping" OFF)
+  option(
+    NYX_ALLOW_UNSUPPORTED_PLATFORM
+    "Allow a build target whose operating system does not have a Nyx platform mapping"
+    OFF)
 
   if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
     set(platform Linux)
@@ -42,9 +51,11 @@ function(nyx_initialize_build_configuration)
     set(platform Unsupported)
     set(platform_key UNSUPPORTED)
   else()
-    message(FATAL_ERROR
-      "Nyx does not support the CMake target system '${CMAKE_SYSTEM_NAME}'. "
-      "Set NYX_ALLOW_UNSUPPORTED_PLATFORM=ON only while bringing up a new platform.")
+    message(
+      FATAL_ERROR
+        "Nyx does not support the CMake target system '${CMAKE_SYSTEM_NAME}'. "
+        "Set NYX_ALLOW_UNSUPPORTED_PLATFORM=ON only while bringing up a new platform."
+    )
   endif()
 
   if(NYX_BUILD_PROFILE STREQUAL "Debug")
@@ -107,8 +118,10 @@ function(nyx_initialize_build_configuration)
   _nyx_set_build_value(NYX_BUILD_TESTS "${tests}")
   _nyx_set_build_value(NYX_BUILD_EXCEPTIONS "${exceptions}")
 
-  message(STATUS
-    "Nyx build profile: ${NYX_BUILD_PROFILE}; target platform: ${NYX_BUILD_PLATFORM}")
+  message(
+    STATUS
+      "Nyx build profile: ${NYX_BUILD_PROFILE}; target platform: ${NYX_BUILD_PLATFORM}"
+  )
 endfunction()
 
 function(nyx_verify_exception_boundary)
@@ -116,17 +129,21 @@ function(nyx_verify_exception_boundary)
   set(one_value_args ROOT)
   set(multi_value_args)
 
-  cmake_parse_arguments(PARSE_ARGV 0 arg
-    "${options}" "${one_value_args}" "${multi_value_args}")
+  cmake_parse_arguments(PARSE_ARGV 0 arg "${options}" "${one_value_args}"
+                        "${multi_value_args}")
 
   if(arg_UNPARSED_ARGUMENTS)
-    message(FATAL_ERROR
-      "nyx_verify_exception_boundary(): unknown arguments: ${arg_UNPARSED_ARGUMENTS}")
+    message(
+      FATAL_ERROR
+        "nyx_verify_exception_boundary(): unknown arguments: ${arg_UNPARSED_ARGUMENTS}"
+    )
   endif()
 
   if(arg_KEYWORDS_MISSING_VALUES)
-    message(FATAL_ERROR
-      "nyx_verify_exception_boundary(): missing values for: ${arg_KEYWORDS_MISSING_VALUES}")
+    message(
+      FATAL_ERROR
+        "nyx_verify_exception_boundary(): missing values for: ${arg_KEYWORDS_MISSING_VALUES}"
+    )
   endif()
 
   if(NOT arg_ROOT)
@@ -135,36 +152,35 @@ function(nyx_verify_exception_boundary)
 
   cmake_path(ABSOLUTE_PATH arg_ROOT NORMALIZE OUTPUT_VARIABLE root)
 
-  file(GLOB_RECURSE sources CONFIGURE_DEPENDS
+  file(
+    GLOB_RECURSE
+    sources
+    CONFIGURE_DEPENDS
     "${root}/Engine/Source/*.ixx"
     "${root}/Engine/Source/*.cxx"
     "${root}/Engine/Source/*.cpp"
-    "${root}/Engine/Source/*.cc"
-  )
+    "${root}/Engine/Source/*.cc")
 
   set(violations)
 
   foreach(source IN LISTS sources)
     string(REPLACE "\\" "/" normalized_source "${source}")
 
-    # Nyx.Test is an API-only dependency in production profiles. Its test
-    # exception island is linked only by the DevelopmentTests executable.
-    if(normalized_source MATCHES "/Runtime/Test/")
-      continue()
-    endif()
-
-    # std::formatter::parse is an intentional exception boundary: the standard
-    # format checker uses format_error during constant evaluation. This is a
-    # toolchain contract, not application-level exception-based control flow.
-    if(normalized_source MATCHES "/Runtime/Core/Public/Meta/(Bitflags|Debug)\\.ixx$")
+    # Miracle and Switch are independent products embedded as editable source
+    # checkouts. Their exception policies are owned by those products rather
+    # than by Nyx's application-level exception audit.
+    if(normalized_source MATCHES "/Runtime/(Miracle|Switch)/")
       continue()
     endif()
 
     # The regular expression intentionally checks statement-leading throws.
     # Catching STL failures remains permitted; accidental application-level
     # throws and explicit exception propagation remain forbidden.
-    file(STRINGS "${source}" forbidden
-      REGEX "^[ \t]*throw([ \t({;:]|$)|^[^/]*std::(rethrow_exception|make_exception_ptr)")
+    file(
+      STRINGS "${source}" forbidden
+      REGEX
+        "^[ \t]*throw([ \t({;:]|$)|^[^/]*std::(rethrow_exception|make_exception_ptr)"
+    )
 
     if(forbidden)
       list(APPEND violations "${source}")
@@ -174,7 +190,9 @@ function(nyx_verify_exception_boundary)
   if(violations)
     list(JOIN violations "\n  " violations_text)
 
-    message(FATAL_ERROR
-      "Unexpected application-level exception syntax in production sources.\n  ${violations_text}")
+    message(
+      FATAL_ERROR
+        "Unexpected application-level exception syntax in production sources.\n  ${violations_text}"
+    )
   endif()
 endfunction()

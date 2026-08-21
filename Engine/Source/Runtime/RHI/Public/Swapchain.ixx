@@ -5,11 +5,14 @@ module;
 
 export module Nyx.RHI:Swapchain;
 
-import Nyx.Core;
-import :Device;
+import Miracle;
+
 import :Forward;
-import :Surface;
 import :Types;
+import :Surface;
+import :Device;
+
+using namespace Miracle;
 
 namespace Nyx::RHI {
 

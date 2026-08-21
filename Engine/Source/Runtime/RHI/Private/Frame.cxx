@@ -6,9 +6,11 @@ module;
 module Nyx.RHI;
 
 import std;
-import Nyx.Core;
+import Miracle;
 
 import :Frame;
+
+using namespace Miracle;
 
 namespace Nyx::RHI {
 

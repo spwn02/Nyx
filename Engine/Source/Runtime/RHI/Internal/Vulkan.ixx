@@ -5,8 +5,11 @@ module;
 
 export module Nyx.RHI:Vulkan;
 
-import Nyx.Core;
+import Miracle;
+
 import :Types;
+
+using namespace Miracle;
 
 export namespace Nyx::RHI::detail {
 

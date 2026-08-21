@@ -1,24 +1,12 @@
 import std;
-import Nyx.Core;
-import Nyx.Test;
+import Miracle;
+import Switch;
 
-using namespace Nyx;
-using namespace Nyx::Test;
+using namespace Miracle;
+using namespace Switch;
 
 inline constexpr bool renderJson{false};
 
-inline constexpr RunOptions benchmarkPreset{
-    .executionMode = ExecutionMode::Benchmark,
-    .threads = 0,
-    .retention = RetentionPolicy::Failures,
-    .timeMode = TimeMode::Real,
-    .traceMode = TraceMode::Annotations,
-    .captureProfile = false,
-    .captureTiming = CapturePolicy::PerAttempt,
-    .order = ExecutionOrder::Shuffled,
-    .repeat = 1'000'000,
-    .isolation = CrashIsolation::InProcess,
-};
 inline constexpr RunOptions diagnosticPreset{
     .executionMode = ExecutionMode::Diagnostic,
     .threads = 0,
@@ -45,15 +33,9 @@ auto main() -> int { // NOLINT
           .showSummary = true,
       },
   };
-  const RunReport benchmarkTests =
-      runAll(reporter, std::cout, TestSelection{.group = "math"}, benchmarkPreset);
 
-  const RunReport diagnosticTests = runAll(reporter,
-      std::cout,
-      TestSelection{
-          .group = "core",
-      },
-      diagnosticPreset);
+  const RunReport diagnosticTests =
+      runAll(reporter, std::cout, TestSelection{}, diagnosticPreset);
 
   if constexpr (renderJson) {
     JsonReporter jsonReporter(JsonReporterOptions{
@@ -69,5 +51,5 @@ auto main() -> int { // NOLINT
       jsonReporter.report(diagnosticTests, outputSummary);
   }
 
-  return diagnosticTests.passed() ? build::exitSuccess : build::exitFailure;
+  return diagnosticTests.passed() ? 0 : 1;
 }

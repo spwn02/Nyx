@@ -15,4 +15,4 @@ class Texture;
 class TextureView;
 class Pipeline;
 
-}
+} // namespace Nyx::RHI
