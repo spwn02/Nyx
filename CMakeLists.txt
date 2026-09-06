@@ -59,10 +59,5 @@ endif()
 
 nyx_verify_exception_boundary(ROOT "${CMAKE_CURRENT_SOURCE_DIR}")
 
-# CPack
-set(CPACK_PACKAGE_NAME "NyxEngine")
-set(CPACK_PACKAGE_VERSION ${PROJECT_VERSION})
-set(CPACK_GENERATOR "ZIP")
-set(CPACK_INCLUDE_TOPLEVEL_DIRECTORY OFF)
-set(CPACK_SOURCE_IGNORE_FILES "build")
-include(CPack)
+# Packaging
+include(package)

@@ -7,5 +7,3 @@ endif()
 add_executable(NyxEngine "Private/Linux/main.cpp")
 
 target_link_libraries(NyxEngine PRIVATE Nyx::Engine)
-
-install(TARGETS NyxEngine DESTINATION bin)

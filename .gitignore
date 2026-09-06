@@ -5,3 +5,4 @@
 /contracts/
 *.log
 .*/
+!.github/

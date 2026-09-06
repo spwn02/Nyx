@@ -1,0 +1,78 @@
+name: CI
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+    branches: [master]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: nyx-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    name: C++26 Linux x86_64
+    runs-on: ubuntu-22.04
+    timeout-minutes: 120
+    env:
+      VCPKG_BINARY_SOURCES: clear;files,${{ github.workspace }}/.cache/vcpkg,readwrite
+      VCPKG_DISABLE_METRICS: "1"
+
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          submodules: recursive
+
+      - name: Record dependency cache key
+        id: dependency-key
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "vcpkg=$(git rev-parse HEAD:vcpkg)" >> "$GITHUB_OUTPUT"
+
+      - name: Restore vcpkg binary cache
+        uses: actions/cache@v4
+        with:
+          path: .cache/vcpkg
+          key: vcpkg-${{ runner.os }}-${{ runner.arch }}-${{ steps.dependency-key.outputs.vcpkg }}-${{ hashFiles('vcpkg.json', 'cmake/vcpkg-triplets/x64-linux-cxx26.cmake', '.github/reference-toolchain.env') }}
+          restore-keys: |
+            vcpkg-${{ runner.os }}-${{ runner.arch }}-${{ steps.dependency-key.outputs.vcpkg }}-
+
+      - name: Install host build dependencies
+        shell: bash
+        run: bash .github/scripts/install-ci-dependencies.sh
+
+      - name: Install immutable reference toolchain
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: bash .github/scripts/install-reference-toolchain.sh
+
+      - name: Toolchain
+        shell: bash
+        run: |
+          set -euo pipefail
+          cmake --version
+          "$CXX" --version
+          clangd --version
+          ninja --version
+          git submodule status --recursive
+
+      - name: Test, release-build, and validate package
+        shell: bash
+        run: bash .github/scripts/run-validation.sh
+
+      - name: Upload validated package
+        uses: actions/upload-artifact@v4
+        with:
+          name: nyx-${{ github.sha }}-linux-x86_64
+          path: build/release/package/*
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 14

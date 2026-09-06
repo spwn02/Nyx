@@ -1,0 +1,198 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: read
+
+jobs:
+  release:
+    name: Validate and publish
+    runs-on: ubuntu-22.04
+    timeout-minutes: 150
+    permissions:
+      contents: write
+    env:
+      VCPKG_BINARY_SOURCES: clear;files,${{ github.workspace }}/.cache/vcpkg,readwrite
+      VCPKG_DISABLE_METRICS: "1"
+
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          submodules: recursive
+
+      - name: Validate tag and source provenance
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+
+          if gh release view "$GITHUB_REF_NAME" \
+            --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "::error::release '$GITHUB_REF_NAME' already exists; published releases are immutable"
+            exit 1
+          fi
+
+          if [[ "$(git cat-file -t "$GITHUB_REF_NAME")" != "tag" ]]; then
+            echo "::error::release tags must be annotated tags"
+            exit 1
+          fi
+
+          project_version="$({
+            sed -n \
+              's/^[[:space:]]*VERSION[[:space:]]\+\([0-9][0-9.]*\).*/\1/p' \
+              CMakeLists.txt || true
+          } | head -n1)"
+
+          case "$GITHUB_REF_NAME" in
+            "v${project_version}"|"v${project_version}-"*) ;;
+            *)
+              echo "::error::tag '$GITHUB_REF_NAME' does not match project version '$project_version'"
+              exit 1
+              ;;
+          esac
+
+          git fetch --no-tags origin master:refs/remotes/origin/master
+          source_revision="$(git rev-parse "${GITHUB_REF_NAME}^{commit}")"
+
+          if ! git merge-base --is-ancestor "$source_revision" origin/master; then
+            echo "::error::release tag does not point to master history"
+            exit 1
+          fi
+
+          read_gitlink() {
+            local path="$1"
+            local entry
+            entry="$(git ls-tree "$source_revision" "$path")"
+
+            if [[ "$(awk '{print $1}' <<<"$entry")" != "160000" ]]; then
+              echo "::error::$path is not a gitlink in release source" >&2
+              return 1
+            fi
+
+            awk '{print $3}' <<<"$entry"
+          }
+
+          miracle_revision="$(read_gitlink Engine/Source/Runtime/Miracle)"
+          switch_revision="$(read_gitlink Engine/Source/Runtime/Switch)"
+          vcpkg_revision="$(read_gitlink vcpkg)"
+
+          {
+            echo "PROJECT_VERSION=$project_version"
+            echo "NYX_PACKAGE_VERSION=${GITHUB_REF_NAME#v}"
+            echo "SOURCE_REVISION=$source_revision"
+            echo "MIRACLE_REVISION=$miracle_revision"
+            echo "SWITCH_REVISION=$switch_revision"
+            echo "VCPKG_REVISION=$vcpkg_revision"
+          } >> "$GITHUB_ENV"
+
+      - name: Record dependency cache key
+        id: dependency-key
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "vcpkg=$VCPKG_REVISION" >> "$GITHUB_OUTPUT"
+
+      - name: Restore vcpkg binary cache
+        uses: actions/cache@v4
+        with:
+          path: .cache/vcpkg
+          key: vcpkg-${{ runner.os }}-${{ runner.arch }}-${{ steps.dependency-key.outputs.vcpkg }}-${{ hashFiles('vcpkg.json', 'cmake/vcpkg-triplets/x64-linux-cxx26.cmake', '.github/reference-toolchain.env') }}
+          restore-keys: |
+            vcpkg-${{ runner.os }}-${{ runner.arch }}-${{ steps.dependency-key.outputs.vcpkg }}-
+
+      - name: Install host build dependencies
+        shell: bash
+        run: bash .github/scripts/install-ci-dependencies.sh
+
+      - name: Install immutable reference toolchain
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: bash .github/scripts/install-reference-toolchain.sh
+
+      - name: Test, release-build, and validate package
+        shell: bash
+        run: bash .github/scripts/run-validation.sh
+
+      - name: Create deterministic release metadata
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          mapfile -t packages < <(
+            find build/release/package \
+              -maxdepth 1 \
+              -type f \
+              -name "NyxEngine-${NYX_PACKAGE_VERSION}-linux-x86_64.tar.zst" \
+              -print
+          )
+
+          if [[ "${#packages[@]}" -ne 1 ]]; then
+            echo "::error::expected exactly one tag-versioned release archive"
+            exit 1
+          fi
+
+          package="${packages[0]}"
+
+          python3 .github/scripts/create-release-metadata.py \
+            --project-version "$PROJECT_VERSION" \
+            --release-version "$NYX_PACKAGE_VERSION" \
+            --tag "$GITHUB_REF_NAME" \
+            --source-repository "$GITHUB_REPOSITORY" \
+            --source-revision "$SOURCE_REVISION" \
+            --miracle-revision "$MIRACLE_REVISION" \
+            --switch-revision "$SWITCH_REVISION" \
+            --vcpkg-revision "$VCPKG_REVISION" \
+            --artifact "$package" \
+            --reference-file .github/reference-toolchain.env \
+            --output build/release/package/release-metadata.json
+
+          python3 -m json.tool \
+            build/release/package/release-metadata.json >/dev/null
+
+      - name: Publish immutable GitHub release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+
+          package="$(
+            find build/release/package \
+              -maxdepth 1 \
+              -type f \
+              -name "NyxEngine-${NYX_PACKAGE_VERSION}-linux-x86_64.tar.zst" \
+              -print \
+              -quit
+          )"
+          checksum="${package}.sha256"
+          metadata="build/release/package/release-metadata.json"
+
+          test -s "$package"
+          test -s "$checksum"
+          test -s "$metadata"
+
+          release_args=(
+            --verify-tag
+            --generate-notes
+            --title "$GITHUB_REF_NAME"
+          )
+
+          if [[ "$GITHUB_REF_NAME" == *-* ]]; then
+            release_args+=(--prerelease)
+          else
+            release_args+=(--latest)
+          fi
+
+          gh release create \
+            "$GITHUB_REF_NAME" \
+            "$package" \
+            "$checksum" \
+            "$metadata" \
+            "${release_args[@]}"
