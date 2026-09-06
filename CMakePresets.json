@@ -15,58 +15,52 @@
         "CMAKE_EXPORT_COMPILE_COMMANDS": "ON",
         "CMAKE_TOOLCHAIN_FILE": "${sourceDir}/vcpkg/scripts/buildsystems/vcpkg.cmake",
         "VCPKG_OVERLAY_TRIPLETS": "${sourceDir}/cmake/vcpkg-triplets",
-        "VCPKG_INSTALLED_DIR": "${sourceDir}/vcpkg_installed"
+        "VCPKG_INSTALLED_DIR": "${sourceDir}/vcpkg_installed",
+        "VCPKG_CHAINLOAD_TOOLCHAIN_FILE": "$env{CXX26_CMAKE_TOOLCHAIN_FILE}",
+        "VCPKG_TARGET_TRIPLET": "x64-linux-cxx26"
       }
     },
     {
       "name": "debug",
       "displayName": "Nyx Debug",
-      "description": "Unoptimized development build without test runtime emission",
+      "description": "Unoptimized development build using the selected C++26 toolchain",
       "inherits": "vcpkg",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Debug",
         "NYX_BUILD_PROFILE": "Debug",
-        "VCPKG_CHAINLOAD_TOOLCHAIN_FILE": "${sourceDir}/cmake/toolchains/clang-p2996.cmake",
-        "VCPKG_TARGET_TRIPLET": "x64-linux-p2996",
         "CMAKE_DISABLE_PRECOMPILE_HEADERS": "ON"
       }
     },
     {
       "name": "development",
       "displayName": "Nyx Development",
-      "description": "Optimized development build without test runtime emission",
+      "description": "Optimized development build using the selected C++26 toolchain",
       "inherits": "vcpkg",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "RelWithDebInfo",
         "NYX_BUILD_PROFILE": "Development",
-        "VCPKG_CHAINLOAD_TOOLCHAIN_FILE": "${sourceDir}/cmake/toolchains/clang-p2996.cmake",
-        "VCPKG_TARGET_TRIPLET": "x64-linux-p2996",
         "CMAKE_DISABLE_PRECOMPILE_HEADERS": "ON"
       }
     },
     {
       "name": "development-tests",
       "displayName": "Nyx Development Tests",
-      "description": "Unified Nyx + Miracle + Switch integration build",
+      "description": "Unified Nyx + Miracle + Switch integration build using the selected C++26 toolchain",
       "inherits": "vcpkg",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Debug",
         "NYX_BUILD_PROFILE": "DevelopmentTests",
-        "VCPKG_CHAINLOAD_TOOLCHAIN_FILE": "${sourceDir}/cmake/toolchains/clang-p2996.cmake",
-        "VCPKG_TARGET_TRIPLET": "x64-linux-p2996",
         "CMAKE_DISABLE_PRECOMPILE_HEADERS": "ON"
       }
     },
     {
       "name": "release",
       "displayName": "Nyx Release",
-      "description": "Optimized production build",
+      "description": "Optimized production build using the selected C++26 toolchain",
       "inherits": "vcpkg",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Release",
         "NYX_BUILD_PROFILE": "Release",
-        "VCPKG_CHAINLOAD_TOOLCHAIN_FILE": "${sourceDir}/cmake/toolchains/clang-p2996.cmake",
-        "VCPKG_TARGET_TRIPLET": "x64-linux-p2996",
         "CMAKE_DISABLE_PRECOMPILE_HEADERS": "ON"
       }
     }

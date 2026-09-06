@@ -3,10 +3,6 @@
   "version-string": "0.1.0",
   "dependencies": [
     {
-      "name": "python3",
-      "host": true
-    },
-    {
       "name": "sdl3",
       "features": ["vulkan"]
     },
@@ -15,7 +11,6 @@
     "vulkan",
     "vulkan-memory-allocator",
     "spdlog",
-    "bfgroup-lyra",
     {
       "name": "vulkan-loader",
       "features": ["wayland", "xcb", "xlib"]

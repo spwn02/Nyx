@@ -1,5 +1,6 @@
 /build/
 /vcpkg_installed/
+/CMakeUserPresets.json
 /logs/
 /contracts/
 *.log
