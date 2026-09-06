@@ -38,6 +38,7 @@ sudo apt-get install --yes --no-install-recommends \
   libxkbcommon-x11-dev \
   libxrandr-dev \
   libxss-dev \
+  libxtst-dev \
   nasm \
   ninja-build \
   pkg-config \
