@@ -3,6 +3,8 @@ set -euo pipefail
 
 : "${RUNNER_TEMP:?RUNNER_TEMP must be set by GitHub Actions}"
 : "${GITHUB_PATH:?GITHUB_PATH must be set by GitHub Actions}"
+: "${GITHUB_ENV:?GITHUB_ENV must be set by GitHub Actions}"
+: "${GITHUB_WORKSPACE:?GITHUB_WORKSPACE must be set by GitHub Actions}"
 
 sudo apt-get update
 sudo apt-get install --yes --no-install-recommends \
@@ -49,4 +51,15 @@ sudo apt-get install --yes --no-install-recommends \
 python3 -m venv "$RUNNER_TEMP/cmake"
 "$RUNNER_TEMP/cmake/bin/pip" install --no-cache-dir cmake==4.4.2
 
+wheelhouse="$GITHUB_WORKSPACE/.cache/python-wheelhouse"
+mkdir -p "$wheelhouse"
+"$RUNNER_TEMP/cmake/bin/pip" download \
+  --only-binary=:all: \
+  --require-hashes \
+  --dest "$wheelhouse" \
+  --no-deps \
+  -r "$GITHUB_WORKSPACE/.github/python-requirements.txt"
+
+echo "PIP_NO_INDEX=1" >>"$GITHUB_ENV"
+echo "PIP_FIND_LINKS=$wheelhouse" >>"$GITHUB_ENV"
 echo "$RUNNER_TEMP/cmake/bin" >>"$GITHUB_PATH"

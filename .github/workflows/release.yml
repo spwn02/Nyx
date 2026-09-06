@@ -106,6 +106,12 @@ jobs:
           restore-keys: |
             vcpkg-${{ runner.os }}-${{ runner.arch }}-${{ steps.dependency-key.outputs.vcpkg }}-
 
+      - name: Restore Python wheelhouse
+        uses: actions/cache@v4
+        with:
+          path: .cache/python-wheelhouse
+          key: python-wheelhouse-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('.github/python-requirements.txt') }}
+
       - name: Install host build dependencies
         shell: bash
         run: bash .github/scripts/install-ci-dependencies.sh
