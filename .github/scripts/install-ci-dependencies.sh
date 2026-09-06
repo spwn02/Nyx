@@ -7,6 +7,7 @@ set -euo pipefail
 sudo apt-get update
 sudo apt-get install --yes --no-install-recommends \
   autoconf \
+  autoconf-archive \
   automake \
   bison \
   build-essential \
@@ -48,4 +49,4 @@ sudo apt-get install --yes --no-install-recommends \
 python3 -m venv "$RUNNER_TEMP/cmake"
 "$RUNNER_TEMP/cmake/bin/pip" install --no-cache-dir cmake==4.4.2
 
-echo "$RUNNER_TEMP/cmake/bin" >> "$GITHUB_PATH"
+echo "$RUNNER_TEMP/cmake/bin" >>"$GITHUB_PATH"
